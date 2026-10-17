@@ -35,7 +35,8 @@ const ui = {
   doneSettings: $("doneSettings"), viewer: $("viewer"), pages: $("pages"),
   empty: $("emptyState"), thumbPane: $("thumbsPane"), thumbList: $("thumbList"),
   thumbPages: $("thumbPages"), thumbBookmarks: $("thumbBookmarks"), thumbEmpty: $("thumbEmpty"),
-  thumbCount: $("thumbCount"), loading: $("loading"), loadingText: $("loadingText"),
+  thumbPagesCount: $("thumbPagesCount"), thumbBookmarksCount: $("thumbBookmarksCount"),
+  loading: $("loading"), loadingText: $("loadingText"),
   status: $("statusText"),
   toast: $("toast"), dropOverlay: $("dropOverlay"),
 };
@@ -374,7 +375,8 @@ function updateThumbnailFilter(resetScroll = false) {
   ui.thumbPages.setAttribute("aria-pressed", String(!onlyBookmarks));
   ui.thumbBookmarks.classList.toggle("active", onlyBookmarks);
   ui.thumbBookmarks.setAttribute("aria-pressed", String(onlyBookmarks));
-  ui.thumbCount.textContent = String(onlyBookmarks ? bookmarked.size : state.pageCount);
+  ui.thumbPagesCount.textContent = String(state.pageCount);
+  ui.thumbBookmarksCount.textContent = String(bookmarked.size);
   for (let index = 0; index < state.thumbs.length; index++) {
     state.thumbs[index].hidden = onlyBookmarks && !bookmarked.has(index + 1);
   }
@@ -581,7 +583,8 @@ function cancelAllWork() {
   ui.pages.hidden = true;
   ui.fileLabel.textContent = "PDF açılmadı";
   ui.fileLabel.title = "Henüz dosya açılmadı";
-  ui.thumbCount.textContent = "0";
+  ui.thumbPagesCount.textContent = "0";
+  ui.thumbBookmarksCount.textContent = "0";
   ui.status.textContent = "Hazır · Dosyalar cihazında kalır";
   ui.viewer.scrollTop = 0;
   ui.viewer.scrollLeft = 0;

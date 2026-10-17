@@ -90,10 +90,13 @@
         <aside id="thumbsPane" class="thumbs-pane" aria-label="Sayfa küçük resimleri">
           <div class="pane-heading">
             <div class="thumb-filter" role="group" aria-label="Küçük resim görünümü">
-              <button id="thumbPages" class="thumb-filter-button active" type="button" aria-pressed="true" aria-controls="thumbList">Sayfalar</button>
-              <button id="thumbBookmarks" class="thumb-filter-button" type="button" aria-pressed="false" aria-controls="thumbList">Yer İmleri</button>
+              <button id="thumbPages" class="thumb-filter-button active" type="button" aria-pressed="true" aria-controls="thumbList">
+                <span>Sayfalar</span><span id="thumbPagesCount" class="thumb-tab-count">0</span>
+              </button>
+              <button id="thumbBookmarks" class="thumb-filter-button" type="button" aria-pressed="false" aria-controls="thumbList">
+                <span>Yer İmleri</span><span id="thumbBookmarksCount" class="thumb-tab-count">0</span>
+              </button>
             </div>
-            <span id="thumbCount" class="subtle-count">0</span>
           </div>
           <div id="thumbList" class="thumb-list">
             <p id="thumbEmpty" class="thumb-empty" role="status" hidden>Henüz yer imi yok. PDF'de metin seçip sağ tıklayarak kaydedebilirsin.</p>
