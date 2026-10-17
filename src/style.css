@@ -121,21 +121,28 @@ input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer
 .app-shell.thumbs-hidden .thumbs-pane, .app-shell:not(.has-document) .thumbs-pane { display: none; }
 .app-shell:not(.has-document) .workspace { grid-template-columns: minmax(0,1fr) !important; grid-template-rows: minmax(0,1fr) !important; }
 .pane-heading {
-  display: flex; align-items: center; justify-content: space-between; gap: 7px;
-  padding: 14px 12px 10px; color: #485873;
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  padding: 14px 6px 10px; color: #485873;
   font-size: 12px; font-weight: 750;
 }
 .thumb-filter {
-  display: flex; gap: 3px; padding: 3px; min-width: 0;
+  display: flex; justify-content: center; gap: 3px; padding: 3px; min-width: 0;
   background: #f0f3f9; border-radius: 9px;
 }
 .thumb-filter-button {
-  border: 0; border-radius: 7px; padding: 7px 9px; white-space: nowrap;
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  border: 0; border-radius: 7px; padding: 7px 7px; white-space: nowrap;
   background: transparent; color: #758299; font-size: 11px; font-weight: 750;
 }
 .thumb-filter-button.active { color: #3157dc; background: #fff; box-shadow: 0 1px 4px #1d30501d; }
 .thumb-filter-button:hover:not(.active) { color: #334869; background: #e8edf7; }
-.subtle-count { color: #9aa5b6; font-size: 11px; font-weight: 600; }
+.thumb-tab-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 19px; padding: 2px 5px; border-radius: 999px;
+  color: #65748b; background: #e1e7f1; font-size: 10px; font-weight: 750;
+  line-height: 1; font-variant-numeric: tabular-nums;
+}
+.thumb-filter-button.active .thumb-tab-count { color: #3157dc; background: #edf2ff; }
 .thumb-empty {
   margin: 18px 8px; padding: 15px 10px; text-align: center;
   color: #8894a8; font-size: 11px; line-height: 1.55;
@@ -159,7 +166,9 @@ input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer
 .thumb-preview canvas { display: block; width: 100%; height: 100%; object-fit: contain; }
 .thumb-number { font-size: 11px; font-weight: 650; }
 .app-shell.thumbs-bottom .thumbs-pane { flex-direction: row; align-items: stretch; }
-.app-shell.thumbs-bottom .pane-heading { align-items: flex-start; flex: 0 0 172px; flex-direction: column; justify-content: flex-start; gap: 6px; padding: 15px 8px 0 12px; }
+.app-shell.thumbs-bottom .pane-heading { align-items: center; flex: 0 0 143px; flex-direction: column; justify-content: flex-start; gap: 6px; padding: 15px 8px 0 12px; }
+.app-shell.thumbs-bottom .thumb-filter { flex-direction: column; width: 100%; }
+.app-shell.thumbs-bottom .thumb-filter-button { justify-content: flex-start; }
 .app-shell.thumbs-bottom .thumb-list { flex-direction: row; align-items: flex-start; padding: 12px 22px 8px; gap: 15px; overflow: auto hidden; }
 .app-shell.thumbs-bottom .thumb-item { width: 92px; padding: 4px; gap: 4px; }
 .app-shell.thumbs-bottom .thumb-preview { height: 103px; width: 78px; }
@@ -408,7 +417,6 @@ input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer
   .pane-heading { flex-direction: column; align-items: stretch; gap: 5px; padding: 11px 6px 8px; }
   .thumb-filter { flex-direction: column; }
   .thumb-filter-button { padding: 5px 4px; font-size: 10px; }
-  .pane-heading .subtle-count { align-self: center; }
   .app-shell.thumbs-bottom .pane-heading { flex-basis: 108px; padding: 9px 6px 0 9px; }
   .app-shell.thumbs-bottom .thumb-list { padding: 9px 12px; }
   .app-shell.thumbs-bottom .thumb-preview { width: 63px; height: 82px; }
