@@ -15,13 +15,13 @@ pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
 const $ = (id) => document.getElementById(id);
 const ui = {
-  app: $("app"), menu: $("menuButton"), sidebarOpen: $("sidebarOpenButton"),
+  app: $("app"), menu: $("menuButton"),
   input: $("fileInput"), emptyOpen: $("emptyOpenButton"),
   activeWorkspaceLabel: $("activeWorkspaceLabel"), workspaceSidebar: $("workspaceSidebar"),
   sidebarBackdrop: $("sidebarBackdrop"), closeSidebar: $("closeSidebar"),
   workspaceList: $("workspaceList"), workspaceCount: $("workspaceCount"),
   createWorkspace: $("createWorkspace"),
-  replaceDialog: $("replaceDialog"), replaceWorkspaceName: $("replaceWorkspaceName"),
+  replaceDialog: $("replaceDialog"), replaceTitle: $("replaceTitle"), replaceWorkspaceName: $("replaceWorkspaceName"), replaceMessage: $("replaceMessage"),
   deleteWorkspaceDialog: $("deleteWorkspaceDialog"), deleteWorkspaceName: $("deleteWorkspaceName"),
   cancelDeleteWorkspace: $("cancelDeleteWorkspace"), cancelDeleteWorkspaceTop: $("cancelDeleteWorkspaceTop"),
   confirmDeleteWorkspace: $("confirmDeleteWorkspace"),
@@ -35,7 +35,7 @@ const ui = {
   zoomIn: $("zoomIn"), zoomRange: $("zoomRange"), zoomInput: $("zoomInput"),
   fitButtons: [...document.querySelectorAll("[data-fit]")],
   direction: $("directionButton"), thumbnails: $("thumbsToggle"),
-  viewer: $("viewer"), pages: $("pages"),
+  viewer: $("viewer"), pages: $("pages"), bookmarkPagesEmpty: $("bookmarkPagesEmpty"),
   empty: $("emptyState"), thumbPane: $("thumbsPane"), thumbList: $("thumbList"),
   thumbPages: $("thumbPages"), thumbBookmarks: $("thumbBookmarks"), thumbEmpty: $("thumbEmpty"),
   thumbPagesCount: $("thumbPagesCount"), thumbBookmarksCount: $("thumbBookmarksCount"),
@@ -67,7 +67,8 @@ let workspaces = loadWorkspaces();
 const workspaceFiles = new Map(); // Active files are cached in memory; persistent copies live in IndexedDB.
 let pendingDeleteWorkspaceId = null;
 let pendingDropFile = null;
-let pickingNewFile = false;
+let pendingOpenWorkspaceId = null;
+let pickingWorkspaceId = null;
 let contextSelection = null;
 let contextPageBookmark = null;
 let hoveredHighlightNoteId = null;
@@ -124,6 +125,13 @@ function renderWorkspaceSidebar() {
     metadata.append(title, caption);
     button.append(number, metadata);
     button.addEventListener("click", () => changeWorkspace(item.id));
+    const open = document.createElement("button");
+    open.type = "button";
+    open.className = "workspace-open";
+    open.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>';
+    open.title = `${item.name} için PDF aç`;
+    open.setAttribute("aria-label", open.title);
+    open.addEventListener("click", () => askToOpen(null, item.id));
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "workspace-delete";
@@ -133,7 +141,7 @@ function renderWorkspaceSidebar() {
     remove.addEventListener("click", () => askDeleteWorkspace(item.id));
     const row = document.createElement("div");
     row.className = "workspace-row";
-    row.append(button, remove);
+    row.append(button, open, remove);
     ui.workspaceList.append(row);
   }
 
@@ -230,13 +238,41 @@ async function confirmDeleteWorkspace() {
   }
 }
 
-function askToOpen(file = null) {
-  pickingNewFile = false;
+function askToOpen(file = null, workspaceId = workspaces.activeId) {
+  const workspace = workspaces.items.find((item) => item.id === workspaceId);
+  if (!workspace) return;
+  pickingWorkspaceId = null;
   pendingDropFile = file;
+  pendingOpenWorkspaceId = workspaceId;
   hideSelectionMenu();
   if (ui.workspaceSidebar.classList.contains("is-open")) closeSidebar();
-  ui.replaceWorkspaceName.textContent = activeWorkspace(workspaces).name;
+  ui.replaceWorkspaceName.textContent = workspace.name;
+  const hasPdf = Boolean(workspace.fileName);
+  ui.replaceTitle.textContent = hasPdf ? "Mevcut PDF değiştirilsin mi?" : "Bu workspace'e PDF açılsın mı?";
+  ui.replaceMessage.textContent = hasPdf
+    ? ` çalışma alanında “${workspace.fileName}” adlı PDF zaten var. Yeni PDF başarıyla açıldığında bu PDF ve bu çalışma alanına ait yer imleri silinecek. Emin misiniz? Diğer workspace'ler korunacak.`
+    : workspace.notes.length
+      ? " çalışma alanına yeni PDF açıldığında bu alandaki kayıtlı yer imleri temizlenecek. Devam etmek istiyor musunuz?"
+      : " çalışma alanında henüz PDF yok. Burada bir PDF açmak istiyor musunuz?";
+  ui.confirmReplace.textContent = file
+    ? (hasPdf ? "Evet, PDF'yi değiştir" : "Evet, PDF'yi aç")
+    : (hasPdf ? "Evet, PDF seç" : "PDF seç");
   ui.replaceDialog.showModal();
+}
+
+function openPdfForWorkspace(file, workspaceId) {
+  if (!file || !workspaces.items.some((item) => item.id === workspaceId)) return;
+  if (!file.name.toLowerCase().endsWith(".pdf") && file.type !== "application/pdf") {
+    showToast("Lütfen bir PDF dosyası seç.");
+    return;
+  }
+  if (workspaces.activeId !== workspaceId) {
+    cancelAllWork();
+    workspaces = switchWorkspace(workspaces, workspaceId);
+    persistWorkspaces();
+    renderWorkspaceSidebar();
+  }
+  void openPDF(file, { replaceWorkspace: true });
 }
 
 // PDF text layers are rebuilt at every zoom level. Store selected glyph geometry as
@@ -567,6 +603,31 @@ function setPageSize(index) {
   shell.style.height = `${Math.ceil(height * state.scale) + 2}px`;
 }
 
+function visiblePageNumbers() {
+  if (!state.doc) return [];
+  if (state.thumbnailMode === "bookmarks") {
+    const workspace = activeWorkspace(workspaces);
+    return orderedBookmarkedPageNumbers(workspace, workspace.fileName, state.pageCount);
+  }
+  return Array.from({ length: state.pageCount }, (_, index) => index + 1);
+}
+
+function pageInActiveView(page) {
+  const pages = visiblePageNumbers();
+  if (!pages.length) return null;
+  const requested = clampPage(page, state.pageCount);
+  if (pages.includes(requested)) return requested;
+  return pages.reduce((nearest, candidate) =>
+    Math.abs(candidate - requested) < Math.abs(nearest - requested) ? candidate : nearest, pages[0]);
+}
+
+function stepVisiblePage(direction) {
+  const pages = visiblePageNumbers();
+  const index = pages.indexOf(state.current);
+  if (index < 0) return pages[0] ?? null;
+  return pages[Math.max(0, Math.min(pages.length - 1, index + direction))] ?? null;
+}
+
 function updateThumbnailFilter(resetScroll = false) {
   const workspace = activeWorkspace(workspaces);
   const ordered = orderedBookmarkedPageNumbers(workspace, workspace?.fileName, state.doc ? state.pageCount : 0);
@@ -586,8 +647,9 @@ function updateThumbnailFilter(resetScroll = false) {
     state.thumbEntries[index].querySelector(".thumb-remove").hidden = !onlyBookmarks || !isBookmarked;
     state.thumbEntries[index].querySelector(".thumb-drag-handle").hidden = !onlyBookmarks || !isBookmarked;
   }
-  // Only bookmarked entries are attached in this view: no hidden full-page list
-  // remains in the strip. Switching to Pages restores the natural PDF order.
+
+  // Both the thumbnail strip and the main PDF viewport share the same page
+  // selection. Detached shells are not rendered, laid out or scrollable.
   const visiblePages = onlyBookmarks
     ? ordered : Array.from({ length: state.pageCount }, (_, index) => index + 1);
   const fragment = document.createDocumentFragment();
@@ -597,9 +659,41 @@ function updateThumbnailFilter(resetScroll = false) {
   }
   ui.thumbList.replaceChildren(fragment, ui.thumbEmpty);
   ui.thumbEmpty.hidden = !onlyBookmarks || ordered.length > 0 || !state.doc;
+  ui.bookmarkPagesEmpty.hidden = !onlyBookmarks || ordered.length > 0 || !state.doc;
+  ui.pages.classList.toggle("bookmarks-empty", onlyBookmarks && visiblePages.length === 0 && Boolean(state.doc));
+
+  const currentOrder = [...ui.pages.children].filter((element) => element !== ui.bookmarkPagesEmpty);
+  const nextOrder = visiblePages.map((page) => state.shells[page - 1]).filter(Boolean);
+  const pageOrderChanged = currentOrder.length !== nextOrder.length
+    || nextOrder.some((shell, index) => currentOrder[index] !== shell);
+  if (pageOrderChanged) {
+    for (const shell of state.shells) {
+      if (shell) state.observer?.unobserve(shell);
+    }
+    state.visible.clear();
+    state.pending.clear();
+    const pageFragment = document.createDocumentFragment();
+    for (const shell of nextOrder) pageFragment.append(shell);
+    ui.pages.replaceChildren(pageFragment, ui.bookmarkPagesEmpty);
+    for (const shell of nextOrder) state.observer?.observe(shell);
+  }
+  const previousPage = state.current;
+  if (visiblePages.length && !visiblePages.includes(previousPage)) state.current = visiblePages[0];
+  for (let index = 0; index < state.thumbs.length; index++) {
+    state.thumbs[index].classList.toggle("active", index + 1 === state.current);
+  }
+  updateToolbar();
   if (resetScroll) {
     ui.thumbList.scrollTop = 0;
     ui.thumbList.scrollLeft = 0;
+  }
+  if (pageOrderChanged && visiblePages.length && state.doc) {
+    const generation = state.generation;
+    requestAnimationFrame(() => {
+      if (generation === state.generation && state.shells[state.current - 1]?.isConnected) {
+        goToPage(state.current, false);
+      }
+    });
   }
 }
 
@@ -630,15 +724,24 @@ function updateSettingsView() {
   ui.thumbnails.setAttribute("aria-label", title);
 }
 
+function syncPageFieldWidth() {
+  ui.pageInput.style.width = `${Math.max(2, ui.pageInput.value.length + 0.8)}ch`;
+}
+
 function updateToolbar() {
   const hasDoc = Boolean(state.doc);
   [ui.prev, ui.next, ui.pageInput, ui.zoomOut, ui.zoomIn, ui.zoomRange, ui.zoomInput, ui.direction, ...ui.fitButtons].forEach((button) => { button.disabled = !hasDoc; });
-  ui.prev.disabled = !hasDoc || state.current <= 1;
-  ui.next.disabled = !hasDoc || state.current >= state.pageCount;
+  const shownPages = visiblePageNumbers();
+  const shownIndex = shownPages.indexOf(state.current);
+  ui.prev.disabled = !hasDoc || shownIndex <= 0;
+  ui.next.disabled = !hasDoc || shownIndex < 0 || shownIndex === shownPages.length - 1;
+  ui.pageInput.disabled = !hasDoc || shownIndex < 0;
   ui.zoomIn.disabled = !hasDoc || state.scale >= MAX_SCALE;
   ui.zoomOut.disabled = !hasDoc || state.scale <= MIN_SCALE;
-  ui.pageInput.value = String(state.current);
+  ui.pageInput.value = shownIndex < 0 && hasDoc ? "" : String(state.current);
+  ui.pageInput.placeholder = shownIndex < 0 && hasDoc ? "—" : "";
   ui.pageInput.max = String(Math.max(1, state.pageCount));
+  syncPageFieldWidth();
   ui.pageTotal.textContent = String(state.pageCount);
   ui.zoomInput.value = String(Math.round(state.scale * 100));
   ui.zoomRange.value = String(Math.round(state.scale * 100));
@@ -651,6 +754,7 @@ function updateToolbar() {
 function setCurrentPage(index, scrollThumbnail = true) {
   if (!state.doc) return;
   const page = clampPage(index + 1, state.pageCount);
+  if (state.thumbnailMode === "bookmarks" && !visiblePageNumbers().includes(page)) return;
   if (page === state.current) return;
   const previous = state.thumbs[state.current - 1];
   if (previous) previous.classList.remove("active");
@@ -665,7 +769,9 @@ function setCurrentPage(index, scrollThumbnail = true) {
 
 function goToPage(page, smooth = true) {
   if (!state.doc) return;
-  const index = clampPage(page, state.pageCount) - 1;
+  const visiblePage = pageInActiveView(page);
+  if (visiblePage === null) return;
+  const index = visiblePage - 1;
   setCurrentPage(index);
   if (state.fit !== "custom") applyFit(state.fit);
   state.shells[index]?.scrollIntoView({
@@ -1231,7 +1337,6 @@ ui.menu.addEventListener("click", () => {
 ui.closeSidebar.addEventListener("click", closeSidebar);
 ui.sidebarBackdrop.addEventListener("click", closeSidebar);
 ui.emptyOpen.addEventListener("click", openSidebar);
-ui.sidebarOpen.addEventListener("click", () => askToOpen());
 ui.createWorkspace.addEventListener("click", () => {
   if (workspaces.items.length >= MAX_WORKSPACES) return;
   cancelAllWork();
@@ -1250,22 +1355,28 @@ ui.cancelReplaceTop.addEventListener("click", () => ui.replaceDialog.close());
 ui.replaceDialog.addEventListener("click", (event) => {
   if (event.target === ui.replaceDialog) ui.replaceDialog.close();
 });
+ui.replaceDialog.addEventListener("close", () => {
+  pendingDropFile = null;
+  pendingOpenWorkspaceId = null;
+});
 ui.confirmReplace.addEventListener("click", () => {
   const file = pendingDropFile;
+  const workspaceId = pendingOpenWorkspaceId;
   pendingDropFile = null;
+  pendingOpenWorkspaceId = null;
   ui.replaceDialog.close();
-  if (file) void openPDF(file, { replaceWorkspace: true });
-  else {
-    pickingNewFile = true;
+  if (file) openPdfForWorkspace(file, workspaceId);
+  else if (workspaceId !== null) {
+    pickingWorkspaceId = workspaceId;
     ui.input.click();
   }
 });
 ui.input.addEventListener("change", (event) => {
   const file = event.target.files?.[0];
   event.target.value = "";
-  const approved = pickingNewFile;
-  pickingNewFile = false;
-  if (approved && file) void openPDF(file, { replaceWorkspace: true });
+  const workspaceId = pickingWorkspaceId;
+  pickingWorkspaceId = null;
+  if (file && workspaceId !== null) openPdfForWorkspace(file, workspaceId);
 });
 ui.viewer.addEventListener("contextmenu", (event) => {
   const chosen = selectedPdfText();
@@ -1299,8 +1410,9 @@ ui.removeHighlight.addEventListener("click", () => {
 document.addEventListener("pointerdown", (event) => {
   if (!ui.selectionMenu.contains(event.target)) hideSelectionMenu();
 });
-ui.prev.addEventListener("click", () => goToPage(state.current - 1));
-ui.next.addEventListener("click", () => goToPage(state.current + 1));
+ui.prev.addEventListener("click", () => goToPage(stepVisiblePage(-1)));
+ui.next.addEventListener("click", () => goToPage(stepVisiblePage(1)));
+ui.pageInput.addEventListener("input", syncPageFieldWidth);
 ui.pageInput.addEventListener("change", () => goToPage(ui.pageInput.value));
 ui.pageInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") { goToPage(ui.pageInput.value); ui.pageInput.blur(); }
@@ -1502,8 +1614,8 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "+" || event.key === "=") { event.preventDefault(); stepZoom(1); }
   else if (event.key === "-") { event.preventDefault(); stepZoom(-1); }
   else if (event.key === "0") { event.preventDefault(); applyFit("page"); }
-  else if (event.key === "PageDown") { event.preventDefault(); goToPage(state.current + 1); }
-  else if (event.key === "PageUp") { event.preventDefault(); goToPage(state.current - 1); }
+  else if (event.key === "PageDown") { event.preventDefault(); goToPage(stepVisiblePage(1)); }
+  else if (event.key === "PageUp") { event.preventDefault(); goToPage(stepVisiblePage(-1)); }
   else if (event.key === "Home") { event.preventDefault(); goToPage(1); }
   else if (event.key === "End") { event.preventDefault(); goToPage(state.pageCount); }
 });

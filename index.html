@@ -115,7 +115,12 @@
               <button id="emptyOpenButton" type="button" class="empty-open">Sol menüden PDF aç <span aria-hidden="true">↗</span></button>
               <span class="drop-hint">PDF dosyalarını buraya sürükleyebilirsin</span>
             </div>
-            <div id="pages" class="pages" aria-label="Belge sayfaları" hidden></div>
+            <div id="pages" class="pages" aria-label="Belge sayfaları" hidden>
+              <div id="bookmarkPagesEmpty" class="bookmark-pages-empty" role="status" hidden>
+                <strong>Henüz yer imi yok</strong>
+                <span>Yer imlerine eklediğin sayfalar burada görünecek. Tüm belgeyi görmek için “Sayfalar”ı seçebilirsin.</span>
+              </div>
+            </div>
             <button id="removeHighlight" class="highlight-remove" type="button" title="Metin vurgusunu yer imlerinden kaldır" aria-label="Metin vurgusunu yer imlerinden kaldır" hidden>×</button>
           </div>
           <div id="loading" class="loading-indicator" role="status" hidden><span class="loading-spinner" aria-hidden="true"></span><span id="loadingText">PDF açılıyor…</span></div>
@@ -131,10 +136,6 @@
         <div><span class="eyebrow">PDF ÇALIŞMA ALANLARI</span><h2>Workspace</h2></div>
         <button id="closeSidebar" class="icon-button" type="button" aria-label="Menüyü kapat">✕</button>
       </div>
-      <button id="sidebarOpenButton" class="primary-button sidebar-open" type="button">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
-        Open PDF
-      </button>
       <input type="file" id="fileInput" accept=".pdf,application/pdf" hidden />
       <div class="sidebar-section-heading"><span>Çalışma alanların</span><span id="workspaceCount">1 / 10</span></div>
       <div id="workspaceList" class="workspace-list" aria-label="Çalışma alanı seç"></div>
@@ -156,10 +157,10 @@
 
     <dialog id="replaceDialog" class="settings-dialog replace-dialog" aria-labelledby="replaceTitle">
       <div class="dialog-top">
-        <div><span class="eyebrow">YENİ PDF</span><h2 id="replaceTitle">Bu workspace temizlensin mi?</h2></div>
+        <div><span class="eyebrow">PDF AÇ</span><h2 id="replaceTitle">PDF değiştirilsin mi?</h2></div>
         <button id="cancelReplaceTop" class="icon-button" type="button" aria-label="İptal et">✕</button>
       </div>
-      <p><strong id="replaceWorkspaceName">Workspace 1</strong> içindeki kayıtlı metinler ve mevcut PDF bilgileri, yeni dosya başarıyla açıldığında silinecek. Diğer çalışma alanları korunacak.</p>
+      <p><strong id="replaceWorkspaceName">Workspace 1</strong><span id="replaceMessage"></span></p>
       <div class="replace-actions">
         <button id="cancelReplace" class="secondary-button" type="button">İptal</button>
         <button id="confirmReplace" class="primary-button" type="button">Evet, PDF seç</button>
