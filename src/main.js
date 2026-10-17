@@ -1117,6 +1117,7 @@ function createPageElements() {
         : ["ArrowRight", "ArrowDown"].includes(event.key) ? 1 : 0;
       if (!direction || state.thumbnailMode !== "bookmarks") return;
       event.preventDefault();
+      event.stopPropagation(); // Arrow keys here reorder bookmarks, not PDF pages.
       const workspace = activeWorkspace(workspaces);
       updateWorkspaces(moveBookmarkedPage(workspaces, workspace.fileName, state.pageCount, index + 1, direction));
     });
@@ -1802,9 +1803,17 @@ document.addEventListener("keydown", (event) => {
     hideSelectionMenu();
     if (ui.workspaceSidebar.classList.contains("is-open")) closeSidebar();
   }
-  if (!state.doc || ui.replaceDialog.open || event.altKey || modifier) return;
-  const tag = document.activeElement?.tagName;
-  if (["INPUT", "TEXTAREA", "SELECT"].includes(tag)) return;
+  if (!state.doc || document.querySelector("dialog[open]") || event.altKey || event.shiftKey || modifier || event.defaultPrevented) return;
+  const active = document.activeElement;
+  if (["INPUT", "TEXTAREA", "SELECT"].includes(active?.tagName) || active?.isContentEditable) return;
+  // The arrow keys move by whole pages in either flow direction; wheel/touch/mouse handle panning.
+  const arrowStep = ["ArrowLeft", "ArrowUp"].includes(event.key) ? -1
+    : ["ArrowRight", "ArrowDown"].includes(event.key) ? 1 : 0;
+  if (arrowStep) {
+    event.preventDefault();
+    goToPage(stepVisiblePage(arrowStep), false);
+    return;
+  }
   if (event.key === "+" || event.key === "=") { event.preventDefault(); stepZoom(1); }
   else if (event.key === "-") { event.preventDefault(); stepZoom(-1); }
   else if (event.key === "0") { event.preventDefault(); applyFit("page"); }
