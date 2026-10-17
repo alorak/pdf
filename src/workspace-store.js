@@ -2,6 +2,17 @@ export const WORKSPACE_STORAGE_KEY = "pdf-viewer-workspaces-v1";
 export const MAX_WORKSPACES = 10;
 export const MAX_SAVED_TEXTS = 100;
 export const MAX_TEXT_LENGTH = 10000;
+export const MAX_HIGHLIGHT_RECTS = 240;
+
+function cleanHighlightRects(rects) {
+  if (!Array.isArray(rects)) return [];
+  return rects.slice(0, MAX_HIGHLIGHT_RECTS)
+    .filter((rect) => Array.isArray(rect) && rect.length === 4
+      && rect.every((value) => typeof value === "number" && Number.isFinite(value))
+      && rect[0] >= 0 && rect[1] >= 0 && rect[2] > 0 && rect[3] > 0
+      && rect[0] + rect[2] <= 1.001 && rect[1] + rect[3] <= 1.001)
+    .map((rect) => rect.map((value) => Math.round(value * 100000) / 100000));
+}
 
 export function initialWorkspaces() {
   return {
@@ -21,13 +32,17 @@ export function readWorkspaces(serialized) {
       if (!Number.isSafeInteger(item?.id) || item.id < 1 || seen.has(item.id)) continue;
       seen.add(item.id);
       const notes = Array.isArray(item.notes) ? item.notes.slice(-MAX_SAVED_TEXTS)
-        .filter((note) => note && typeof note.text === "string" && note.text.trim())
+        .filter((note) => note && (note.kind === "page"
+          ? Number.isSafeInteger(note.page) && note.page > 0
+          : typeof note.text === "string" && note.text.trim()))
         .map((note, index) => ({
           id: typeof note.id === "string" ? note.id : `legacy-${item.id}-${index}`,
-          text: note.text.slice(0, MAX_TEXT_LENGTH),
+          kind: note.kind === "page" ? "page" : "text",
+          text: note.kind === "page" ? "" : note.text.slice(0, MAX_TEXT_LENGTH),
           page: Number.isSafeInteger(note.page) && note.page > 0 ? note.page : null,
           fileName: typeof note.fileName === "string" ? note.fileName.slice(0, 255) : "",
           savedAt: Number.isFinite(note.savedAt) ? note.savedAt : 0,
+          rects: note.kind === "page" ? [] : cleanHighlightRects(note.rects),
         })) : [];
       items.push({
         id: item.id,
@@ -100,11 +115,22 @@ export function saveSelectedText(state, selection) {
   if (!text || activeWorkspace(state).notes.length >= MAX_SAVED_TEXTS) return state;
   const note = {
     id: selection.id,
+    kind: "text",
     text,
     page: Number.isSafeInteger(selection.page) && selection.page > 0 ? selection.page : null,
     fileName: String(selection.fileName || "").slice(0, 255),
     savedAt: selection.savedAt,
+    rects: cleanHighlightRects(selection.rects),
   };
+  return replaceActive(state, (item) => ({ ...item, notes: [...item.notes, note] }));
+}
+
+export function savePageBookmark(state, { id, page, fileName, savedAt }) {
+  const file = String(fileName || "").slice(0, 255);
+  const workspace = activeWorkspace(state);
+  if (!file || !Number.isSafeInteger(page) || page < 1 || workspace.notes.length >= MAX_SAVED_TEXTS) return state;
+  if (workspace.notes.some((note) => note.kind === "page" && note.fileName === file && note.page === page)) return state;
+  const note = { id, kind: "page", text: "", page, fileName: file, savedAt, rects: [] };
   return replaceActive(state, (item) => ({ ...item, notes: [...item.notes, note] }));
 }
 

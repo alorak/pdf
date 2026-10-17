@@ -4,7 +4,8 @@ import { clampPage, clampScale, chooseDeviceScale, fitScale, MIN_SCALE, MAX_SCAL
 import {
   WORKSPACE_STORAGE_KEY, MAX_WORKSPACES, MAX_SAVED_TEXTS,
   initialWorkspaces, readWorkspaces, activeWorkspace, addWorkspace, switchWorkspace,
-  setWorkspaceFile, clearActiveWorkspace, removeWorkspace, saveSelectedText, removeSelectedText, bookmarkedPageNumbers,
+  setWorkspaceFile, clearActiveWorkspace, removeWorkspace, saveSelectedText, savePageBookmark,
+  removeSelectedText, bookmarkedPageNumbers, MAX_HIGHLIGHT_RECTS,
 } from "./workspace-store.js";
 import { saveWorkspacePdf, loadWorkspacePdf, deleteWorkspacePdf } from "./pdf-storage.js";
 import "./style.css";
@@ -25,7 +26,7 @@ const ui = {
   confirmDeleteWorkspace: $("confirmDeleteWorkspace"),
   cancelReplace: $("cancelReplace"), cancelReplaceTop: $("cancelReplaceTop"),
   confirmReplace: $("confirmReplace"), selectionMenu: $("selectionMenu"),
-  copySelection: $("copySelection"), saveSelection: $("saveSelection"),
+  copySelection: $("copySelection"), saveSelection: $("saveSelection"), bookmarkPage: $("bookmarkPage"),
   fileLabel: $("fileLabel"), prev: $("prevPage"), next: $("nextPage"),
   pageInput: $("pageInput"), pageTotal: $("pageTotal"), zoomOut: $("zoomOut"),
   zoomIn: $("zoomIn"), zoomRange: $("zoomRange"), zoomInput: $("zoomInput"),
@@ -66,6 +67,7 @@ let pendingDeleteWorkspaceId = null;
 let pendingDropFile = null;
 let pickingNewFile = false;
 let contextSelection = null;
+let contextPageBookmark = null;
 let mousePan = null;
 let touchPinch = null;
 let trackpadGestureScale = null;
@@ -88,6 +90,7 @@ function updateWorkspaces(next) {
   workspaces = next;
   persistWorkspaces();
   renderWorkspaceSidebar();
+  refreshVisibleHighlights();
 }
 
 function renderWorkspaceSidebar() {
@@ -132,33 +135,37 @@ function renderWorkspaceSidebar() {
   if (!active.notes.length) {
     const empty = document.createElement("div");
     empty.className = "saved-empty";
-    empty.textContent = "PDF'den metin seçip sağ tıklayarak buraya kalıcı olarak kaydedebilirsin.";
+    empty.textContent = "PDF'den metin seçebilir veya sayfa küçük resmine sağ tıklayıp sayfayı yer imlerine ekleyebilirsin.";
     ui.savedTexts.append(empty);
     return;
   }
   for (const note of [...active.notes].reverse()) {
     const card = document.createElement("article");
-    card.className = "saved-card";
+    card.className = "saved-card" + (note.kind === "page" ? " page-bookmark" : "");
     const quote = document.createElement("p");
-    quote.textContent = note.text;
-    quote.title = note.text;
+    quote.textContent = note.kind === "page" ? `📑 Sayfa ${note.page}` : note.text;
+    quote.title = quote.textContent;
     const footer = document.createElement("div");
     footer.className = "saved-card-footer";
     const source = document.createElement("small");
     const parts = [note.fileName, note.page ? `s. ${note.page}` : ""].filter(Boolean);
     source.textContent = parts.join(" · ") || "Kaydedilen metin";
     source.title = note.savedAt ? new Date(note.savedAt).toLocaleString("tr-TR") : "";
-    const copy = document.createElement("button");
-    copy.type = "button";
-    copy.textContent = "Kopyala";
-    copy.addEventListener("click", () => { void copyText(note.text); });
+    footer.append(source);
+    if (note.kind !== "page") {
+      const copy = document.createElement("button");
+      copy.type = "button";
+      copy.textContent = "Kopyala";
+      copy.addEventListener("click", () => { void copyText(note.text); });
+      footer.append(copy);
+    }
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "delete-saved";
     remove.textContent = "Sil";
-    remove.setAttribute("aria-label", "Kayıtlı metni sil");
+    remove.setAttribute("aria-label", note.kind === "page" ? "Sayfa yer imini sil" : "Kayıtlı metni sil");
     remove.addEventListener("click", () => updateWorkspaces(removeSelectedText(workspaces, note.id)));
-    footer.append(source, copy, remove);
+    footer.append(remove);
     card.append(quote, footer);
     ui.savedTexts.append(card);
   }
@@ -264,6 +271,109 @@ function askToOpen(file = null) {
   ui.replaceDialog.showModal();
 }
 
+// PDF text layers are rebuilt at every zoom level. Store selected glyph geometry as
+// fractions of the page, so yellow highlights survive zoom, reload and workspace switches.
+function highlightRectsFromRange(range, layer, surface) {
+  if (!range || !layer || !surface) return [];
+  const bounds = surface.getBoundingClientRect();
+  if (!bounds.width || !bounds.height) return [];
+  const rects = [];
+  const walker = document.createTreeWalker(layer, NodeFilter.SHOW_TEXT);
+  let node;
+  while ((node = walker.nextNode()) && rects.length < MAX_HIGHLIGHT_RECTS) {
+    if (!node.textContent || !range.intersectsNode(node)) continue;
+    const fragment = document.createRange();
+    fragment.selectNodeContents(node);
+    if (range.startContainer === node) fragment.setStart(node, range.startOffset);
+    if (range.endContainer === node) fragment.setEnd(node, range.endOffset);
+    for (const rect of fragment.getClientRects()) {
+      const left = Math.max(rect.left, bounds.left);
+      const top = Math.max(rect.top, bounds.top);
+      const right = Math.min(rect.right, bounds.right);
+      const bottom = Math.min(rect.bottom, bounds.bottom);
+      if (right - left < 0.5 || bottom - top < 0.5) continue;
+      const normalized = [
+        (left - bounds.left) / bounds.width,
+        (top - bounds.top) / bounds.height,
+        (right - left) / bounds.width,
+        (bottom - top) / bounds.height,
+      ];
+      if (!rects.some((saved) => normalized.every((v, i) => Math.abs(v - saved[i]) < 0.0005))) {
+        rects.push(normalized);
+      }
+      if (rects.length >= MAX_HIGHLIGHT_RECTS) break;
+    }
+  }
+  return rects;
+}
+
+// Older saved selections only contain text. Locate their first exact match,
+// ignoring PDF.js line breaks, for a best-effort highlight without changing data.
+function findLegacyHighlightRects(layer, surface, text) {
+  if (!layer || !text) return [];
+  const fold = (value) => value.replace(/\s/gu, "").toLocaleLowerCase("tr");
+  const needle = fold(text);
+  if (!needle) return [];
+  let flat = "";
+  const positions = [];
+  const walker = document.createTreeWalker(layer, NodeFilter.SHOW_TEXT);
+  let node;
+  while ((node = walker.nextNode())) {
+    const value = node.textContent || "";
+    for (let offset = 0; offset < value.length; offset++) {
+      if (/\s/u.test(value[offset])) continue;
+      const normalized = value[offset].toLocaleLowerCase("tr");
+      for (const character of normalized) {
+        flat += character;
+        positions.push({ node, offset });
+      }
+    }
+  }
+  const found = flat.indexOf(needle);
+  if (found === -1 || !positions[found + needle.length - 1]) return [];
+  const first = positions[found];
+  const last = positions[found + needle.length - 1];
+  const range = document.createRange();
+  range.setStart(first.node, first.offset);
+  range.setEnd(last.node, last.offset + 1);
+  return highlightRectsFromRange(range, layer, surface);
+}
+
+function refreshPageHighlights(index) {
+  const surface = state.shells[index]?.querySelector(".page-surface");
+  if (!surface) return;
+  surface.querySelector(".page-highlight-layer")?.remove();
+  const workspace = activeWorkspace(workspaces);
+  if (!state.doc || !workspace?.fileName) return;
+  const notes = workspace.notes.filter((note) =>
+    note.kind !== "page" && note.fileName === workspace.fileName && note.page === index + 1);
+  if (!notes.length) return;
+  const layer = surface.querySelector(".textLayer");
+  const highlights = document.createElement("div");
+  highlights.className = "page-highlight-layer";
+  highlights.setAttribute("aria-hidden", "true");
+  for (const note of notes) {
+    const rects = note.rects?.length
+      ? note.rects : findLegacyHighlightRects(layer, surface, note.text);
+    for (const [x, y, width, height] of rects) {
+      const block = document.createElement("span");
+      block.className = "page-highlight";
+      block.style.left = `${x * 100}%`;
+      block.style.top = `${y * 100}%`;
+      block.style.width = `${width * 100}%`;
+      block.style.height = `${height * 100}%`;
+      highlights.append(block);
+    }
+  }
+  if (highlights.childElementCount) surface.append(highlights);
+}
+
+function refreshVisibleHighlights() {
+  for (const [index, epoch] of state.rendered) {
+    if (epoch === state.renderEpoch) refreshPageHighlights(index);
+  }
+}
+
 function selectedPdfText() {
   const selection = window.getSelection();
   if (!selection || selection.isCollapsed || !selection.rangeCount) return null;
@@ -271,19 +381,65 @@ function selectedPdfText() {
   if (!ui.pages.contains(range.commonAncestorContainer)) return null;
   const text = selection.toString().trim();
   if (!text) return null;
-  const element = selection.anchorNode?.nodeType === Node.ELEMENT_NODE
-    ? selection.anchorNode : selection.anchorNode?.parentElement;
+  const start = range.startContainer;
+  const element = start.nodeType === Node.ELEMENT_NODE ? start : start.parentElement;
   const pageElement = element?.closest(".page-shell");
+  if (!pageElement) return null;
+  const surface = pageElement.querySelector(".page-surface");
   return {
     text,
-    page: pageElement ? Number(pageElement.dataset.index) + 1 : state.current,
+    page: Number(pageElement.dataset.index) + 1,
     fileName: activeWorkspace(workspaces).fileName,
+    rects: highlightRectsFromRange(range, surface?.querySelector(".textLayer"), surface),
   };
 }
 
 function hideSelectionMenu() {
   ui.selectionMenu.hidden = true;
   contextSelection = null;
+  contextPageBookmark = null;
+}
+
+function showSelectionMenu(mode, clientX, clientY) {
+  const pageMode = mode === "page";
+  ui.copySelection.hidden = pageMode;
+  ui.saveSelection.hidden = pageMode;
+  ui.bookmarkPage.hidden = !pageMode;
+  ui.selectionMenu.setAttribute("aria-label", pageMode ? "Sayfa yer imi işlemleri" : "Seçili metin işlemleri");
+  ui.selectionMenu.hidden = false;
+  const width = ui.selectionMenu.offsetWidth;
+  const height = ui.selectionMenu.offsetHeight;
+  ui.selectionMenu.style.left = `${Math.max(8, Math.min(clientX, window.innerWidth - width - 8))}px`;
+  ui.selectionMenu.style.top = `${Math.max(8, Math.min(clientY, window.innerHeight - height - 8))}px`;
+}
+
+function findPageBookmark(page) {
+  const workspace = activeWorkspace(workspaces);
+  return workspace.notes.find((note) =>
+    note.kind === "page" && note.fileName === workspace.fileName && note.page === page);
+}
+
+function togglePageBookmark() {
+  const page = contextPageBookmark;
+  hideSelectionMenu();
+  if (!state.doc || !Number.isSafeInteger(page) || page < 1 || page > state.pageCount) return;
+  const existing = findPageBookmark(page);
+  if (existing) {
+    updateWorkspaces(removeSelectedText(workspaces, existing.id));
+    showToast(`Sayfa ${page} yer imi kaldırıldı.`);
+    return;
+  }
+  const current = workspaces;
+  const next = savePageBookmark(current, {
+    id: typeof globalThis.crypto?.randomUUID === "function" ? globalThis.crypto.randomUUID() : `page-${Date.now()}-${Math.random()}`,
+    page, fileName: activeWorkspace(workspaces).fileName, savedAt: Date.now(),
+  });
+  if (next === current) {
+    showToast(`Bir workspace en fazla ${MAX_SAVED_TEXTS} yer imi saklayabilir.`);
+    return;
+  }
+  updateWorkspaces(next);
+  showToast(`Sayfa ${page} yer imlerine eklendi.`);
 }
 
 async function copyText(value) {
@@ -312,8 +468,9 @@ function saveContextText() {
     savedAt: Date.now(),
   });
   hideSelectionMenu();
+  if (next !== current) window.getSelection()?.removeAllRanges();
   if (next === current) {
-    showToast(`Bir workspace en fazla ${MAX_SAVED_TEXTS} metin saklayabilir.`);
+    showToast(`Bir workspace en fazla ${MAX_SAVED_TEXTS} yer imi saklayabilir.`);
     return;
   }
   updateWorkspaces(next);
@@ -379,6 +536,7 @@ function updateThumbnailFilter(resetScroll = false) {
   ui.thumbBookmarksCount.textContent = String(bookmarked.size);
   for (let index = 0; index < state.thumbs.length; index++) {
     state.thumbs[index].hidden = onlyBookmarks && !bookmarked.has(index + 1);
+    state.thumbs[index].classList.toggle("bookmarked", bookmarked.has(index + 1));
   }
   ui.thumbEmpty.hidden = !onlyBookmarks || bookmarked.size > 0 || !state.doc;
   if (resetScroll) {
@@ -620,6 +778,16 @@ function createPageElements() {
     number.textContent = String(index + 1);
     thumb.append(preview, number);
     thumb.addEventListener("click", () => goToPage(index + 1));
+    thumb.addEventListener("contextmenu", (event) => {
+      if (!state.doc) return;
+      event.preventDefault();
+      contextSelection = null;
+      contextPageBookmark = index + 1;
+      const existing = findPageBookmark(index + 1);
+      ui.bookmarkPage.textContent = existing ? "Sayfa yer imini kaldır" : "Sayfayı yer imlerine ekle";
+      const rect = thumb.getBoundingClientRect();
+      showSelectionMenu("page", event.clientX || rect.left + rect.width / 2, event.clientY || rect.top + 20);
+    });
     state.thumbs[index] = thumb;
     thumbFragment.append(thumb);
   }
@@ -736,6 +904,7 @@ async function renderPage(index, generation, epoch) {
     if (!surface) return;
     surface.replaceChildren(canvas);
     state.rendered.set(index, epoch);
+    refreshPageHighlights(index);
     // Render a text overlay only for nearby pages; the canvas remains visible.
     const overlay = document.createElement("div");
     overlay.className = "textLayer";
@@ -751,6 +920,8 @@ async function renderPage(index, generation, epoch) {
       await layer.render();
       if (generation !== state.generation || epoch !== state.renderEpoch || !state.visible.has(index)) {
         overlay.remove();
+      } else {
+        refreshPageHighlights(index);
       }
     } catch (error) {
       overlay.remove();
@@ -999,11 +1170,8 @@ ui.viewer.addEventListener("contextmenu", (event) => {
   if (!state.doc || !chosen) { hideSelectionMenu(); return; }
   event.preventDefault();
   contextSelection = chosen;
-  ui.selectionMenu.hidden = false;
-  const width = ui.selectionMenu.offsetWidth;
-  const height = ui.selectionMenu.offsetHeight;
-  ui.selectionMenu.style.left = `${Math.max(8, Math.min(event.clientX, window.innerWidth - width - 8))}px`;
-  ui.selectionMenu.style.top = `${Math.max(8, Math.min(event.clientY, window.innerHeight - height - 8))}px`;
+  contextPageBookmark = null;
+  showSelectionMenu("text", event.clientX, event.clientY);
 });
 ui.copySelection.addEventListener("click", () => {
   const text = contextSelection?.text;
@@ -1011,6 +1179,7 @@ ui.copySelection.addEventListener("click", () => {
   if (text) void copyText(text);
 });
 ui.saveSelection.addEventListener("click", saveContextText);
+ui.bookmarkPage.addEventListener("click", togglePageBookmark);
 document.addEventListener("pointerdown", (event) => {
   if (!ui.selectionMenu.contains(event.target)) hideSelectionMenu();
 });
@@ -1044,6 +1213,7 @@ document.querySelectorAll('input[name="scrollDirection"]').forEach((input) => in
 }));
 
 ui.viewer.addEventListener("scroll", () => { scheduleScrollUpdate(); hideSelectionMenu(); }, { passive: true });
+ui.thumbList.addEventListener("scroll", hideSelectionMenu, { passive: true });
 
 // Drag the PDF with a mouse from blank areas; clicks on actual text still select it.
 ui.viewer.addEventListener("pointerdown", (event) => {
