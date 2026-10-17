@@ -32,6 +32,7 @@ test("render resolution is capped for very large pages", () => {
   const scale = chooseDeviceScale(8000, 8000, 2);
   assert.ok(8000 * 8000 * scale ** 2 <= 12_000_001);
   assert.equal(chooseDeviceScale(100, 100, 1), 1);
+  assert.ok(chooseDeviceScale(80000, 300, 2) * 80000 <= 16384);
 });
 
 test("file sizes are human-readable", () => {
