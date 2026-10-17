@@ -137,7 +137,7 @@ function goToPage(page, smooth = true) {
   const index = clampPage(page, state.pageCount) - 1;
   setCurrentPage(index);
   state.shells[index]?.scrollIntoView({
-    behavior: smooth ? "smooth" : "instant",
+    behavior: smooth ? "smooth" : "auto",
     block: state.orientation === "vertical" ? "start" : "nearest",
     inline: state.orientation === "horizontal" ? "start" : "nearest",
   });
@@ -246,8 +246,8 @@ function cancelAllWork() {
   state.thumbTasks.clear();
   state.activeRenders = 0;
   state.activeThumbRenders = 0;
-  try { state.loadingTask?.destroy(); } catch { /* Loading may already be complete. */ }
-  try { state.doc?.destroy(); } catch { /* Ignore stale cleanup. */ }
+  if (state.doc) void state.doc.destroy().catch(() => {});
+  else if (state.loadingTask) void state.loadingTask.destroy().catch(() => {});
   state.loadingTask = null;
   state.doc = null;
   state.pageCount = 0;
@@ -384,6 +384,7 @@ function pumpPages() {
 }
 
 async function renderPage(index, generation, epoch) {
+  let task;
   try {
     const doc = state.doc;
     const page = await doc.getPage(index + 1);
@@ -402,7 +403,7 @@ async function renderPage(index, generation, epoch) {
     canvas.height = Math.max(1, Math.floor(renderViewport.height));
     const context = canvas.getContext("2d", { alpha: false });
     if (!context) return;
-    const task = page.render({ canvasContext: context, viewport: renderViewport, canvas });
+    task = page.render({ canvasContext: context, viewport: renderViewport, canvas });
     state.renderTasks.set(index, task);
     await task.promise;
     if (generation !== state.generation || epoch !== state.renderEpoch || !state.visible.has(index)) return;
@@ -415,7 +416,7 @@ async function renderPage(index, generation, epoch) {
       console.error("PDF page render failed:", error);
     }
   } finally {
-    if (generation === state.generation) state.renderTasks.delete(index);
+    if (generation === state.generation && state.renderTasks.get(index) === task) state.renderTasks.delete(index);
   }
 }
 
@@ -437,6 +438,7 @@ function pumpThumbs() {
 }
 
 async function renderThumb(index, generation, epoch) {
+  let task;
   try {
     const page = await state.doc.getPage(index + 1);
     if (generation !== state.generation || epoch !== state.thumbEpoch || !state.thumbVisible.has(index)) return;
@@ -451,7 +453,7 @@ async function renderThumb(index, generation, epoch) {
     canvas.height = Math.max(1, Math.round(viewport.height));
     const context = canvas.getContext("2d", { alpha: false });
     if (!context) return;
-    const task = page.render({ canvasContext: context, viewport, canvas });
+    task = page.render({ canvasContext: context, viewport, canvas });
     state.thumbTasks.set(index, task);
     await task.promise;
     if (generation !== state.generation || epoch !== state.thumbEpoch || !state.thumbVisible.has(index)) return;
@@ -462,7 +464,7 @@ async function renderThumb(index, generation, epoch) {
       console.error("PDF thumbnail render failed:", error);
     }
   } finally {
-    if (generation === state.generation) state.thumbTasks.delete(index);
+    if (generation === state.generation && state.thumbTasks.get(index) === task) state.thumbTasks.delete(index);
   }
 }
 
