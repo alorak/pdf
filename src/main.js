@@ -4,8 +4,9 @@ import { clampPage, clampScale, chooseDeviceScale, fitScale, MIN_SCALE, MAX_SCAL
 import {
   WORKSPACE_STORAGE_KEY, MAX_WORKSPACES, MAX_SAVED_TEXTS,
   initialWorkspaces, readWorkspaces, activeWorkspace, addWorkspace, switchWorkspace,
-  setWorkspaceFile, clearActiveWorkspace, saveSelectedText, removeSelectedText, bookmarkedPageNumbers,
+  setWorkspaceFile, clearActiveWorkspace, removeWorkspace, saveSelectedText, removeSelectedText, bookmarkedPageNumbers,
 } from "./workspace-store.js";
+import { saveWorkspacePdf, loadWorkspacePdf, deleteWorkspacePdf } from "./pdf-storage.js";
 import "./style.css";
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
@@ -19,6 +20,9 @@ const ui = {
   workspaceList: $("workspaceList"), workspaceCount: $("workspaceCount"),
   createWorkspace: $("createWorkspace"), savedTexts: $("savedTexts"), savedCount: $("savedCount"),
   replaceDialog: $("replaceDialog"), replaceWorkspaceName: $("replaceWorkspaceName"),
+  deleteWorkspaceDialog: $("deleteWorkspaceDialog"), deleteWorkspaceName: $("deleteWorkspaceName"),
+  cancelDeleteWorkspace: $("cancelDeleteWorkspace"), cancelDeleteWorkspaceTop: $("cancelDeleteWorkspaceTop"),
+  confirmDeleteWorkspace: $("confirmDeleteWorkspace"),
   cancelReplace: $("cancelReplace"), cancelReplaceTop: $("cancelReplaceTop"),
   confirmReplace: $("confirmReplace"), selectionMenu: $("selectionMenu"),
   copySelection: $("copySelection"), saveSelection: $("saveSelection"),
@@ -56,10 +60,14 @@ const state = {
 };
 
 let workspaces = loadWorkspaces();
-const workspaceFiles = new Map(); // PDF bytes remain in memory, never in localStorage.
+const workspaceFiles = new Map(); // Active files are cached in memory; persistent copies live in IndexedDB.
+let pendingDeleteWorkspaceId = null;
 let pendingDropFile = null;
 let pickingNewFile = false;
 let contextSelection = null;
+let mousePan = null;
+let touchPinch = null;
+let trackpadGestureScale = null;
 
 function loadWorkspaces() {
   try { return readWorkspaces(localStorage.getItem(WORKSPACE_STORAGE_KEY)); }
@@ -107,7 +115,17 @@ function renderWorkspaceSidebar() {
     metadata.append(title, caption);
     button.append(number, metadata);
     button.addEventListener("click", () => changeWorkspace(item.id));
-    ui.workspaceList.append(button);
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "workspace-delete";
+    remove.textContent = "×";
+    remove.title = `${item.name} çalışma alanını sil`;
+    remove.setAttribute("aria-label", remove.title);
+    remove.addEventListener("click", () => askDeleteWorkspace(item.id));
+    const row = document.createElement("div");
+    row.className = "workspace-row";
+    row.append(button, remove);
+    ui.workspaceList.append(row);
   }
   ui.savedTexts.replaceChildren();
   if (!active.notes.length) {
@@ -171,8 +189,69 @@ function changeWorkspace(id) {
   persistWorkspaces();
   renderWorkspaceSidebar();
   closeSidebar();
-  const file = workspaceFiles.get(id);
-  if (file) void openPDF(file);
+  void restoreWorkspacePdf(id);
+}
+
+async function restoreWorkspacePdf(workspaceId) {
+  if (workspaces.activeId !== workspaceId) return;
+  const saved = activeWorkspace(workspaces);
+  if (!saved?.fileName) return;
+  const generation = state.generation;
+  setLoading(true, "Workspace PDF'si geri yükleniyor…");
+  try {
+    const file = workspaceFiles.get(workspaceId) || await loadWorkspacePdf(workspaceId);
+    if (generation !== state.generation || workspaces.activeId !== workspaceId) return;
+    if (!file || file.name.slice(0, 255) !== saved.fileName) {
+      showToast("Kaydedilmiş PDF bulunamadı. Yer imleri korunuyor; PDF'yi yeniden açabilirsin.");
+      return;
+    }
+    workspaceFiles.set(workspaceId, file);
+    await openPDF(file, { persistFile: false });
+  } catch (error) {
+    if (generation === state.generation) {
+      console.warn("Workspace PDF restore failed:", error);
+      showToast("PDF geri yüklenemedi. Tarayıcı depolaması engellenmiş veya temizlenmiş olabilir.");
+    }
+  } finally {
+    if (generation === state.generation) setLoading(false);
+  }
+}
+
+function askDeleteWorkspace(id) {
+  const item = workspaces.items.find((entry) => entry.id === id);
+  if (!item) return;
+  pendingDeleteWorkspaceId = id;
+  ui.deleteWorkspaceName.textContent = item.name;
+  if (ui.workspaceSidebar.classList.contains("is-open")) closeSidebar();
+  ui.deleteWorkspaceDialog.showModal();
+}
+
+async function confirmDeleteWorkspace() {
+  const id = pendingDeleteWorkspaceId;
+  if (!Number.isSafeInteger(id)) return;
+  ui.confirmDeleteWorkspace.disabled = true;
+  ui.cancelDeleteWorkspace.disabled = true;
+  ui.cancelDeleteWorkspaceTop.disabled = true;
+  try {
+    await deleteWorkspacePdf(id);
+    workspaceFiles.delete(id);
+    const wasActive = workspaces.activeId === id;
+    if (wasActive) cancelAllWork();
+    workspaces = removeWorkspace(workspaces, id);
+    persistWorkspaces();
+    renderWorkspaceSidebar();
+    ui.deleteWorkspaceDialog.close();
+    pendingDeleteWorkspaceId = null;
+    if (wasActive) void restoreWorkspacePdf(workspaces.activeId);
+    showToast("Workspace PDF'si ve yer imleri silindi.");
+  } catch (error) {
+    console.warn("Workspace delete failed:", error);
+    showToast("Workspace silinemedi. Tarayıcı depolamasını kontrol edip tekrar dene.");
+  } finally {
+    ui.confirmDeleteWorkspace.disabled = false;
+    ui.cancelDeleteWorkspace.disabled = false;
+    ui.cancelDeleteWorkspaceTop.disabled = false;
+  }
 }
 
 function askToOpen(file = null) {
@@ -463,6 +542,10 @@ function toggleThumbnails() {
 }
 
 function cancelAllWork() {
+  mousePan = null;
+  touchPinch = null;
+  trackpadGestureScale = null;
+  ui.viewer.classList.remove("is-dragging");
   state.generation++;
   cancelPageRenders();
   state.thumbEpoch++;
@@ -753,12 +836,13 @@ function scheduleScrollUpdate() {
   });
 }
 
-async function openPDF(file, { replaceWorkspace = false } = {}) {
+async function openPDF(file, { replaceWorkspace = false, persistFile = true } = {}) {
   if (!file) return;
   if (!file.name.toLowerCase().endsWith(".pdf") && file.type !== "application/pdf") {
     showToast("Lütfen bir PDF dosyası seç.");
     return;
   }
+  const workspaceId = workspaces.activeId;
   cancelAllWork();
   const generation = state.generation;
   setLoading(true);
@@ -777,9 +861,24 @@ async function openPDF(file, { replaceWorkspace = false } = {}) {
     const first = await doc.getPage(1);
     if (generation !== state.generation) return;
     const rect = first.getViewport({ scale: 1 });
+    if (persistFile) {
+      try {
+        await saveWorkspacePdf(workspaceId, file);
+      } catch (error) {
+        console.warn("PDF persistence failed:", error);
+        if (replaceWorkspace && activeWorkspace(workspaces)?.fileName) {
+          cancelAllWork();
+          showToast("Yeni PDF kaydedilemedi; önceki PDF ve yer imleri korundu.");
+          void restoreWorkspacePdf(workspaceId);
+          return;
+        }
+        showToast("PDF yalnızca bu oturumda açıldı; tarayıcı depolama alanını kontrol et.");
+      }
+    }
+    if (generation !== state.generation || workspaces.activeId !== workspaceId) return;
     if (replaceWorkspace) workspaces = clearActiveWorkspace(workspaces);
     workspaces = setWorkspaceFile(workspaces, file.name);
-    workspaceFiles.set(workspaces.activeId, file);
+    workspaceFiles.set(workspaceId, file);
     persistWorkspaces();
     renderWorkspaceSidebar();
     state.dimensions = new Array(state.pageCount);
@@ -808,9 +907,36 @@ async function openPDF(file, { replaceWorkspace = false } = {}) {
     cancelAllWork();
     showToast(message);
     setLoading(false);
+    if (replaceWorkspace && workspaces.activeId === workspaceId) void restoreWorkspacePdf(workspaceId);
   } finally {
     if (generation === state.generation) setLoading(false);
   }
+}
+
+function zoomAtPoint(nextScale, clientX, clientY) {
+  if (!state.doc) return;
+  const node = document.elementFromPoint(clientX, clientY);
+  const shell = node?.closest?.(".page-shell") || state.shells[state.current - 1];
+  if (!shell) { setScale(nextScale); return; }
+  const before = shell.getBoundingClientRect();
+  const x = (clientX - before.left) / Math.max(1, before.width);
+  const y = (clientY - before.top) / Math.max(1, before.height);
+  const previousScale = state.scale;
+  setScale(Math.round(clampScale(nextScale) * 100) / 100);
+  if (state.scale === previousScale) return;
+  const after = shell.getBoundingClientRect();
+  ui.viewer.scrollLeft += after.left + after.width * x - clientX;
+  ui.viewer.scrollTop += after.top + after.height * y - clientY;
+}
+
+function touchDistanceAndCenter(touches) {
+  const a = touches[0];
+  const b = touches[1];
+  return {
+    distance: Math.max(1, Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY)),
+    x: (a.clientX + b.clientX) / 2,
+    y: (a.clientY + b.clientY) / 2,
+  };
 }
 
 function stepZoom(direction) {
@@ -835,6 +961,14 @@ ui.createWorkspace.addEventListener("click", () => {
   cancelAllWork();
   updateWorkspaces(addWorkspace(workspaces));
 });
+ui.cancelDeleteWorkspace.addEventListener("click", () => ui.deleteWorkspaceDialog.close());
+ui.cancelDeleteWorkspaceTop.addEventListener("click", () => ui.deleteWorkspaceDialog.close());
+ui.deleteWorkspaceDialog.addEventListener("click", (event) => {
+  if (event.target === ui.deleteWorkspaceDialog) ui.deleteWorkspaceDialog.close();
+});
+ui.deleteWorkspaceDialog.addEventListener("close", () => { pendingDeleteWorkspaceId = null; });
+ui.deleteWorkspaceDialog.addEventListener("cancel", (event) => { if (ui.confirmDeleteWorkspace.disabled) event.preventDefault(); });
+ui.confirmDeleteWorkspace.addEventListener("click", () => { void confirmDeleteWorkspace(); });
 ui.cancelReplace.addEventListener("click", () => ui.replaceDialog.close());
 ui.cancelReplaceTop.addEventListener("click", () => ui.replaceDialog.close());
 ui.replaceDialog.addEventListener("click", (event) => {
@@ -907,12 +1041,89 @@ document.querySelectorAll('input[name="scrollDirection"]').forEach((input) => in
 }));
 
 ui.viewer.addEventListener("scroll", () => { scheduleScrollUpdate(); hideSelectionMenu(); }, { passive: true });
-ui.viewer.addEventListener("wheel", (event) => {
-  if (!state.doc || !(event.ctrlKey || event.metaKey)) return;
+
+// Drag the PDF with a mouse from blank areas; clicks on actual text still select it.
+ui.viewer.addEventListener("pointerdown", (event) => {
+  if (!state.doc || event.pointerType !== "mouse" || event.button !== 0) return;
+  if (event.target instanceof Element && event.target.closest(".textLayer span")) return;
+  mousePan = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false };
+  ui.viewer.setPointerCapture(event.pointerId);
+});
+ui.viewer.addEventListener("pointermove", (event) => {
+  if (!mousePan || mousePan.id !== event.pointerId) return;
+  const dx = event.clientX - mousePan.x;
+  const dy = event.clientY - mousePan.y;
+  if (!mousePan.moved && Math.hypot(dx, dy) < 4) return;
+  mousePan.moved = true;
+  ui.viewer.classList.add("is-dragging");
+  ui.viewer.scrollLeft -= dx;
+  ui.viewer.scrollTop -= dy;
+  mousePan.x = event.clientX;
+  mousePan.y = event.clientY;
   event.preventDefault();
-  const factor = Math.exp(-event.deltaY * .006);
-  setScale(Math.round(clampScale(state.scale * factor) * 100) / 100);
+});
+function stopMousePan(event) {
+  if (!mousePan || mousePan.id !== event.pointerId) return;
+  mousePan = null;
+  ui.viewer.classList.remove("is-dragging");
+  if (ui.viewer.hasPointerCapture(event.pointerId)) ui.viewer.releasePointerCapture(event.pointerId);
+}
+ui.viewer.addEventListener("pointerup", stopMousePan);
+ui.viewer.addEventListener("pointercancel", stopMousePan);
+
+// Native one-finger touch scrolling is preserved; two fingers pinch the PDF itself.
+ui.viewer.addEventListener("touchstart", (event) => {
+  if (!state.doc || event.touches.length !== 2) return;
+  event.preventDefault();
+  const position = touchDistanceAndCenter(event.touches);
+  touchPinch = { distance: position.distance, scale: state.scale, x: position.x, y: position.y };
 }, { passive: false });
+ui.viewer.addEventListener("touchmove", (event) => {
+  if (!state.doc || event.touches.length !== 2) return;
+  event.preventDefault();
+  const position = touchDistanceAndCenter(event.touches);
+  if (!touchPinch) {
+    touchPinch = { distance: position.distance, scale: state.scale, x: position.x, y: position.y };
+    return;
+  }
+  ui.viewer.scrollLeft -= position.x - touchPinch.x;
+  ui.viewer.scrollTop -= position.y - touchPinch.y;
+  zoomAtPoint(touchPinch.scale * position.distance / touchPinch.distance, position.x, position.y);
+  touchPinch.x = position.x;
+  touchPinch.y = position.y;
+}, { passive: false });
+ui.viewer.addEventListener("touchend", (event) => {
+  if (event.touches.length < 2) touchPinch = null;
+}, { passive: true });
+ui.viewer.addEventListener("touchcancel", () => { touchPinch = null; }, { passive: true });
+
+// Trackpads emit Ctrl+wheel in Chromium/Firefox and gesture events in Safari.
+ui.viewer.addEventListener("wheel", (event) => {
+  if (!state.doc) return;
+  if (event.ctrlKey || event.metaKey) {
+    event.preventDefault();
+    const factor = Math.exp(-event.deltaY * .006);
+    zoomAtPoint(state.scale * factor, event.clientX, event.clientY);
+  } else if (state.orientation === "horizontal" && !event.shiftKey && Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
+    event.preventDefault();
+    const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? ui.viewer.clientWidth : 1;
+    ui.viewer.scrollLeft += event.deltaY * unit;
+  }
+}, { passive: false });
+ui.viewer.addEventListener("gesturestart", (event) => {
+  if (!state.doc) return;
+  event.preventDefault();
+  trackpadGestureScale = state.scale;
+}, { passive: false });
+ui.viewer.addEventListener("gesturechange", (event) => {
+  if (!state.doc || trackpadGestureScale === null || !Number.isFinite(event.scale)) return;
+  event.preventDefault();
+  const bounds = ui.viewer.getBoundingClientRect();
+  const x = Number.isFinite(event.clientX) && event.clientX > 0 ? event.clientX : bounds.left + bounds.width / 2;
+  const y = Number.isFinite(event.clientY) && event.clientY > 0 ? event.clientY : bounds.top + bounds.height / 2;
+  zoomAtPoint(trackpadGestureScale * event.scale, x, y);
+}, { passive: false });
+ui.viewer.addEventListener("gestureend", () => { trackpadGestureScale = null; }, { passive: true });
 
 document.addEventListener("keydown", (event) => {
   const modifier = event.ctrlKey || event.metaKey;
@@ -968,3 +1179,4 @@ resizeObserver.observe(ui.viewer);
 updateSettingsView();
 updateToolbar();
 renderWorkspaceSidebar();
+void restoreWorkspacePdf(workspaces.activeId);

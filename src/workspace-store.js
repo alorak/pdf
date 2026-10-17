@@ -82,6 +82,19 @@ export function clearActiveWorkspace(state) {
   return replaceActive(state, (item) => ({ ...item, notes: [], fileName: "" }));
 }
 
+export function removeWorkspace(state, id) {
+  if (!state.items.some((item) => item.id === id)) return state;
+  if (state.items.length === 1) {
+    return { ...state, items: [{ ...state.items[0], fileName: "", notes: [] }] };
+  }
+  const items = state.items.filter((item) => item.id !== id);
+  return {
+    ...state,
+    items,
+    activeId: state.activeId === id ? items[0].id : state.activeId,
+  };
+}
+
 export function saveSelectedText(state, selection) {
   const text = String(selection.text || "").trim().slice(0, MAX_TEXT_LENGTH);
   if (!text || activeWorkspace(state).notes.length >= MAX_SAVED_TEXTS) return state;
