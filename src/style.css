@@ -168,13 +168,16 @@ input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer
 .document-panel { min-height: 0; min-width: 0; position: relative; overflow: hidden; display: flex; }
 .viewer {
   min-height: 0; min-width: 0; flex: 1;
-  overflow: auto; overscroll-behavior: contain;
+  overflow: auto; overscroll-behavior: contain; touch-action: pan-x pan-y;
   scrollbar-color: #c1cbda transparent; scrollbar-width: thin;
   background-color: #ecf0f7;
   background-image: radial-gradient(#e0e6f1 0.8px, transparent 0.8px);
   background-size: 19px 19px;
 }
 .viewer:focus { outline: 0; }
+.viewer .page-surface, .viewer .textLayer { cursor: grab; }
+.viewer .textLayer span { cursor: text; }
+.viewer.is-dragging, .viewer.is-dragging * { cursor: grabbing !important; user-select: none !important; }
 .pages {
   display: flex; align-items: center; min-width: min-content; min-height: 100%;
   gap: 40px; padding: 34px 40px 52px;
@@ -312,6 +315,13 @@ input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer
 }
 .sidebar-section-heading span:last-child { color: #8290a4; font-weight: 650; }
 .workspace-list { display: flex; flex-direction: column; gap: 5px; overflow: auto; max-height: min(31dvh, 255px); flex: 0 1 auto; scrollbar-width: thin; }
+.workspace-row { display: flex; align-items: stretch; gap: 5px; }
+.workspace-row .workspace-choice { flex: 1; min-width: 0; width: 0; }
+.workspace-delete {
+  flex: 0 0 33px; border: 1px solid #e6eaf2; border-radius: 9px;
+  background: #fff; color: #a1aabc; font-size: 18px; line-height: 1;
+}
+.workspace-delete:hover { background: #fff0f2; color: #c3425b; border-color: #f4c7cf; }
 .workspace-choice {
   width: 100%; display: flex; align-items: center; gap: 10px;
   border: 1px solid transparent; border-radius: 9px; text-align: left;
@@ -350,6 +360,12 @@ input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer
 .replace-dialog .dialog-top { margin-bottom: 12px; }
 .replace-dialog p { margin: 0 0 24px; color: #66768d; font-size: 13px; line-height: 1.65; }
 .replace-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.danger-button {
+  border: 1px solid #c43f52; background: #cc465d; color: #fff;
+  border-radius: 9px; padding: 9px 16px; font-size: 12px; font-weight: 750;
+}
+.danger-button:hover:not(:disabled) { background: #b92c45; }
+.danger-button:disabled { opacity: .55; cursor: wait; }
 .secondary-button { border: 1px solid #dce3ef; background: #f7f9fc; border-radius: 9px; padding: 9px 16px; font-size: 12px; font-weight: 700; }
 .secondary-button:hover { background: #edf2f9; }
 
