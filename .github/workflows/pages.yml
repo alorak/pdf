@@ -37,6 +37,8 @@ jobs:
         run: npm test
       - name: Production build
         run: npm run build
+      - name: Verify GitHub Pages CSS and JS
+        run: node scripts/check-pages.mjs
       - name: Set up Pages
         uses: actions/configure-pages@v5
       - name: Upload website
