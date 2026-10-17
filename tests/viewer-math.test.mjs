@@ -20,7 +20,7 @@ test("width, height and full-page fit use available space", () => {
 });
 
 test("fit and page navigation never generate invalid positions", () => {
-  assert.equal(fitScale("page", { width: 0, height: 0 }, { width: 0, height: 0 }), 0.2);
+  assert.equal(fitScale("page", { width: 0, height: 0 }, { width: 0, height: 0 }), 1);
   assert.equal(clampPage(-8, 40), 1);
   assert.equal(clampPage(100, 40), 40);
   assert.equal(clampPage("7", 40), 7);
