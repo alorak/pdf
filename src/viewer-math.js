@@ -28,7 +28,8 @@ export function clampPage(page, count) {
 export function chooseDeviceScale(cssWidth, cssHeight, dpr = 1, maxPixels = 12_000_000) {
   const pixels = Math.max(1, cssWidth * cssHeight);
   const density = Math.sqrt(maxPixels / pixels);
-  return Math.max(0.1, Math.min(2, Math.max(1, dpr), density));
+  const maxEdge = 16_384;
+  return Math.max(0.001, Math.min(2, Math.max(1, dpr), density, maxEdge / Math.max(1, cssWidth), maxEdge / Math.max(1, cssHeight)));
 }
 
 export function readableSize(bytes) {
