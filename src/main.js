@@ -5,7 +5,8 @@ import {
   WORKSPACE_STORAGE_KEY, MAX_WORKSPACES, MAX_SAVED_TEXTS,
   initialWorkspaces, readWorkspaces, activeWorkspace, addWorkspace, switchWorkspace,
   setWorkspaceFile, clearActiveWorkspace, removeWorkspace, saveSelectedText, savePageBookmark,
-  removeSelectedText, bookmarkedPageNumbers, MAX_HIGHLIGHT_RECTS,
+  removeSelectedText, removePageBookmarks, bookmarkedPageNumbers, orderedBookmarkedPageNumbers,
+  reorderBookmarkedPage, moveBookmarkedPage, MAX_HIGHLIGHT_RECTS,
 } from "./workspace-store.js";
 import { saveWorkspacePdf, loadWorkspacePdf, deleteWorkspacePdf } from "./pdf-storage.js";
 import "./style.css";
@@ -19,7 +20,7 @@ const ui = {
   activeWorkspaceLabel: $("activeWorkspaceLabel"), workspaceSidebar: $("workspaceSidebar"),
   sidebarBackdrop: $("sidebarBackdrop"), closeSidebar: $("closeSidebar"),
   workspaceList: $("workspaceList"), workspaceCount: $("workspaceCount"),
-  createWorkspace: $("createWorkspace"), savedTexts: $("savedTexts"), savedCount: $("savedCount"),
+  createWorkspace: $("createWorkspace"),
   replaceDialog: $("replaceDialog"), replaceWorkspaceName: $("replaceWorkspaceName"),
   deleteWorkspaceDialog: $("deleteWorkspaceDialog"), deleteWorkspaceName: $("deleteWorkspaceName"),
   cancelDeleteWorkspace: $("cancelDeleteWorkspace"), cancelDeleteWorkspaceTop: $("cancelDeleteWorkspaceTop"),
@@ -27,13 +28,14 @@ const ui = {
   cancelReplace: $("cancelReplace"), cancelReplaceTop: $("cancelReplaceTop"),
   confirmReplace: $("confirmReplace"), selectionMenu: $("selectionMenu"),
   copySelection: $("copySelection"), saveSelection: $("saveSelection"), bookmarkPage: $("bookmarkPage"),
+  moveBookmarkPrevious: $("moveBookmarkPrevious"), moveBookmarkNext: $("moveBookmarkNext"),
+  removeBookmarkedPage: $("removeBookmarkedPage"), removeHighlight: $("removeHighlight"),
   fileLabel: $("fileLabel"), prev: $("prevPage"), next: $("nextPage"),
   pageInput: $("pageInput"), pageTotal: $("pageTotal"), zoomOut: $("zoomOut"),
   zoomIn: $("zoomIn"), zoomRange: $("zoomRange"), zoomInput: $("zoomInput"),
   fitButtons: [...document.querySelectorAll("[data-fit]")],
   direction: $("directionButton"), thumbnails: $("thumbsToggle"),
-  settings: $("settingsButton"), dialog: $("settingsDialog"), closeSettings: $("closeSettings"),
-  doneSettings: $("doneSettings"), viewer: $("viewer"), pages: $("pages"),
+  viewer: $("viewer"), pages: $("pages"),
   empty: $("emptyState"), thumbPane: $("thumbsPane"), thumbList: $("thumbList"),
   thumbPages: $("thumbPages"), thumbBookmarks: $("thumbBookmarks"), thumbEmpty: $("thumbEmpty"),
   thumbPagesCount: $("thumbPagesCount"), thumbBookmarksCount: $("thumbBookmarksCount"),
@@ -53,9 +55,9 @@ const state = {
   pageCount: 0, current: 1, scale: 1, fit: "width",
   orientation: settings.orientation, thumbPosition: settings.thumbPosition, thumbsVisible: settings.thumbsVisible,
   thumbnailMode: "pages",
-  dimensions: [], shells: [], thumbs: [],
+  dimensions: [], shells: [], thumbs: [], thumbEntries: [],
   visible: new Set(), pending: new Set(), rendered: new Map(),
-  renderTasks: new Map(), textLayers: new Map(), activeRenders: 0, observer: null,
+  renderTasks: new Map(), textLayers: new Map(), highlightRegions: new Map(), activeRenders: 0, observer: null,
   thumbVisible: new Set(), thumbPending: new Set(), thumbRendered: new Set(),
   thumbTasks: new Map(), activeThumbRenders: 0, thumbObserver: null,
   scrollFrame: 0, toastTimer: 0,
@@ -68,6 +70,9 @@ let pendingDropFile = null;
 let pickingNewFile = false;
 let contextSelection = null;
 let contextPageBookmark = null;
+let hoveredHighlightNoteId = null;
+let draggingBookmarkPage = null;
+let touchBookmarkDrag = null;
 let mousePan = null;
 let touchPinch = null;
 let trackpadGestureScale = null;
@@ -89,6 +94,7 @@ function updateWorkspaces(next) {
   if (next === workspaces) return;
   workspaces = next;
   persistWorkspaces();
+  hideHighlightRemove();
   renderWorkspaceSidebar();
   refreshVisibleHighlights();
 }
@@ -97,7 +103,6 @@ function renderWorkspaceSidebar() {
   const active = activeWorkspace(workspaces);
   ui.activeWorkspaceLabel.textContent = active.name;
   ui.workspaceCount.textContent = `${workspaces.items.length} / ${MAX_WORKSPACES}`;
-  ui.savedCount.textContent = String(active.notes.length);
   ui.createWorkspace.disabled = workspaces.items.length >= MAX_WORKSPACES;
   ui.createWorkspace.title = ui.createWorkspace.disabled ? "En fazla 10 workspace oluşturulabilir" : "Yeni çalışma alanı";
   updateThumbnailFilter();
@@ -131,44 +136,7 @@ function renderWorkspaceSidebar() {
     row.append(button, remove);
     ui.workspaceList.append(row);
   }
-  ui.savedTexts.replaceChildren();
-  if (!active.notes.length) {
-    const empty = document.createElement("div");
-    empty.className = "saved-empty";
-    empty.textContent = "PDF'den metin seçebilir veya sayfa küçük resmine sağ tıklayıp sayfayı yer imlerine ekleyebilirsin.";
-    ui.savedTexts.append(empty);
-    return;
-  }
-  for (const note of [...active.notes].reverse()) {
-    const card = document.createElement("article");
-    card.className = "saved-card" + (note.kind === "page" ? " page-bookmark" : "");
-    const quote = document.createElement("p");
-    quote.textContent = note.kind === "page" ? `📑 Sayfa ${note.page}` : note.text;
-    quote.title = quote.textContent;
-    const footer = document.createElement("div");
-    footer.className = "saved-card-footer";
-    const source = document.createElement("small");
-    const parts = [note.fileName, note.page ? `s. ${note.page}` : ""].filter(Boolean);
-    source.textContent = parts.join(" · ") || "Kaydedilen metin";
-    source.title = note.savedAt ? new Date(note.savedAt).toLocaleString("tr-TR") : "";
-    footer.append(source);
-    if (note.kind !== "page") {
-      const copy = document.createElement("button");
-      copy.type = "button";
-      copy.textContent = "Kopyala";
-      copy.addEventListener("click", () => { void copyText(note.text); });
-      footer.append(copy);
-    }
-    const remove = document.createElement("button");
-    remove.type = "button";
-    remove.className = "delete-saved";
-    remove.textContent = "Sil";
-    remove.setAttribute("aria-label", note.kind === "page" ? "Sayfa yer imini sil" : "Kayıtlı metni sil");
-    remove.addEventListener("click", () => updateWorkspaces(removeSelectedText(workspaces, note.id)));
-    footer.append(remove);
-    card.append(quote, footer);
-    ui.savedTexts.append(card);
-  }
+
 }
 
 function openSidebar() {
@@ -343,6 +311,7 @@ function refreshPageHighlights(index) {
   const surface = state.shells[index]?.querySelector(".page-surface");
   if (!surface) return;
   surface.querySelector(".page-highlight-layer")?.remove();
+  state.highlightRegions.delete(index);
   const workspace = activeWorkspace(workspaces);
   if (!state.doc || !workspace?.fileName) return;
   const notes = workspace.notes.filter((note) =>
@@ -352,9 +321,11 @@ function refreshPageHighlights(index) {
   const highlights = document.createElement("div");
   highlights.className = "page-highlight-layer";
   highlights.setAttribute("aria-hidden", "true");
+  const regions = [];
   for (const note of notes) {
     const rects = note.rects?.length
       ? note.rects : findLegacyHighlightRects(layer, surface, note.text);
+    if (rects.length) regions.push({ noteId: note.id, rects });
     for (const [x, y, width, height] of rects) {
       const block = document.createElement("span");
       block.className = "page-highlight";
@@ -365,6 +336,7 @@ function refreshPageHighlights(index) {
       highlights.append(block);
     }
   }
+  if (regions.length) state.highlightRegions.set(index, regions);
   if (highlights.childElementCount) surface.append(highlights);
 }
 
@@ -372,6 +344,45 @@ function refreshVisibleHighlights() {
   for (const [index, epoch] of state.rendered) {
     if (epoch === state.renderEpoch) refreshPageHighlights(index);
   }
+}
+
+function hideHighlightRemove() {
+  ui.removeHighlight.hidden = true;
+  hoveredHighlightNoteId = null;
+}
+
+function handleHighlightHover(event) {
+  if (!state.doc || mousePan || event.pointerType === "touch") { hideHighlightRemove(); return; }
+  if (ui.removeHighlight.contains(event.target)) return;
+  if (!ui.removeHighlight.hidden) {
+    const rect = ui.removeHighlight.getBoundingClientRect();
+    if (event.clientX >= rect.left - 7 && event.clientX <= rect.right + 7
+      && event.clientY >= rect.top - 7 && event.clientY <= rect.bottom + 7) return;
+  }
+  const shell = event.target instanceof Element ? event.target.closest(".page-shell") : null;
+  const index = shell ? Number(shell.dataset.index) : -1;
+  const surface = shell?.querySelector(".page-surface");
+  const bounds = surface?.getBoundingClientRect();
+  const regions = state.highlightRegions.get(index) || [];
+  if (!bounds || !regions.length) { hideHighlightRemove(); return; }
+  for (let i = regions.length - 1; i >= 0; i--) {
+    const region = regions[i];
+    for (const [x, y, width, height] of region.rects) {
+      const left = bounds.left + x * bounds.width;
+      const top = bounds.top + y * bounds.height;
+      const right = left + width * bounds.width;
+      const bottom = top + height * bounds.height;
+      if (event.clientX < left - 2 || event.clientX > right + 2
+        || event.clientY < top - 2 || event.clientY > bottom + 2) continue;
+      hoveredHighlightNoteId = region.noteId;
+      const viewer = ui.viewer.getBoundingClientRect();
+      ui.removeHighlight.style.left = `${Math.max(viewer.left + 5, Math.min(right - 9, viewer.right - 32))}px`;
+      ui.removeHighlight.style.top = `${Math.max(viewer.top + 5, Math.min(top - 12, viewer.bottom - 32))}px`;
+      ui.removeHighlight.hidden = false;
+      return;
+    }
+  }
+  hideHighlightRemove();
 }
 
 function selectedPdfText() {
@@ -402,9 +413,23 @@ function hideSelectionMenu() {
 
 function showSelectionMenu(mode, clientX, clientY) {
   const pageMode = mode === "page";
+  const bookmarkView = pageMode && state.thumbnailMode === "bookmarks";
   ui.copySelection.hidden = pageMode;
   ui.saveSelection.hidden = pageMode;
-  ui.bookmarkPage.hidden = !pageMode;
+  ui.bookmarkPage.hidden = !pageMode || bookmarkView;
+  ui.removeBookmarkedPage.hidden = !bookmarkView;
+  ui.moveBookmarkPrevious.hidden = !bookmarkView;
+  ui.moveBookmarkNext.hidden = !bookmarkView;
+  if (bookmarkView) {
+    const workspace = activeWorkspace(workspaces);
+    const order = orderedBookmarkedPageNumbers(workspace, workspace.fileName, state.pageCount);
+    const at = order.indexOf(contextPageBookmark);
+    ui.moveBookmarkPrevious.disabled = at <= 0;
+    ui.moveBookmarkNext.disabled = at < 0 || at >= order.length - 1;
+    const vertical = state.thumbPosition === "left";
+    ui.moveBookmarkPrevious.textContent = vertical ? "↑ Yukarı taşı" : "← Sola taşı";
+    ui.moveBookmarkNext.textContent = vertical ? "↓ Aşağı taşı" : "Sağa taşı →";
+  }
   ui.selectionMenu.setAttribute("aria-label", pageMode ? "Sayfa yer imi işlemleri" : "Seçili metin işlemleri");
   ui.selectionMenu.hidden = false;
   const width = ui.selectionMenu.offsetWidth;
@@ -440,6 +465,24 @@ function togglePageBookmark() {
   }
   updateWorkspaces(next);
   showToast(`Sayfa ${page} yer imlerine eklendi.`);
+}
+
+function removeBookmarkedPageFromWorkspace(page) {
+  const workspace = activeWorkspace(workspaces);
+  const next = removePageBookmarks(workspaces, workspace.fileName, page);
+  hideSelectionMenu();
+  if (next === workspaces) return;
+  updateWorkspaces(next);
+  hideHighlightRemove();
+  showToast(`Sayfa ${page} ve üzerindeki metin yer imleri kaldırıldı.`);
+}
+
+function moveContextBookmark(direction) {
+  const page = contextPageBookmark;
+  hideSelectionMenu();
+  if (!state.doc || !Number.isSafeInteger(page)) return;
+  const workspace = activeWorkspace(workspaces);
+  updateWorkspaces(moveBookmarkedPage(workspaces, workspace.fileName, state.pageCount, page, direction));
 }
 
 async function copyText(value) {
@@ -526,8 +569,10 @@ function setPageSize(index) {
 
 function updateThumbnailFilter(resetScroll = false) {
   const workspace = activeWorkspace(workspaces);
-  const bookmarked = new Set(bookmarkedPageNumbers(workspace, workspace?.fileName, state.doc ? state.pageCount : 0));
+  const ordered = orderedBookmarkedPageNumbers(workspace, workspace?.fileName, state.doc ? state.pageCount : 0);
+  const bookmarked = new Set(ordered);
   const onlyBookmarks = state.thumbnailMode === "bookmarks";
+  ui.app.classList.toggle("bookmark-mode", onlyBookmarks);
   ui.thumbPages.classList.toggle("active", !onlyBookmarks);
   ui.thumbPages.setAttribute("aria-pressed", String(!onlyBookmarks));
   ui.thumbBookmarks.classList.toggle("active", onlyBookmarks);
@@ -535,10 +580,23 @@ function updateThumbnailFilter(resetScroll = false) {
   ui.thumbPagesCount.textContent = String(state.pageCount);
   ui.thumbBookmarksCount.textContent = String(bookmarked.size);
   for (let index = 0; index < state.thumbs.length; index++) {
-    state.thumbs[index].hidden = onlyBookmarks && !bookmarked.has(index + 1);
-    state.thumbs[index].classList.toggle("bookmarked", bookmarked.has(index + 1));
+    const isBookmarked = bookmarked.has(index + 1);
+    state.thumbs[index].classList.toggle("bookmarked", isBookmarked);
+    state.thumbEntries[index].draggable = onlyBookmarks && isBookmarked;
+    state.thumbEntries[index].querySelector(".thumb-remove").hidden = !onlyBookmarks || !isBookmarked;
+    state.thumbEntries[index].querySelector(".thumb-drag-handle").hidden = !onlyBookmarks || !isBookmarked;
   }
-  ui.thumbEmpty.hidden = !onlyBookmarks || bookmarked.size > 0 || !state.doc;
+  // Only bookmarked entries are attached in this view: no hidden full-page list
+  // remains in the strip. Switching to Pages restores the natural PDF order.
+  const visiblePages = onlyBookmarks
+    ? ordered : Array.from({ length: state.pageCount }, (_, index) => index + 1);
+  const fragment = document.createDocumentFragment();
+  for (const page of visiblePages) {
+    const entry = state.thumbEntries[page - 1];
+    if (entry) fragment.append(entry);
+  }
+  ui.thumbList.replaceChildren(fragment, ui.thumbEmpty);
+  ui.thumbEmpty.hidden = !onlyBookmarks || ordered.length > 0 || !state.doc;
   if (resetScroll) {
     ui.thumbList.scrollTop = 0;
     ui.thumbList.scrollLeft = 0;
@@ -548,6 +606,9 @@ function updateThumbnailFilter(resetScroll = false) {
 function setThumbnailMode(mode) {
   if (!["pages", "bookmarks"].includes(mode) || state.thumbnailMode === mode) return;
   state.thumbnailMode = mode;
+  hideSelectionMenu();
+  clearBookmarkDrag();
+  touchBookmarkDrag = null;
   updateThumbnailFilter(true);
 }
 
@@ -562,9 +623,11 @@ function updateSettingsView() {
   const nextDirection = state.orientation === "vertical" ? "Yatay akışa geç" : "Dikey akışa geç";
   ui.direction.title = nextDirection;
   ui.direction.setAttribute("aria-label", nextDirection);
-  ui.thumbnails.setAttribute("aria-pressed", String(state.thumbsVisible));
-  document.querySelectorAll('input[name="thumbPosition"]').forEach((input) => { input.checked = input.value === state.thumbPosition; });
-  document.querySelectorAll('input[name="scrollDirection"]').forEach((input) => { input.checked = input.value === state.orientation; });
+  const nextPosition = !state.thumbsVisible ? "left" : state.thumbPosition === "left" ? "bottom" : "hidden";
+  const title = nextPosition === "left" ? "Küçük resimleri solda göster"
+    : nextPosition === "bottom" ? "Küçük resimleri altta göster" : "Küçük resimleri gizle";
+  ui.thumbnails.title = title;
+  ui.thumbnails.setAttribute("aria-label", title);
 }
 
 function updateToolbar() {
@@ -595,7 +658,7 @@ function setCurrentPage(index, scrollThumbnail = true) {
   const thumb = state.thumbs[page - 1];
   if (thumb) {
     thumb.classList.add("active");
-    if (scrollThumbnail && state.thumbsVisible && !thumb.hidden) thumb.scrollIntoView({ block: "nearest", inline: "nearest" });
+    if (scrollThumbnail && state.thumbsVisible && thumb.isConnected) thumb.scrollIntoView({ block: "nearest", inline: "nearest" });
   }
   updateToolbar();
 }
@@ -686,16 +749,17 @@ function updateOrientation(direction) {
   }
 }
 
-function updateThumbPosition(position) {
-  if (!["left", "bottom"].includes(position) || position === state.thumbPosition) return;
-  state.thumbPosition = position;
-  updateSettingsView();
-  saveSettings();
-  if (state.doc && state.fit !== "custom") requestAnimationFrame(() => applyFit(state.fit));
-}
-
-function toggleThumbnails() {
-  state.thumbsVisible = !state.thumbsVisible;
+function cycleThumbnails() {
+  // Left -> Bottom -> Hidden -> Left. Preferences remain local to this browser.
+  if (!state.thumbsVisible) {
+    state.thumbPosition = "left";
+    state.thumbsVisible = true;
+  } else if (state.thumbPosition === "left") {
+    state.thumbPosition = "bottom";
+  } else {
+    state.thumbsVisible = false;
+  }
+  hideSelectionMenu();
   updateSettingsView();
   saveSettings();
   if (state.doc && state.fit !== "custom") requestAnimationFrame(() => applyFit(state.fit));
@@ -733,6 +797,11 @@ function cancelAllWork() {
   state.dimensions = [];
   state.shells = [];
   state.thumbs = [];
+  state.thumbEntries = [];
+  state.highlightRegions.clear();
+  draggingBookmarkPage = null;
+  touchBookmarkDrag = null;
+  hideHighlightRemove();
   ui.pages.replaceChildren();
   ui.thumbList.replaceChildren(ui.thumbEmpty);
   ui.thumbEmpty.hidden = true;
@@ -754,6 +823,7 @@ function createPageElements() {
   const thumbFragment = document.createDocumentFragment();
   state.shells = new Array(state.pageCount);
   state.thumbs = new Array(state.pageCount);
+  state.thumbEntries = new Array(state.pageCount);
   for (let index = 0; index < state.pageCount; index++) {
     const shell = document.createElement("article");
     shell.className = "page-shell";
@@ -778,7 +848,37 @@ function createPageElements() {
     number.textContent = String(index + 1);
     thumb.append(preview, number);
     thumb.addEventListener("click", () => goToPage(index + 1));
-    thumb.addEventListener("contextmenu", (event) => {
+    const entry = document.createElement("div");
+    entry.className = "thumb-entry";
+    entry.dataset.index = String(index);
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "thumb-remove";
+    remove.textContent = "×";
+    remove.title = `Sayfa ${index + 1} yer imini kaldır`;
+    remove.setAttribute("aria-label", remove.title);
+    remove.hidden = true;
+    remove.addEventListener("click", (event) => {
+      event.stopPropagation();
+      removeBookmarkedPageFromWorkspace(index + 1);
+    });
+    const grip = document.createElement("button");
+    grip.type = "button";
+    grip.className = "thumb-drag-handle";
+    grip.textContent = "⋮⋮";
+    grip.title = `Sayfa ${index + 1} sırasını sürükle; klavyede ok tuşlarıyla taşı`;
+    grip.setAttribute("aria-label", grip.title);
+    grip.hidden = true;
+    grip.addEventListener("keydown", (event) => {
+      const direction = ["ArrowLeft", "ArrowUp"].includes(event.key) ? -1
+        : ["ArrowRight", "ArrowDown"].includes(event.key) ? 1 : 0;
+      if (!direction || state.thumbnailMode !== "bookmarks") return;
+      event.preventDefault();
+      const workspace = activeWorkspace(workspaces);
+      updateWorkspaces(moveBookmarkedPage(workspaces, workspace.fileName, state.pageCount, index + 1, direction));
+    });
+    entry.append(thumb, remove, grip);
+    entry.addEventListener("contextmenu", (event) => {
       if (!state.doc) return;
       event.preventDefault();
       contextSelection = null;
@@ -789,7 +889,8 @@ function createPageElements() {
       showSelectionMenu("page", event.clientX || rect.left + rect.width / 2, event.clientY || rect.top + 20);
     });
     state.thumbs[index] = thumb;
-    thumbFragment.append(thumb);
+    state.thumbEntries[index] = entry;
+    thumbFragment.append(entry);
   }
   ui.pages.replaceChildren(pageFragment);
   ui.thumbList.replaceChildren(thumbFragment, ui.thumbEmpty);
@@ -811,6 +912,7 @@ function initializeObservers() {
         state.renderTasks.get(index)?.cancel();
         state.textLayers.get(index)?.cancel();
         state.textLayers.delete(index);
+        state.highlightRegions.delete(index);
         entry.target.querySelector(".page-surface")?.replaceChildren();
         state.rendered.delete(index);
       }
@@ -1180,6 +1282,20 @@ ui.copySelection.addEventListener("click", () => {
 });
 ui.saveSelection.addEventListener("click", saveContextText);
 ui.bookmarkPage.addEventListener("click", togglePageBookmark);
+ui.moveBookmarkPrevious.addEventListener("click", () => moveContextBookmark(-1));
+ui.moveBookmarkNext.addEventListener("click", () => moveContextBookmark(1));
+ui.removeBookmarkedPage.addEventListener("click", () => {
+  const page = contextPageBookmark;
+  if (page) removeBookmarkedPageFromWorkspace(page);
+});
+ui.removeHighlight.addEventListener("click", () => {
+  const noteId = hoveredHighlightNoteId;
+  hideHighlightRemove();
+  if (noteId) {
+    updateWorkspaces(removeSelectedText(workspaces, noteId));
+    showToast("Metin vurgusu yer imlerinden kaldırıldı.");
+  }
+});
 document.addEventListener("pointerdown", (event) => {
   if (!ui.selectionMenu.contains(event.target)) hideSelectionMenu();
 });
@@ -1198,27 +1314,98 @@ ui.zoomInput.addEventListener("keydown", (event) => {
 });
 for (const button of ui.fitButtons) button.addEventListener("click", () => applyFit(button.dataset.fit));
 ui.direction.addEventListener("click", () => updateOrientation(state.orientation === "vertical" ? "horizontal" : "vertical"));
-ui.thumbnails.addEventListener("click", toggleThumbnails);
+ui.thumbnails.addEventListener("click", cycleThumbnails);
 ui.thumbPages.addEventListener("click", () => setThumbnailMode("pages"));
 ui.thumbBookmarks.addEventListener("click", () => setThumbnailMode("bookmarks"));
-ui.settings.addEventListener("click", () => ui.dialog.showModal());
-ui.closeSettings.addEventListener("click", () => ui.dialog.close());
-ui.doneSettings.addEventListener("click", () => ui.dialog.close());
-ui.dialog.addEventListener("click", (event) => { if (event.target === ui.dialog) ui.dialog.close(); });
-document.querySelectorAll('input[name="thumbPosition"]').forEach((input) => input.addEventListener("change", () => {
-  if (input.checked) updateThumbPosition(input.value);
-}));
-document.querySelectorAll('input[name="scrollDirection"]').forEach((input) => input.addEventListener("change", () => {
-  if (input.checked) updateOrientation(input.value);
-}));
 
 ui.viewer.addEventListener("scroll", () => { scheduleScrollUpdate(); hideSelectionMenu(); }, { passive: true });
 ui.thumbList.addEventListener("scroll", hideSelectionMenu, { passive: true });
+ui.viewer.addEventListener("pointermove", handleHighlightHover);
+ui.viewer.addEventListener("pointerleave", hideHighlightRemove);
+ui.viewer.addEventListener("scroll", hideHighlightRemove, { passive: true });
+
+// Native drag/drop reorders bookmarks. Pages mode is always in PDF page order.
+function reorderBookmarkAt(source, entry, clientX, clientY) {
+  const target = entry ? Number(entry.dataset.index) + 1 : null;
+  if (!source || !target || source === target || state.thumbnailMode !== "bookmarks") return;
+  const bounds = entry.getBoundingClientRect();
+  const after = state.thumbPosition === "bottom"
+    ? clientX > bounds.left + bounds.width / 2
+    : clientY > bounds.top + bounds.height / 2;
+  const workspace = activeWorkspace(workspaces);
+  const next = reorderBookmarkedPage(workspaces, workspace.fileName, state.pageCount, source, target, after);
+  if (next !== workspaces) updateWorkspaces(next);
+}
+function clearBookmarkDrag() {
+  draggingBookmarkPage = null;
+  for (const entry of state.thumbEntries) entry.classList.remove("dragging", "drag-over");
+}
+ui.thumbList.addEventListener("dragstart", (event) => {
+  const entry = event.target instanceof Element ? event.target.closest(".thumb-entry") : null;
+  if (state.thumbnailMode !== "bookmarks" || !entry) { event.preventDefault(); return; }
+  draggingBookmarkPage = Number(entry.dataset.index) + 1;
+  entry.classList.add("dragging");
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", String(draggingBookmarkPage));
+  }
+  hideSelectionMenu();
+});
+ui.thumbList.addEventListener("dragover", (event) => {
+  const entry = event.target instanceof Element ? event.target.closest(".thumb-entry") : null;
+  if (state.thumbnailMode !== "bookmarks" || !draggingBookmarkPage || !entry) return;
+  event.preventDefault();
+  if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+  for (const node of state.thumbEntries) node.classList.remove("drag-over");
+  if (Number(entry.dataset.index) + 1 !== draggingBookmarkPage) entry.classList.add("drag-over");
+});
+ui.thumbList.addEventListener("drop", (event) => {
+  if (state.thumbnailMode !== "bookmarks" || !draggingBookmarkPage) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const entry = event.target instanceof Element ? event.target.closest(".thumb-entry") : null;
+  reorderBookmarkAt(draggingBookmarkPage, entry, event.clientX, event.clientY);
+  clearBookmarkDrag();
+});
+ui.thumbList.addEventListener("dragend", clearBookmarkDrag);
+
+// Touch/pen reorder uses a dedicated grip, keeping one-finger list scrolling natural.
+ui.thumbList.addEventListener("pointerdown", (event) => {
+  const grip = event.target instanceof Element ? event.target.closest(".thumb-drag-handle") : null;
+  if (!grip || state.thumbnailMode !== "bookmarks" || event.pointerType === "mouse") return;
+  const entry = grip.closest(".thumb-entry");
+  if (!entry) return;
+  event.preventDefault();
+  event.stopPropagation();
+  hideSelectionMenu();
+  touchBookmarkDrag = { pointerId: event.pointerId, source: Number(entry.dataset.index) + 1 };
+  entry.classList.add("dragging");
+  grip.setPointerCapture(event.pointerId);
+});
+ui.thumbList.addEventListener("pointermove", (event) => {
+  if (!touchBookmarkDrag || touchBookmarkDrag.pointerId !== event.pointerId) return;
+  event.preventDefault();
+  const hovered = document.elementFromPoint(event.clientX, event.clientY)?.closest?.(".thumb-entry");
+  for (const entry of state.thumbEntries) entry.classList.remove("drag-over");
+  if (hovered && Number(hovered.dataset.index) + 1 !== touchBookmarkDrag.source) hovered.classList.add("drag-over");
+});
+function finishTouchBookmarkDrag(event) {
+  if (!touchBookmarkDrag || touchBookmarkDrag.pointerId !== event.pointerId) return;
+  const source = touchBookmarkDrag.source;
+  touchBookmarkDrag = null;
+  if (event.type === "pointerup") {
+    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest?.(".thumb-entry");
+    reorderBookmarkAt(source, target, event.clientX, event.clientY);
+  }
+  clearBookmarkDrag();
+}
+ui.thumbList.addEventListener("pointerup", finishTouchBookmarkDrag);
+ui.thumbList.addEventListener("pointercancel", finishTouchBookmarkDrag);
 
 // Drag the PDF with a mouse from blank areas; clicks on actual text still select it.
 ui.viewer.addEventListener("pointerdown", (event) => {
   if (!state.doc || event.pointerType !== "mouse" || event.button !== 0) return;
-  if (event.target instanceof Element && event.target.closest(".textLayer span")) return;
+  if (event.target instanceof Element && event.target.closest(".textLayer span, .highlight-remove")) return;
   mousePan = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false };
   ui.viewer.setPointerCapture(event.pointerId);
 });
@@ -1309,7 +1496,7 @@ document.addEventListener("keydown", (event) => {
     hideSelectionMenu();
     if (ui.workspaceSidebar.classList.contains("is-open")) closeSidebar();
   }
-  if (!state.doc || ui.dialog.open || ui.replaceDialog.open || event.altKey || modifier) return;
+  if (!state.doc || ui.replaceDialog.open || event.altKey || modifier) return;
   const tag = document.activeElement?.tagName;
   if (["INPUT", "TEXTAREA", "SELECT"].includes(tag)) return;
   if (event.key === "+" || event.key === "=") { event.preventDefault(); stepZoom(1); }
@@ -1336,6 +1523,7 @@ window.addEventListener("dragleave", () => {
   if (!dragDepth) ui.dropOverlay.hidden = true;
 });
 window.addEventListener("drop", (event) => {
+  if (![...event.dataTransfer?.types || []].includes("Files")) return;
   event.preventDefault();
   dragDepth = 0;
   ui.dropOverlay.hidden = true;
