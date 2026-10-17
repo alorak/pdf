@@ -4,7 +4,7 @@ import { clampPage, clampScale, chooseDeviceScale, fitScale, MIN_SCALE, MAX_SCAL
 import {
   WORKSPACE_STORAGE_KEY, MAX_WORKSPACES, MAX_SAVED_TEXTS,
   initialWorkspaces, readWorkspaces, activeWorkspace, addWorkspace, switchWorkspace,
-  setWorkspaceFile, clearActiveWorkspace, saveSelectedText, removeSelectedText,
+  setWorkspaceFile, clearActiveWorkspace, saveSelectedText, removeSelectedText, bookmarkedPageNumbers,
 } from "./workspace-store.js";
 import "./style.css";
 
@@ -30,6 +30,7 @@ const ui = {
   settings: $("settingsButton"), dialog: $("settingsDialog"), closeSettings: $("closeSettings"),
   doneSettings: $("doneSettings"), viewer: $("viewer"), pages: $("pages"),
   empty: $("emptyState"), thumbPane: $("thumbsPane"), thumbList: $("thumbList"),
+  thumbPages: $("thumbPages"), thumbBookmarks: $("thumbBookmarks"), thumbEmpty: $("thumbEmpty"),
   thumbCount: $("thumbCount"), loading: $("loading"), loadingText: $("loadingText"),
   status: $("statusText"),
   toast: $("toast"), dropOverlay: $("dropOverlay"),
@@ -45,6 +46,7 @@ const state = {
   doc: null, loadingTask: null, generation: 0, renderEpoch: 0, thumbEpoch: 0,
   pageCount: 0, current: 1, scale: 1, fit: "width",
   orientation: settings.orientation, thumbPosition: settings.thumbPosition, thumbsVisible: settings.thumbsVisible,
+  thumbnailMode: "pages",
   dimensions: [], shells: [], thumbs: [],
   visible: new Set(), pending: new Set(), rendered: new Map(),
   renderTasks: new Map(), textLayers: new Map(), activeRenders: 0, observer: null,
@@ -86,6 +88,7 @@ function renderWorkspaceSidebar() {
   ui.savedCount.textContent = String(active.notes.length);
   ui.createWorkspace.disabled = workspaces.items.length >= MAX_WORKSPACES;
   ui.createWorkspace.title = ui.createWorkspace.disabled ? "En fazla 10 workspace oluşturulabilir" : "Yeni çalışma alanı";
+  updateThumbnailFilter();
   ui.workspaceList.replaceChildren();
   for (const item of workspaces.items) {
     const button = document.createElement("button");
@@ -284,6 +287,31 @@ function setPageSize(index) {
   shell.style.height = `${Math.ceil(height * state.scale) + 2}px`;
 }
 
+function updateThumbnailFilter(resetScroll = false) {
+  const workspace = activeWorkspace(workspaces);
+  const bookmarked = new Set(bookmarkedPageNumbers(workspace, workspace?.fileName, state.doc ? state.pageCount : 0));
+  const onlyBookmarks = state.thumbnailMode === "bookmarks";
+  ui.thumbPages.classList.toggle("active", !onlyBookmarks);
+  ui.thumbPages.setAttribute("aria-pressed", String(!onlyBookmarks));
+  ui.thumbBookmarks.classList.toggle("active", onlyBookmarks);
+  ui.thumbBookmarks.setAttribute("aria-pressed", String(onlyBookmarks));
+  ui.thumbCount.textContent = String(onlyBookmarks ? bookmarked.size : state.pageCount);
+  for (let index = 0; index < state.thumbs.length; index++) {
+    state.thumbs[index].hidden = onlyBookmarks && !bookmarked.has(index + 1);
+  }
+  ui.thumbEmpty.hidden = !onlyBookmarks || bookmarked.size > 0 || !state.doc;
+  if (resetScroll) {
+    ui.thumbList.scrollTop = 0;
+    ui.thumbList.scrollLeft = 0;
+  }
+}
+
+function setThumbnailMode(mode) {
+  if (!["pages", "bookmarks"].includes(mode) || state.thumbnailMode === mode) return;
+  state.thumbnailMode = mode;
+  updateThumbnailFilter(true);
+}
+
 function updateSettingsView() {
   ui.app.classList.toggle("thumbs-left", state.thumbPosition === "left");
   ui.app.classList.toggle("thumbs-bottom", state.thumbPosition === "bottom");
@@ -328,7 +356,7 @@ function setCurrentPage(index, scrollThumbnail = true) {
   const thumb = state.thumbs[page - 1];
   if (thumb) {
     thumb.classList.add("active");
-    if (scrollThumbnail && state.thumbsVisible) thumb.scrollIntoView({ block: "nearest", inline: "nearest" });
+    if (scrollThumbnail && state.thumbsVisible && !thumb.hidden) thumb.scrollIntoView({ block: "nearest", inline: "nearest" });
   }
   updateToolbar();
 }
@@ -463,7 +491,8 @@ function cancelAllWork() {
   state.shells = [];
   state.thumbs = [];
   ui.pages.replaceChildren();
-  ui.thumbList.replaceChildren();
+  ui.thumbList.replaceChildren(ui.thumbEmpty);
+  ui.thumbEmpty.hidden = true;
   ui.app.classList.remove("has-document");
   ui.empty.hidden = false;
   ui.pages.hidden = true;
@@ -509,8 +538,8 @@ function createPageElements() {
     thumbFragment.append(thumb);
   }
   ui.pages.replaceChildren(pageFragment);
-  ui.thumbList.replaceChildren(thumbFragment);
-  ui.thumbCount.textContent = String(state.pageCount);
+  ui.thumbList.replaceChildren(thumbFragment, ui.thumbEmpty);
+  updateThumbnailFilter();
 }
 
 function initializeObservers() {
@@ -864,6 +893,8 @@ ui.zoomInput.addEventListener("keydown", (event) => {
 for (const button of ui.fitButtons) button.addEventListener("click", () => applyFit(button.dataset.fit));
 ui.direction.addEventListener("click", () => updateOrientation(state.orientation === "vertical" ? "horizontal" : "vertical"));
 ui.thumbnails.addEventListener("click", toggleThumbnails);
+ui.thumbPages.addEventListener("click", () => setThumbnailMode("pages"));
+ui.thumbBookmarks.addEventListener("click", () => setThumbnailMode("bookmarks"));
 ui.settings.addEventListener("click", () => ui.dialog.showModal());
 ui.closeSettings.addEventListener("click", () => ui.dialog.close());
 ui.doneSettings.addEventListener("click", () => ui.dialog.close());

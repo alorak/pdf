@@ -95,6 +95,13 @@ export function saveSelectedText(state, selection) {
   return replaceActive(state, (item) => ({ ...item, notes: [...item.notes, note] }));
 }
 
+export function bookmarkedPageNumbers(workspace, fileName, pageCount) {
+  if (!workspace || !fileName || !Number.isSafeInteger(pageCount) || pageCount < 1) return [];
+  return [...new Set((workspace.notes || [])
+    .filter((note) => note.fileName === fileName && Number.isSafeInteger(note.page) && note.page >= 1 && note.page <= pageCount)
+    .map((note) => note.page))].sort((a, b) => a - b);
+}
+
 export function removeSelectedText(state, noteId) {
   return replaceActive(state, (item) => ({
     ...item,
