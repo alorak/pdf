@@ -66,6 +66,12 @@ button, input, dialog { color: inherit; }
   color: #56647d; font-size: 12px; font-weight: 550;
   white-space: nowrap; flex: 0 0 auto;
 }
+.icon-button.file-info-button {
+  width: 27px; height: 27px; padding: 4px; flex: 0 0 27px;
+  border: 1px solid #e2e9f7; background: #f8faff; color: #6079b3;
+  border-radius: 50%;
+}
+.icon-button.file-info-button svg { width: 16px; height: 16px; }
 .toolbar-spacer { flex: 1 0 5px; }
 .toolbar-group { display: flex; gap: 4px; align-items: center; white-space: nowrap; flex: 0 0 auto; }
 .toolbar-divider { align-self: stretch; margin: 6px 1px; width: 1px; min-height: 22px; background: #e7eaf1; }
@@ -377,6 +383,18 @@ input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer
 .dialog-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 26px; }
 .dialog-top h2 { margin: 7px 0 0; font-size: 23px; letter-spacing: -.04em; }
 .dialog-top .icon-button { background: #f2f5fa; }
+.pdf-info-dialog { width: min(540px, calc(100vw - 30px)); }
+.pdf-info-dialog .dialog-top { margin-bottom: 12px; }
+.pdf-info-file-name {
+  margin: 0 0 14px; padding: 11px 13px;
+  background: #f5f7fc; border: 1px solid #e8edf5; border-radius: 10px;
+  color: #465774; font-size: 12px; font-weight: 700; overflow-wrap: anywhere;
+}
+.pdf-info-details { display: grid; grid-template-columns: minmax(100px, 34%) minmax(0, 1fr); margin: 0; }
+.pdf-info-details dt, .pdf-info-details dd { padding: 10px 3px; border-bottom: 1px solid #edf0f6; line-height: 1.5; }
+.pdf-info-details dt { color: #7d8ca2; font-size: 11px; font-weight: 700; }
+.pdf-info-details dd { margin: 0; color: #33435d; font-size: 12px; overflow-wrap: anywhere; white-space: pre-wrap; }
+.pdf-info-details dt:last-of-type, .pdf-info-details dd:last-of-type { border-bottom: 0; }
 .drop-overlay {
   position: fixed; z-index: 20; inset: 0; padding: 24px;
   display: grid; place-items: center; pointer-events: none;
