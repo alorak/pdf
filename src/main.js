@@ -746,7 +746,7 @@ function syncPageFieldWidth() {
 
 function updateToolbar() {
   const hasDoc = Boolean(state.doc);
-  [ui.prev, ui.next, ui.pageInput, ui.zoomOut, ui.zoomIn, ui.zoomRange, ui.zoomInput, ui.fitTrigger, ui.direction, ...ui.fitButtons].forEach((button) => { button.disabled = !hasDoc; });
+  [ui.prev, ui.next, ui.pageInput, ui.zoomOut, ui.zoomIn, ui.zoomRange, ui.zoomInput].forEach((button) => { button.disabled = !hasDoc; });
   const shownPages = visiblePageNumbers();
   const shownIndex = shownPages.indexOf(state.current);
   ui.prev.disabled = !hasDoc || shownIndex <= 0;
@@ -1486,7 +1486,12 @@ for (const [trigger, panel] of viewMenus) {
   trigger.addEventListener("click", () => toggleViewMenu(trigger, panel));
 }
 for (const button of ui.fitButtons) button.addEventListener("click", () => {
-  applyFit(button.dataset.fit);
+  if (state.doc) applyFit(button.dataset.fit);
+  else {
+    state.fit = button.dataset.fit;
+    ui.pages.classList.toggle("fit-height", state.fit === "height");
+    updateToolbar();
+  }
   persistWorkspaceView(button.dataset.fit);
   closeViewMenu(true);
 });
