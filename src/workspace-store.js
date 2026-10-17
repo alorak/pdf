@@ -18,7 +18,7 @@ export function initialWorkspaces() {
   return {
     activeId: 1,
     nextId: 2,
-    items: [{ id: 1, name: "Workspace 1", fileName: "", notes: [] }],
+    items: [{ id: 1, name: "Workspace 1", fileName: "", notes: [], bookmarkOrder: [] }],
   };
 }
 
@@ -49,6 +49,9 @@ export function readWorkspaces(serialized) {
         name: typeof item.name === "string" && item.name.trim() ? item.name.slice(0, 60) : `Workspace ${item.id}`,
         fileName: typeof item.fileName === "string" ? item.fileName.slice(0, 255) : "",
         notes,
+        bookmarkOrder: Array.isArray(item.bookmarkOrder)
+          ? [...new Set(item.bookmarkOrder.filter((page) => Number.isSafeInteger(page) && page > 0))].slice(0, MAX_SAVED_TEXTS)
+          : [],
       });
     }
     if (!items.length) return initialWorkspaces();
@@ -74,7 +77,7 @@ export function addWorkspace(state) {
     ...state,
     activeId: id,
     nextId: id + 1,
-    items: [...state.items, { id, name: `Workspace ${id}`, fileName: "", notes: [] }],
+    items: [...state.items, { id, name: `Workspace ${id}`, fileName: "", notes: [], bookmarkOrder: [] }],
   };
 }
 
@@ -90,17 +93,20 @@ function replaceActive(state, transform) {
 }
 
 export function setWorkspaceFile(state, fileName) {
-  return replaceActive(state, (item) => ({ ...item, fileName: String(fileName).slice(0, 255) }));
+  return replaceActive(state, (item) => {
+    const nextFile = String(fileName).slice(0, 255);
+    return { ...item, fileName: nextFile, bookmarkOrder: nextFile === item.fileName ? item.bookmarkOrder : [] };
+  });
 }
 
 export function clearActiveWorkspace(state) {
-  return replaceActive(state, (item) => ({ ...item, notes: [], fileName: "" }));
+  return replaceActive(state, (item) => ({ ...item, notes: [], fileName: "", bookmarkOrder: [] }));
 }
 
 export function removeWorkspace(state, id) {
   if (!state.items.some((item) => item.id === id)) return state;
   if (state.items.length === 1) {
-    return { ...state, items: [{ ...state.items[0], fileName: "", notes: [] }] };
+    return { ...state, items: [{ ...state.items[0], fileName: "", notes: [], bookmarkOrder: [] }] };
   }
   const items = state.items.filter((item) => item.id !== id);
   return {
@@ -141,9 +147,46 @@ export function bookmarkedPageNumbers(workspace, fileName, pageCount) {
     .map((note) => note.page))].sort((a, b) => a - b);
 }
 
-export function removeSelectedText(state, noteId) {
+export function orderedBookmarkedPageNumbers(workspace, fileName, pageCount) {
+  const pages = bookmarkedPageNumbers(workspace, fileName, pageCount);
+  const available = new Set(pages);
+  const previous = (workspace?.bookmarkOrder || []).filter((page) => available.has(page));
+  return [...previous, ...pages.filter((page) => !previous.includes(page))];
+}
+
+export function reorderBookmarkedPage(state, fileName, pageCount, sourcePage, targetPage, after = false) {
+  const workspace = activeWorkspace(state);
+  if (!workspace || workspace.fileName !== fileName) return state;
+  const current = orderedBookmarkedPageNumbers(workspace, fileName, pageCount);
+  if (sourcePage === targetPage || !current.includes(sourcePage) || !current.includes(targetPage)) return state;
+  const next = current.filter((page) => page !== sourcePage);
+  next.splice(next.indexOf(targetPage) + (after ? 1 : 0), 0, sourcePage);
+  if (next.every((page, index) => page === current[index])) return state;
+  return replaceActive(state, (item) => ({ ...item, bookmarkOrder: next }));
+}
+
+export function moveBookmarkedPage(state, fileName, pageCount, page, direction) {
+  const order = orderedBookmarkedPageNumbers(activeWorkspace(state), fileName, pageCount);
+  const index = order.indexOf(page);
+  const target = order[index + direction];
+  if (index < 0 || target === undefined) return state;
+  return reorderBookmarkedPage(state, fileName, pageCount, page, target, direction > 0);
+}
+
+export function removePageBookmarks(state, fileName, page) {
+  const workspace = activeWorkspace(state);
+  if (!workspace?.notes.some((note) => note.fileName === fileName && note.page === page)) return state;
   return replaceActive(state, (item) => ({
     ...item,
-    notes: item.notes.filter((note) => note.id !== noteId),
+    notes: item.notes.filter((note) => !(note.fileName === fileName && note.page === page)),
+    bookmarkOrder: (item.bookmarkOrder || []).filter((value) => value !== page),
   }));
+}
+
+export function removeSelectedText(state, noteId) {
+  return replaceActive(state, (item) => {
+    const notes = item.notes.filter((note) => note.id !== noteId);
+    const remainingPages = new Set(notes.filter((note) => note.fileName === item.fileName).map((note) => note.page));
+    return { ...item, notes, bookmarkOrder: (item.bookmarkOrder || []).filter((page) => remainingPages.has(page)) };
+  });
 }
