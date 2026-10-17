@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import {
   initialWorkspaces, readWorkspaces, activeWorkspace, addWorkspace,
   switchWorkspace, setWorkspaceFile, saveSelectedText, savePageBookmark,
-  bookmarkedPageNumbers, clearActiveWorkspace, removeSelectedText,
+  bookmarkedPageNumbers, orderedBookmarkedPageNumbers, reorderBookmarkedPage, moveBookmarkedPage,
+  removePageBookmarks, clearActiveWorkspace, removeSelectedText,
   MAX_WORKSPACES, MAX_TEXT_LENGTH, MAX_HIGHLIGHT_RECTS,
 } from "../src/workspace-store.js";
 
@@ -98,4 +99,54 @@ test("page bookmarks stay in their workspace and are cleared with its PDF", () =
   assert.deepEqual(activeWorkspace(state).notes, []);
   state = switchWorkspace(state, 1);
   assert.deepEqual(bookmarkedPageNumbers(activeWorkspace(state), "one.pdf", 10), [3]);
+});
+
+test("bookmarks initially follow PDF page numbers, and manual order survives reload", () => {
+  let state = setWorkspaceFile(initialWorkspaces(), "manual.pdf");
+  for (const page of [8, 2, 5]) {
+    state = savePageBookmark(state, { id: `page-${page}`, page, fileName: "manual.pdf", savedAt: page });
+  }
+  const order = () => orderedBookmarkedPageNumbers(activeWorkspace(state), "manual.pdf", 10);
+  assert.deepEqual(order(), [2, 5, 8]);
+  state = moveBookmarkedPage(state, "manual.pdf", 10, 5, -1);
+  assert.deepEqual(order(), [5, 2, 8]);
+  state = moveBookmarkedPage(state, "manual.pdf", 10, 5, -1);
+  assert.deepEqual(order(), [5, 2, 8]); // left boundary: no movement
+  state = reorderBookmarkedPage(state, "manual.pdf", 10, 8, 5, false);
+  assert.deepEqual(order(), [8, 5, 2]);
+  state = reorderBookmarkedPage(state, "manual.pdf", 10, 8, 2, true);
+  assert.deepEqual(order(), [5, 2, 8]);
+  state = readWorkspaces(JSON.stringify(state));
+  assert.deepEqual(order(), [5, 2, 8]);
+  state = savePageBookmark(state, { id: "new", page: 3, fileName: "manual.pdf" });
+  assert.deepEqual(order(), [5, 2, 8, 3]); // new pages follow the saved manual order
+});
+
+test("removing a bookmarked page removes all its highlights, not other pages", () => {
+  let state = setWorkspaceFile(initialWorkspaces(), "sample.pdf");
+  state = savePageBookmark(state, { id: "page", page: 3, fileName: "sample.pdf" });
+  state = saveSelectedText(state, { id: "highlight", text: "Selected", page: 3, fileName: "sample.pdf", rects: [[.1,.2,.3,.04]] });
+  state = savePageBookmark(state, { id: "other", page: 5, fileName: "sample.pdf" });
+  state = reorderBookmarkedPage(state, "sample.pdf", 10, 5, 3, false);
+  state = removePageBookmarks(state, "sample.pdf", 3);
+  assert.deepEqual(bookmarkedPageNumbers(activeWorkspace(state), "sample.pdf", 10), [5]);
+  assert.deepEqual(orderedBookmarkedPageNumbers(activeWorkspace(state), "sample.pdf", 10), [5]);
+  assert.deepEqual(activeWorkspace(state).notes.map((note) => note.id), ["other"]);
+  assert.equal(removePageBookmarks(state, "sample.pdf", 3), state);
+});
+
+test("manual bookmark order stays isolated per workspace and clears with PDF replacement", () => {
+  let state = setWorkspaceFile(initialWorkspaces(), "one.pdf");
+  for (const page of [2, 4]) state = savePageBookmark(state, { id: `one-${page}`, page, fileName: "one.pdf" });
+  state = moveBookmarkedPage(state, "one.pdf", 8, 4, -1);
+  state = addWorkspace(state);
+  state = setWorkspaceFile(state, "two.pdf");
+  for (const page of [1, 3]) state = savePageBookmark(state, { id: `two-${page}`, page, fileName: "two.pdf" });
+  assert.deepEqual(orderedBookmarkedPageNumbers(activeWorkspace(state), "two.pdf", 8), [1, 3]);
+  state = switchWorkspace(state, 1);
+  assert.deepEqual(orderedBookmarkedPageNumbers(activeWorkspace(state), "one.pdf", 8), [4, 2]);
+  state = clearActiveWorkspace(state);
+  assert.deepEqual(activeWorkspace(state).bookmarkOrder, []);
+  state = setWorkspaceFile(state, "replacement.pdf");
+  assert.deepEqual(orderedBookmarkedPageNumbers(activeWorkspace(state), "replacement.pdf", 8), []);
 });
