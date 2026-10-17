@@ -1,6 +1,6 @@
 import * as pdfjs from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-import { clampPage, clampScale, chooseDeviceScale, fitScale, readableSize, MIN_SCALE, MAX_SCALE } from "./viewer-math.js";
+import { clampPage, clampScale, chooseDeviceScale, fitScale, MIN_SCALE, MAX_SCALE } from "./viewer-math.js";
 import {
   WORKSPACE_STORAGE_KEY, MAX_WORKSPACES, MAX_SAVED_TEXTS,
   initialWorkspaces, readWorkspaces, activeWorkspace, addWorkspace, switchWorkspace,
@@ -31,7 +31,7 @@ const ui = {
   doneSettings: $("doneSettings"), viewer: $("viewer"), pages: $("pages"),
   empty: $("emptyState"), thumbPane: $("thumbsPane"), thumbList: $("thumbList"),
   thumbCount: $("thumbCount"), loading: $("loading"), loadingText: $("loadingText"),
-  status: $("statusText"), fileSize: $("fileSize"), orientationText: $("orientationText"),
+  status: $("statusText"),
   toast: $("toast"), dropOverlay: $("dropOverlay"),
 };
 
@@ -290,8 +290,11 @@ function updateSettingsView() {
   ui.app.classList.toggle("thumbs-hidden", !state.thumbsVisible);
   ui.pages.classList.toggle("vertical", state.orientation === "vertical");
   ui.pages.classList.toggle("horizontal", state.orientation === "horizontal");
-  ui.orientationText.textContent = state.orientation === "vertical" ? "Dikey akış" : "Yatay akış";
-  ui.direction.title = state.orientation === "vertical" ? "Yatay akışa geç" : "Dikey akışa geç";
+  ui.app.classList.toggle("flow-horizontal", state.orientation === "horizontal");
+  ui.app.classList.toggle("flow-vertical", state.orientation === "vertical");
+  const nextDirection = state.orientation === "vertical" ? "Yatay akışa geç" : "Dikey akışa geç";
+  ui.direction.title = nextDirection;
+  ui.direction.setAttribute("aria-label", nextDirection);
   ui.thumbnails.setAttribute("aria-pressed", String(state.thumbsVisible));
   document.querySelectorAll('input[name="thumbPosition"]').forEach((input) => { input.checked = input.value === state.thumbPosition; });
   document.querySelectorAll('input[name="scrollDirection"]').forEach((input) => { input.checked = input.value === state.orientation; });
@@ -383,6 +386,7 @@ function setScale(scale, fit = "custom") {
   const anchor = captureViewportAnchor();
   const changed = state.scale !== next;
   state.fit = fit;
+  ui.pages.classList.toggle("fit-height", fit === "height");
   state.scale = next;
   if (changed) {
     cancelPageRenders();
@@ -397,7 +401,7 @@ function setScale(scale, fit = "custom") {
 function applyFit(mode) {
   if (!state.doc) return;
   const size = getDimensions(state.current - 1);
-  const gutters = { x: 82, y: 116 };
+  const gutters = mode === "height" ? { x: 82, y: 4 } : { x: 82, y: 116 };
   const scale = fitScale(mode, { width: ui.viewer.clientWidth, height: ui.viewer.clientHeight }, size, gutters);
   setScale(scale, mode);
 }
@@ -465,7 +469,6 @@ function cancelAllWork() {
   ui.pages.hidden = true;
   ui.fileLabel.textContent = "PDF açılmadı";
   ui.fileLabel.title = "Henüz dosya açılmadı";
-  ui.fileSize.textContent = "";
   ui.thumbCount.textContent = "0";
   ui.status.textContent = "Hazır · Dosyalar cihazında kalır";
   ui.viewer.scrollTop = 0;
@@ -485,10 +488,7 @@ function createPageElements() {
     shell.setAttribute("aria-label", `Sayfa ${index + 1}`);
     const surface = document.createElement("div");
     surface.className = "page-surface";
-    const stamp = document.createElement("span");
-    stamp.className = "page-stamp";
-    stamp.textContent = `${index + 1} / ${state.pageCount}`;
-    shell.append(surface, stamp);
+    shell.append(surface);
     state.shells[index] = shell;
     setPageSize(index);
     pageFragment.append(shell);
@@ -760,7 +760,6 @@ async function openPDF(file, { replaceWorkspace = false } = {}) {
     ui.pages.hidden = false;
     ui.fileLabel.textContent = file.name;
     ui.fileLabel.title = file.name;
-    ui.fileSize.textContent = readableSize(file.size);
     ui.status.textContent = `${state.pageCount} sayfa · Yalnızca cihazında açık`;
     createPageElements();
     updateSettingsView();
