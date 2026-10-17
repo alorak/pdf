@@ -1,13 +1,27 @@
 import * as pdfjs from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { clampPage, clampScale, chooseDeviceScale, fitScale, readableSize, MIN_SCALE, MAX_SCALE } from "./viewer-math.js";
+import {
+  WORKSPACE_STORAGE_KEY, MAX_WORKSPACES, MAX_SAVED_TEXTS,
+  initialWorkspaces, readWorkspaces, activeWorkspace, addWorkspace, switchWorkspace,
+  setWorkspaceFile, clearActiveWorkspace, saveSelectedText, removeSelectedText,
+} from "./workspace-store.js";
 import "./style.css";
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
 const $ = (id) => document.getElementById(id);
 const ui = {
-  app: $("app"), open: $("openButton"), input: $("fileInput"), emptyOpen: $("emptyOpenButton"),
+  app: $("app"), menu: $("menuButton"), sidebarOpen: $("sidebarOpenButton"),
+  input: $("fileInput"), emptyOpen: $("emptyOpenButton"),
+  activeWorkspaceLabel: $("activeWorkspaceLabel"), workspaceSidebar: $("workspaceSidebar"),
+  sidebarBackdrop: $("sidebarBackdrop"), closeSidebar: $("closeSidebar"),
+  workspaceList: $("workspaceList"), workspaceCount: $("workspaceCount"),
+  createWorkspace: $("createWorkspace"), savedTexts: $("savedTexts"), savedCount: $("savedCount"),
+  replaceDialog: $("replaceDialog"), replaceWorkspaceName: $("replaceWorkspaceName"),
+  cancelReplace: $("cancelReplace"), cancelReplaceTop: $("cancelReplaceTop"),
+  confirmReplace: $("confirmReplace"), selectionMenu: $("selectionMenu"),
+  copySelection: $("copySelection"), saveSelection: $("saveSelection"),
   fileLabel: $("fileLabel"), prev: $("prevPage"), next: $("nextPage"),
   pageInput: $("pageInput"), pageTotal: $("pageTotal"), zoomOut: $("zoomOut"),
   zoomIn: $("zoomIn"), zoomRange: $("zoomRange"), zoomInput: $("zoomInput"),
@@ -33,11 +47,195 @@ const state = {
   orientation: settings.orientation, thumbPosition: settings.thumbPosition, thumbsVisible: settings.thumbsVisible,
   dimensions: [], shells: [], thumbs: [],
   visible: new Set(), pending: new Set(), rendered: new Map(),
-  renderTasks: new Map(), activeRenders: 0, observer: null,
+  renderTasks: new Map(), textLayers: new Map(), activeRenders: 0, observer: null,
   thumbVisible: new Set(), thumbPending: new Set(), thumbRendered: new Set(),
   thumbTasks: new Map(), activeThumbRenders: 0, thumbObserver: null,
   scrollFrame: 0, toastTimer: 0,
 };
+
+let workspaces = loadWorkspaces();
+const workspaceFiles = new Map(); // PDF bytes remain in memory, never in localStorage.
+let pendingDropFile = null;
+let pickingNewFile = false;
+let contextSelection = null;
+
+function loadWorkspaces() {
+  try { return readWorkspaces(localStorage.getItem(WORKSPACE_STORAGE_KEY)); }
+  catch { return initialWorkspaces(); }
+}
+
+function persistWorkspaces() {
+  try {
+    localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(workspaces));
+  } catch {
+    showToast("Tarayıcı depolaması dolu veya kullanılamıyor; kayıtlar kalıcı olmayabilir.");
+  }
+}
+
+function updateWorkspaces(next) {
+  if (next === workspaces) return;
+  workspaces = next;
+  persistWorkspaces();
+  renderWorkspaceSidebar();
+}
+
+function renderWorkspaceSidebar() {
+  const active = activeWorkspace(workspaces);
+  ui.activeWorkspaceLabel.textContent = active.name;
+  ui.workspaceCount.textContent = `${workspaces.items.length} / ${MAX_WORKSPACES}`;
+  ui.savedCount.textContent = String(active.notes.length);
+  ui.createWorkspace.disabled = workspaces.items.length >= MAX_WORKSPACES;
+  ui.createWorkspace.title = ui.createWorkspace.disabled ? "En fazla 10 workspace oluşturulabilir" : "Yeni çalışma alanı";
+  ui.workspaceList.replaceChildren();
+  for (const item of workspaces.items) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "workspace-choice" + (item.id === workspaces.activeId ? " active" : "");
+    button.setAttribute("aria-current", item.id === workspaces.activeId ? "true" : "false");
+    const number = document.createElement("span");
+    number.className = "workspace-number";
+    number.textContent = String(item.id);
+    const metadata = document.createElement("span");
+    metadata.className = "workspace-meta";
+    const title = document.createElement("strong");
+    title.textContent = item.name;
+    const caption = document.createElement("small");
+    caption.textContent = `${item.notes.length} kayıt · ${item.fileName || "PDF açılmadı"}`;
+    metadata.append(title, caption);
+    button.append(number, metadata);
+    button.addEventListener("click", () => changeWorkspace(item.id));
+    ui.workspaceList.append(button);
+  }
+  ui.savedTexts.replaceChildren();
+  if (!active.notes.length) {
+    const empty = document.createElement("div");
+    empty.className = "saved-empty";
+    empty.textContent = "PDF'den metin seçip sağ tıklayarak buraya kalıcı olarak kaydedebilirsin.";
+    ui.savedTexts.append(empty);
+    return;
+  }
+  for (const note of [...active.notes].reverse()) {
+    const card = document.createElement("article");
+    card.className = "saved-card";
+    const quote = document.createElement("p");
+    quote.textContent = note.text;
+    quote.title = note.text;
+    const footer = document.createElement("div");
+    footer.className = "saved-card-footer";
+    const source = document.createElement("small");
+    const parts = [note.fileName, note.page ? `s. ${note.page}` : ""].filter(Boolean);
+    source.textContent = parts.join(" · ") || "Kaydedilen metin";
+    source.title = note.savedAt ? new Date(note.savedAt).toLocaleString("tr-TR") : "";
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.textContent = "Kopyala";
+    copy.addEventListener("click", () => { void copyText(note.text); });
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "delete-saved";
+    remove.textContent = "Sil";
+    remove.setAttribute("aria-label", "Kayıtlı metni sil");
+    remove.addEventListener("click", () => updateWorkspaces(removeSelectedText(workspaces, note.id)));
+    footer.append(source, copy, remove);
+    card.append(quote, footer);
+    ui.savedTexts.append(card);
+  }
+}
+
+function openSidebar() {
+  hideSelectionMenu();
+  ui.workspaceSidebar.inert = false;
+  ui.workspaceSidebar.setAttribute("aria-hidden", "false");
+  ui.workspaceSidebar.classList.add("is-open");
+  ui.sidebarBackdrop.hidden = false;
+  ui.menu.setAttribute("aria-expanded", "true");
+  ui.closeSidebar.focus();
+}
+
+function closeSidebar() {
+  ui.workspaceSidebar.classList.remove("is-open");
+  ui.workspaceSidebar.setAttribute("aria-hidden", "true");
+  ui.workspaceSidebar.inert = true;
+  ui.sidebarBackdrop.hidden = true;
+  ui.menu.setAttribute("aria-expanded", "false");
+  ui.menu.focus({ preventScroll: true });
+}
+
+function changeWorkspace(id) {
+  if (id === workspaces.activeId) { closeSidebar(); return; }
+  cancelAllWork();
+  workspaces = switchWorkspace(workspaces, id);
+  persistWorkspaces();
+  renderWorkspaceSidebar();
+  closeSidebar();
+  const file = workspaceFiles.get(id);
+  if (file) void openPDF(file);
+}
+
+function askToOpen(file = null) {
+  pickingNewFile = false;
+  pendingDropFile = file;
+  hideSelectionMenu();
+  if (ui.workspaceSidebar.classList.contains("is-open")) closeSidebar();
+  ui.replaceWorkspaceName.textContent = activeWorkspace(workspaces).name;
+  ui.replaceDialog.showModal();
+}
+
+function selectedPdfText() {
+  const selection = window.getSelection();
+  if (!selection || selection.isCollapsed || !selection.rangeCount) return null;
+  const range = selection.getRangeAt(0);
+  if (!ui.pages.contains(range.commonAncestorContainer)) return null;
+  const text = selection.toString().trim();
+  if (!text) return null;
+  const element = selection.anchorNode?.nodeType === Node.ELEMENT_NODE
+    ? selection.anchorNode : selection.anchorNode?.parentElement;
+  const pageElement = element?.closest(".page-shell");
+  return {
+    text,
+    page: pageElement ? Number(pageElement.dataset.index) + 1 : state.current,
+    fileName: activeWorkspace(workspaces).fileName,
+  };
+}
+
+function hideSelectionMenu() {
+  ui.selectionMenu.hidden = true;
+  contextSelection = null;
+}
+
+async function copyText(value) {
+  try {
+    if (!navigator.clipboard?.writeText) throw new Error("Clipboard API unavailable");
+    await navigator.clipboard.writeText(value);
+    showToast("Metin kopyalandı.");
+  } catch {
+    const area = document.createElement("textarea");
+    area.value = value;
+    area.style.cssText = "position:fixed;opacity:0;top:0;left:0";
+    document.body.append(area);
+    area.select();
+    const copied = document.execCommand("copy");
+    area.remove();
+    showToast(copied ? "Metin kopyalandı." : "Kopyalama başarısız. Ctrl/Cmd+C kullanabilirsin.");
+  }
+}
+
+function saveContextText() {
+  if (!contextSelection) return;
+  const current = workspaces;
+  const next = saveSelectedText(current, {
+    ...contextSelection,
+    id: typeof globalThis.crypto?.randomUUID === "function" ? globalThis.crypto.randomUUID() : `note-${Date.now()}-${Math.random()}`,
+    savedAt: Date.now(),
+  });
+  hideSelectionMenu();
+  if (next === current) {
+    showToast(`Bir workspace en fazla ${MAX_SAVED_TEXTS} metin saklayabilir.`);
+    return;
+  }
+  updateWorkspaces(next);
+  showToast("Seçilen metin workspace'e kaydedildi.");
+}
 
 function readSettings() {
   try {
@@ -172,6 +370,9 @@ function cancelPageRenders() {
   state.renderEpoch++;
   state.pending.clear();
   for (const task of state.renderTasks.values()) task.cancel();
+  for (const layer of state.textLayers.values()) layer.cancel();
+  state.textLayers.clear();
+  for (const shell of state.shells) shell.querySelector(".textLayer")?.remove();
   state.rendered.clear();
 }
 
@@ -244,6 +445,7 @@ function cancelAllWork() {
   state.thumbObserver = null;
   for (const task of state.thumbTasks.values()) task.cancel();
   state.renderTasks.clear();
+  state.textLayers.clear();
   state.thumbTasks.clear();
   state.activeRenders = 0;
   state.activeThumbRenders = 0;
@@ -324,6 +526,8 @@ function initializeObservers() {
         state.visible.delete(index);
         state.pending.delete(index);
         state.renderTasks.get(index)?.cancel();
+        state.textLayers.get(index)?.cancel();
+        state.textLayers.delete(index);
         entry.target.querySelector(".page-surface")?.replaceChildren();
         state.rendered.delete(index);
       }
@@ -417,6 +621,30 @@ async function renderPage(index, generation, epoch) {
     if (!surface) return;
     surface.replaceChildren(canvas);
     state.rendered.set(index, epoch);
+    // Render a text overlay only for nearby pages; the canvas remains visible.
+    const overlay = document.createElement("div");
+    overlay.className = "textLayer";
+    overlay.style.setProperty("--total-scale-factor", String(state.scale));
+    const layer = new pdfjs.TextLayer({
+      textContentSource: page.streamTextContent({ includeMarkedContent: true, disableNormalization: true }),
+      container: overlay,
+      viewport,
+    });
+    state.textLayers.set(index, layer);
+    surface.append(overlay);
+    try {
+      await layer.render();
+      if (generation !== state.generation || epoch !== state.renderEpoch || !state.visible.has(index)) {
+        overlay.remove();
+      }
+    } catch (error) {
+      overlay.remove();
+      if (generation === state.generation && epoch === state.renderEpoch && error?.name !== "AbortException") {
+        console.warn("PDF text layer unavailable on page", index + 1, error);
+      }
+    } finally {
+      if (state.textLayers.get(index) === layer) state.textLayers.delete(index);
+    }
   } catch (error) {
     if (error?.name !== "RenderingCancelledException" && generation === state.generation) {
       console.error("PDF page render failed:", error);
@@ -496,7 +724,7 @@ function scheduleScrollUpdate() {
   });
 }
 
-async function openPDF(file) {
+async function openPDF(file, { replaceWorkspace = false } = {}) {
   if (!file) return;
   if (!file.name.toLowerCase().endsWith(".pdf") && file.type !== "application/pdf") {
     showToast("Lütfen bir PDF dosyası seç.");
@@ -520,6 +748,11 @@ async function openPDF(file) {
     const first = await doc.getPage(1);
     if (generation !== state.generation) return;
     const rect = first.getViewport({ scale: 1 });
+    if (replaceWorkspace) workspaces = clearActiveWorkspace(workspaces);
+    workspaces = setWorkspaceFile(workspaces, file.name);
+    workspaceFiles.set(workspaces.activeId, file);
+    persistWorkspaces();
+    renderWorkspaceSidebar();
     state.dimensions = new Array(state.pageCount);
     state.dimensions[0] = { width: rect.width, height: rect.height };
     ui.app.classList.add("has-document");
@@ -561,12 +794,60 @@ function stepZoom(direction) {
   setScale(next);
 }
 
-ui.open.addEventListener("click", () => ui.input.click());
-ui.emptyOpen.addEventListener("click", () => ui.input.click());
+ui.menu.addEventListener("click", () => {
+  if (ui.workspaceSidebar.classList.contains("is-open")) closeSidebar();
+  else openSidebar();
+});
+ui.closeSidebar.addEventListener("click", closeSidebar);
+ui.sidebarBackdrop.addEventListener("click", closeSidebar);
+ui.emptyOpen.addEventListener("click", openSidebar);
+ui.sidebarOpen.addEventListener("click", () => askToOpen());
+ui.createWorkspace.addEventListener("click", () => {
+  if (workspaces.items.length >= MAX_WORKSPACES) return;
+  cancelAllWork();
+  updateWorkspaces(addWorkspace(workspaces));
+});
+ui.cancelReplace.addEventListener("click", () => ui.replaceDialog.close());
+ui.cancelReplaceTop.addEventListener("click", () => ui.replaceDialog.close());
+ui.replaceDialog.addEventListener("click", (event) => {
+  if (event.target === ui.replaceDialog) ui.replaceDialog.close();
+});
+ui.confirmReplace.addEventListener("click", () => {
+  const file = pendingDropFile;
+  pendingDropFile = null;
+  ui.replaceDialog.close();
+  if (file) void openPDF(file, { replaceWorkspace: true });
+  else {
+    pickingNewFile = true;
+    ui.input.click();
+  }
+});
 ui.input.addEventListener("change", (event) => {
   const file = event.target.files?.[0];
   event.target.value = "";
-  if (file) void openPDF(file);
+  const approved = pickingNewFile;
+  pickingNewFile = false;
+  if (approved && file) void openPDF(file, { replaceWorkspace: true });
+});
+ui.viewer.addEventListener("contextmenu", (event) => {
+  const chosen = selectedPdfText();
+  if (!state.doc || !chosen) { hideSelectionMenu(); return; }
+  event.preventDefault();
+  contextSelection = chosen;
+  ui.selectionMenu.hidden = false;
+  const width = ui.selectionMenu.offsetWidth;
+  const height = ui.selectionMenu.offsetHeight;
+  ui.selectionMenu.style.left = `${Math.max(8, Math.min(event.clientX, window.innerWidth - width - 8))}px`;
+  ui.selectionMenu.style.top = `${Math.max(8, Math.min(event.clientY, window.innerHeight - height - 8))}px`;
+});
+ui.copySelection.addEventListener("click", () => {
+  const text = contextSelection?.text;
+  hideSelectionMenu();
+  if (text) void copyText(text);
+});
+ui.saveSelection.addEventListener("click", saveContextText);
+document.addEventListener("pointerdown", (event) => {
+  if (!ui.selectionMenu.contains(event.target)) hideSelectionMenu();
 });
 ui.prev.addEventListener("click", () => goToPage(state.current - 1));
 ui.next.addEventListener("click", () => goToPage(state.current + 1));
@@ -595,7 +876,7 @@ document.querySelectorAll('input[name="scrollDirection"]').forEach((input) => in
   if (input.checked) updateOrientation(input.value);
 }));
 
-ui.viewer.addEventListener("scroll", scheduleScrollUpdate, { passive: true });
+ui.viewer.addEventListener("scroll", () => { scheduleScrollUpdate(); hideSelectionMenu(); }, { passive: true });
 ui.viewer.addEventListener("wheel", (event) => {
   if (!state.doc || !(event.ctrlKey || event.metaKey)) return;
   event.preventDefault();
@@ -607,10 +888,14 @@ document.addEventListener("keydown", (event) => {
   const modifier = event.ctrlKey || event.metaKey;
   if (modifier && event.key.toLowerCase() === "o") {
     event.preventDefault();
-    ui.input.click();
+    askToOpen();
     return;
   }
-  if (!state.doc || ui.dialog.open || event.altKey || modifier) return;
+  if (event.key === "Escape") {
+    hideSelectionMenu();
+    if (ui.workspaceSidebar.classList.contains("is-open")) closeSidebar();
+  }
+  if (!state.doc || ui.dialog.open || ui.replaceDialog.open || event.altKey || modifier) return;
   const tag = document.activeElement?.tagName;
   if (["INPUT", "TEXTAREA", "SELECT"].includes(tag)) return;
   if (event.key === "+" || event.key === "=") { event.preventDefault(); stepZoom(1); }
@@ -641,7 +926,7 @@ window.addEventListener("drop", (event) => {
   dragDepth = 0;
   ui.dropOverlay.hidden = true;
   const file = [...event.dataTransfer?.files || []].find((candidate) => candidate.name.toLowerCase().endsWith(".pdf") || candidate.type === "application/pdf");
-  if (file) void openPDF(file);
+  if (file) askToOpen(file);
   else showToast("Lütfen PDF dosyası bırak.");
 });
 
@@ -652,3 +937,4 @@ resizeObserver.observe(ui.viewer);
 
 updateSettingsView();
 updateToolbar();
+renderWorkspaceSidebar();
