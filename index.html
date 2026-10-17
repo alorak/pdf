@@ -12,18 +12,13 @@
     <div id="app" class="app-shell thumbs-left">
       <header class="topbar">
         <div class="brand">
-          <div class="brand-mark" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M6 2.5h8l4 4V21H6a2 2 0 0 1-2-2V4.5a2 2 0 0 1 2-2Z"/><path d="M14 2.5v4h4M8 11h7M8 15h7"/></svg>
-          </div>
+          <button id="menuButton" class="icon-button menu-button" type="button" aria-label="Çalışma alanlarını aç" aria-controls="workspaceSidebar" aria-expanded="false" title="Çalışma alanları">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+          </button>
           <span class="brand-title">pdf<span class="brand-dot">.</span></span>
         </div>
-
         <div class="file-group">
-          <button id="openButton" class="primary-button" type="button">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
-            <span>Open</span>
-          </button>
-          <input type="file" id="fileInput" accept=".pdf,application/pdf" hidden />
+          <span id="activeWorkspaceLabel" class="workspace-chip">Workspace 1</span>
           <div class="file-label" id="fileLabel" title="Henüz dosya açılmadı">PDF açılmadı</div>
         </div>
 
@@ -96,7 +91,7 @@
               <span class="eyebrow">SADE · HIZLI · YEREL</span>
               <h1>PDF dosyanı aç,<br />okumaya başla.</h1>
               <p>Dosyanı bilgisayarından seç veya buraya sürükle. Belgen yalnızca bu tarayıcıda açılır.</p>
-              <button id="emptyOpenButton" type="button" class="empty-open">PDF dosyası seç <span aria-hidden="true">↗</span></button>
+              <button id="emptyOpenButton" type="button" class="empty-open">Sol menüden PDF aç <span aria-hidden="true">↗</span></button>
               <span class="drop-hint">PDF dosyalarını buraya sürükleyebilirsin</span>
             </div>
             <div id="pages" class="pages" aria-label="Belge sayfaları" hidden></div>
@@ -110,6 +105,37 @@
         <div class="statusbar-right"><span id="fileSize"></span><span id="orientationText">Dikey akış</span><span class="local-tag"><span class="local-dot"></span> Yerel</span></div>
       </footer>
     </div>
+
+    <div id="sidebarBackdrop" class="sidebar-backdrop" hidden></div>
+    <aside id="workspaceSidebar" class="workspace-sidebar" aria-label="Çalışma alanları" aria-hidden="true" inert>
+      <div class="sidebar-header">
+        <div><span class="eyebrow">PDF ÇALIŞMA ALANLARI</span><h2>Workspace</h2></div>
+        <button id="closeSidebar" class="icon-button" type="button" aria-label="Menüyü kapat">✕</button>
+      </div>
+      <button id="sidebarOpenButton" class="primary-button sidebar-open" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
+        Open PDF
+      </button>
+      <input type="file" id="fileInput" accept=".pdf,application/pdf" hidden />
+      <div class="sidebar-section-heading"><span>Çalışma alanların</span><span id="workspaceCount">1 / 10</span></div>
+      <div id="workspaceList" class="workspace-list" aria-label="Çalışma alanı seç"></div>
+      <button id="createWorkspace" class="create-workspace" type="button"><span aria-hidden="true">＋</span> Yeni workspace</button>
+      <div class="sidebar-section-heading notes-heading"><span>Kaydedilen metinler</span><span id="savedCount">0</span></div>
+      <div id="savedTexts" class="saved-texts"></div>
+      <p class="sidebar-privacy">Seçtiğin metinler bu tarayıcıda saklanır. PDF dosyalarının kendisi kaydedilmez.</p>
+    </aside>
+
+    <dialog id="replaceDialog" class="settings-dialog replace-dialog" aria-labelledby="replaceTitle">
+      <div class="dialog-top">
+        <div><span class="eyebrow">YENİ PDF</span><h2 id="replaceTitle">Bu workspace temizlensin mi?</h2></div>
+        <button id="cancelReplaceTop" class="icon-button" type="button" aria-label="İptal et">✕</button>
+      </div>
+      <p><strong id="replaceWorkspaceName">Workspace 1</strong> içindeki kayıtlı metinler ve mevcut PDF bilgileri, yeni dosya başarıyla açıldığında silinecek. Diğer çalışma alanları korunacak.</p>
+      <div class="replace-actions">
+        <button id="cancelReplace" class="secondary-button" type="button">İptal</button>
+        <button id="confirmReplace" class="primary-button" type="button">Evet, PDF seç</button>
+      </div>
+    </dialog>
 
     <dialog id="settingsDialog" class="settings-dialog" aria-labelledby="settingsTitle">
       <div class="dialog-top">
@@ -148,6 +174,10 @@
       </div>
     </dialog>
     <div id="dropOverlay" class="drop-overlay" hidden><div><span class="drop-icon">↘</span><strong>PDF dosyanı bırak</strong><small>Belgen burada, cihazında açılacak</small></div></div>
+    <div id="selectionMenu" class="selection-menu" role="menu" aria-label="Seçili metin işlemleri" hidden>
+      <button id="copySelection" type="button" role="menuitem">Kopyala</button>
+      <button id="saveSelection" type="button" role="menuitem">Workspace'e kaydet</button>
+    </div>
     <div id="toast" class="toast" role="alert" hidden></div>
     <script type="module" src="/src/main.js"></script>
   </body>
