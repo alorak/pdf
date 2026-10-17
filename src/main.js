@@ -866,7 +866,13 @@ async function openPDF(file, { replaceWorkspace = false, persistFile = true } = 
         await saveWorkspacePdf(workspaceId, file);
       } catch (error) {
         console.warn("PDF persistence failed:", error);
-        showToast("PDF açıldı ancak kalıcı kaydedilemedi. Tarayıcı depolama alanını kontrol et.");
+        if (replaceWorkspace && activeWorkspace(workspaces)?.fileName) {
+          cancelAllWork();
+          showToast("Yeni PDF kaydedilemedi; önceki PDF ve yer imleri korundu.");
+          void restoreWorkspacePdf(workspaceId);
+          return;
+        }
+        showToast("PDF yalnızca bu oturumda açıldı; tarayıcı depolama alanını kontrol et.");
       }
     }
     if (generation !== state.generation || workspaces.activeId !== workspaceId) return;
