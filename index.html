@@ -88,8 +88,16 @@
 
       <main class="workspace">
         <aside id="thumbsPane" class="thumbs-pane" aria-label="Sayfa küçük resimleri">
-          <div class="pane-heading"><span>Sayfalar</span><span id="thumbCount" class="subtle-count">0</span></div>
-          <div id="thumbList" class="thumb-list"></div>
+          <div class="pane-heading">
+            <div class="thumb-filter" role="group" aria-label="Küçük resim görünümü">
+              <button id="thumbPages" class="thumb-filter-button active" type="button" aria-pressed="true" aria-controls="thumbList">Sayfalar</button>
+              <button id="thumbBookmarks" class="thumb-filter-button" type="button" aria-pressed="false" aria-controls="thumbList">Yer İmleri</button>
+            </div>
+            <span id="thumbCount" class="subtle-count">0</span>
+          </div>
+          <div id="thumbList" class="thumb-list">
+            <p id="thumbEmpty" class="thumb-empty" role="status" hidden>Henüz yer imi yok. PDF'de metin seçip sağ tıklayarak kaydedebilirsin.</p>
+          </div>
         </aside>
         <section class="document-panel" aria-label="PDF görüntüleyici">
           <div id="viewer" class="viewer" tabindex="0">
