@@ -31,7 +31,9 @@ const ui = {
   copySelection: $("copySelection"), saveSelection: $("saveSelection"), bookmarkPage: $("bookmarkPage"),
   moveBookmarkPrevious: $("moveBookmarkPrevious"), moveBookmarkNext: $("moveBookmarkNext"),
   removeBookmarkedPage: $("removeBookmarkedPage"), removeHighlight: $("removeHighlight"),
-  fileLabel: $("fileLabel"), prev: $("prevPage"), next: $("nextPage"),
+  fileLabel: $("fileLabel"), pdfInfoButton: $("pdfInfoButton"), pdfInfoDialog: $("pdfInfoDialog"),
+  closePdfInfo: $("closePdfInfo"), pdfInfoFileName: $("pdfInfoFileName"), pdfInfoDetails: $("pdfInfoDetails"),
+  prev: $("prevPage"), next: $("nextPage"),
   pageInput: $("pageInput"), pageTotal: $("pageTotal"), zoomOut: $("zoomOut"),
   zoomIn: $("zoomIn"), zoomRange: $("zoomRange"), zoomInput: $("zoomInput"),
   fitTrigger: $("fitMenuButton"), fitMenu: $("fitMenu"),
@@ -54,7 +56,7 @@ const MAX_PAGE_RENDERS = 2;
 const MAX_THUMB_RENDERS = 1;
 const state = {
   doc: null, loadingTask: null, generation: 0, renderEpoch: 0, thumbEpoch: 0,
-  pageCount: 0, current: 1, scale: 1, fit: "page",
+  pageCount: 0, current: 1, scale: 1, fit: "page", fileSize: 0,
   orientation: "vertical", thumbPosition: "left", thumbsVisible: true,
   thumbnailMode: "pages",
   dimensions: [], shells: [], thumbs: [], thumbEntries: [],
@@ -104,9 +106,13 @@ function updateWorkspaces(next) {
   refreshVisibleHighlights();
 }
 
+function workspaceDisplayName(item) {
+  return `W${item.id}`;
+}
+
 function renderWorkspaceSidebar() {
   const active = activeWorkspace(workspaces);
-  ui.activeWorkspaceLabel.textContent = active.name;
+  ui.activeWorkspaceLabel.textContent = workspaceDisplayName(active);
   ui.workspaceCount.textContent = `${workspaces.items.length} / ${MAX_WORKSPACES}`;
   ui.createWorkspace.disabled = workspaces.items.length >= MAX_WORKSPACES;
   ui.createWorkspace.title = ui.createWorkspace.disabled ? "En fazla 10 workspace oluşturulabilir" : "Yeni çalışma alanı";
@@ -123,7 +129,7 @@ function renderWorkspaceSidebar() {
     const metadata = document.createElement("span");
     metadata.className = "workspace-meta";
     const title = document.createElement("strong");
-    title.textContent = item.name;
+    title.textContent = workspaceDisplayName(item);
     const caption = document.createElement("small");
     caption.textContent = `${item.notes.length} kayıt · ${item.fileName || "PDF açılmadı"}`;
     metadata.append(title, caption);
@@ -133,14 +139,14 @@ function renderWorkspaceSidebar() {
     open.type = "button";
     open.className = "workspace-open";
     open.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>';
-    open.title = `${item.name} için PDF aç`;
+    open.title = `${workspaceDisplayName(item)} için PDF aç`;
     open.setAttribute("aria-label", open.title);
     open.addEventListener("click", () => askToOpen(null, item.id));
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "workspace-delete";
     remove.textContent = "×";
-    remove.title = `${item.name} çalışma alanını sil`;
+    remove.title = `${workspaceDisplayName(item)} çalışma alanını sil`;
     remove.setAttribute("aria-label", remove.title);
     remove.addEventListener("click", () => askDeleteWorkspace(item.id));
     const row = document.createElement("div");
@@ -210,7 +216,7 @@ function askDeleteWorkspace(id) {
   const item = workspaces.items.find((entry) => entry.id === id);
   if (!item) return;
   pendingDeleteWorkspaceId = id;
-  ui.deleteWorkspaceName.textContent = item.name;
+  ui.deleteWorkspaceName.textContent = workspaceDisplayName(item);
   if (ui.workspaceSidebar.classList.contains("is-open")) closeSidebar();
   ui.deleteWorkspaceDialog.showModal();
 }
@@ -252,7 +258,7 @@ function askToOpen(file = null, workspaceId = workspaces.activeId) {
   pendingOpenWorkspaceId = workspaceId;
   hideSelectionMenu();
   if (ui.workspaceSidebar.classList.contains("is-open")) closeSidebar();
-  ui.replaceWorkspaceName.textContent = workspace.name;
+  ui.replaceWorkspaceName.textContent = workspaceDisplayName(workspace);
   const hasPdf = Boolean(workspace.fileName);
   ui.replaceTitle.textContent = hasPdf ? "Mevcut PDF değiştirilsin mi?" : "Bu workspace'e PDF açılsın mı?";
   ui.replaceMessage.textContent = hasPdf
@@ -481,6 +487,14 @@ function showSelectionMenu(mode, clientX, clientY) {
   ui.selectionMenu.style.top = `${Math.max(8, Math.min(clientY, window.innerHeight - height - 8))}px`;
 }
 
+function openPageContextMenu(page, clientX, clientY) {
+  if (!state.doc || !Number.isSafeInteger(page) || page < 1 || page > state.pageCount) return;
+  contextSelection = null;
+  contextPageBookmark = page;
+  ui.bookmarkPage.textContent = findPageBookmark(page) ? "Sayfa yer imini kaldır" : "Sayfayı yer imlerine ekle";
+  showSelectionMenu("page", clientX, clientY);
+}
+
 function findPageBookmark(page) {
   const workspace = activeWorkspace(workspaces);
   return workspace.notes.find((note) =>
@@ -595,6 +609,81 @@ function showToast(message) {
   ui.toast.textContent = message;
   ui.toast.hidden = false;
   state.toastTimer = setTimeout(() => { ui.toast.hidden = true; }, 4500);
+}
+
+function formatPdfFileSize(bytes) {
+  if (!Number.isFinite(bytes) || bytes < 0) return "Bilinmiyor";
+  const size = bytes >= 1024 * 1024 ? bytes / (1024 * 1024) : bytes / 1024;
+  const unit = bytes >= 1024 * 1024 ? "MB" : "KB";
+  return `${new Intl.NumberFormat("tr-TR", { maximumFractionDigits: 2 }).format(size)} ${unit} (${new Intl.NumberFormat("tr-TR").format(bytes)} bayt)`;
+}
+
+function pdfMetadataValue(value) {
+  return typeof value === "string" ? value.trim() : typeof value === "number" ? String(value) : "";
+}
+
+function formatPdfMetadataDate(value) {
+  const text = pdfMetadataValue(value);
+  const parts = /^D:(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(.*)$/.exec(text);
+  if (!parts) return text;
+  const zone = parts[7].replace(/'/g, "");
+  const zoneLabel = zone === "Z" ? " UTC"
+    : /^[+-]\d{4}$/.test(zone) ? ` UTC${zone.slice(0, 3)}:${zone.slice(3)}` : "";
+  return `${parts[3]}.${parts[2]}.${parts[1]} ${parts[4]}:${parts[5]}:${parts[6]}${zoneLabel}`;
+}
+
+function renderPdfInfoDetails(entries) {
+  const fragment = document.createDocumentFragment();
+  for (const [label, rawValue] of entries) {
+    const value = pdfMetadataValue(rawValue);
+    if (!value) continue;
+    const term = document.createElement("dt");
+    const detail = document.createElement("dd");
+    term.textContent = label;
+    detail.textContent = value; // PDF-provided strings must never become HTML.
+    fragment.append(term, detail);
+  }
+  ui.pdfInfoDetails.replaceChildren(fragment);
+}
+
+async function showPdfInfo() {
+  const doc = state.doc;
+  if (!doc) return;
+  const generation = state.generation;
+  const workspace = activeWorkspace(workspaces);
+  const basic = [
+    ["Sayfa sayısı", new Intl.NumberFormat("tr-TR").format(state.pageCount)],
+    ["Dosya boyutu", formatPdfFileSize(state.fileSize)],
+  ];
+  ui.pdfInfoFileName.textContent = workspace.fileName;
+  renderPdfInfoDetails([...basic, ["Metadata", "Okunuyor…"]]);
+  ui.pdfInfoDialog.showModal();
+  try {
+    const result = await doc.getMetadata();
+    if (doc !== state.doc || generation !== state.generation || !ui.pdfInfoDialog.open) return;
+    const info = result?.info || {};
+    const metadata = result?.metadata;
+    const xmp = (key) => {
+      const value = metadata?.get?.(key);
+      return pdfMetadataValue(value);
+    };
+    const fields = [
+      ["PDF sürümü", info.PDFFormatVersion],
+      ["Başlık", info.Title || xmp("dc:title")],
+      ["Yazar", info.Author || xmp("dc:creator")],
+      ["Konu", info.Subject || xmp("dc:description")],
+      ["Anahtar kelimeler", info.Keywords],
+      ["Oluşturan uygulama", info.Creator],
+      ["PDF üreticisi", info.Producer],
+      ["Oluşturulma tarihi", formatPdfMetadataDate(info.CreationDate)],
+      ["Değiştirilme tarihi", formatPdfMetadataDate(info.ModDate)],
+    ].filter(([, value]) => pdfMetadataValue(value));
+    renderPdfInfoDetails([...basic, ...(fields.length ? fields : [["Ek metadata", "Bu PDF dosyasında belirtilmemiş."]])]);
+  } catch (error) {
+    if (doc !== state.doc || generation !== state.generation || !ui.pdfInfoDialog.open) return;
+    console.warn("PDF metadata read failed:", error);
+    renderPdfInfoDetails([...basic, ["Metadata", "Okunamadı."]]);
+  }
 }
 
 function setLoading(busy, label = "PDF açılıyor…") {
@@ -945,6 +1034,9 @@ function cancelAllWork() {
   state.doc = null;
   state.pageCount = 0;
   state.current = 1;
+  state.fileSize = 0;
+  ui.pdfInfoButton.disabled = true;
+  if (ui.pdfInfoDialog.open) ui.pdfInfoDialog.close();
   state.dimensions = [];
   state.shells = [];
   state.thumbs = [];
@@ -1032,12 +1124,8 @@ function createPageElements() {
     entry.addEventListener("contextmenu", (event) => {
       if (!state.doc) return;
       event.preventDefault();
-      contextSelection = null;
-      contextPageBookmark = index + 1;
-      const existing = findPageBookmark(index + 1);
-      ui.bookmarkPage.textContent = existing ? "Sayfa yer imini kaldır" : "Sayfayı yer imlerine ekle";
       const rect = thumb.getBoundingClientRect();
-      showSelectionMenu("page", event.clientX || rect.left + rect.width / 2, event.clientY || rect.top + 20);
+      openPageContextMenu(index + 1, event.clientX || rect.left + rect.width / 2, event.clientY || rect.top + 20);
     });
     state.thumbs[index] = thumb;
     state.thumbEntries[index] = entry;
@@ -1287,6 +1375,7 @@ async function openPDF(file, { replaceWorkspace = false, persistFile = true } = 
     }
     state.doc = doc;
     state.pageCount = doc.numPages;
+    state.fileSize = data.byteLength;
     const first = await doc.getPage(1);
     if (generation !== state.generation) return;
     const rect = first.getViewport({ scale: 1 });
@@ -1317,6 +1406,7 @@ async function openPDF(file, { replaceWorkspace = false, persistFile = true } = 
     ui.pages.hidden = false;
     ui.fileLabel.textContent = file.name;
     ui.fileLabel.title = file.name;
+    ui.pdfInfoButton.disabled = false;
     ui.status.textContent = `${state.pageCount} sayfa · Yalnızca cihazında açık`;
     createPageElements();
     updateSettingsView();
@@ -1395,7 +1485,7 @@ ui.createWorkspace.addEventListener("click", () => {
   // Keep the workspace drawer open so the newly created entry is immediately
   // visible and users can add Workspace 3, 4, etc. without reopening it.
   ui.workspaceList.scrollTop = ui.workspaceList.scrollHeight;
-  showToast(`${activeWorkspace(workspaces).name} oluşturuldu.`);
+  showToast(`${workspaceDisplayName(activeWorkspace(workspaces))} oluşturuldu.`);
 });
 ui.cancelDeleteWorkspace.addEventListener("click", () => ui.deleteWorkspaceDialog.close());
 ui.cancelDeleteWorkspaceTop.addEventListener("click", () => ui.deleteWorkspaceDialog.close());
@@ -1434,12 +1524,24 @@ ui.input.addEventListener("change", (event) => {
   if (file && workspaceId !== null) openPdfForWorkspace(file, workspaceId);
 });
 ui.viewer.addEventListener("contextmenu", (event) => {
-  const chosen = selectedPdfText();
-  if (!state.doc || !chosen) { hideSelectionMenu(); return; }
+  const shell = event.target instanceof Element ? event.target.closest(".page-shell") : null;
+  if (!state.doc || !shell) { hideSelectionMenu(); return; }
   event.preventDefault();
-  contextSelection = chosen;
-  contextPageBookmark = null;
-  showSelectionMenu("text", event.clientX, event.clientY);
+  const page = Number(shell.dataset.index) + 1;
+  const chosen = selectedPdfText();
+  if (chosen && chosen.page === page) {
+    contextSelection = chosen;
+    contextPageBookmark = null;
+    showSelectionMenu("text", event.clientX, event.clientY);
+  } else {
+    // Blank areas of a PDF page use the same bookmark menu as its thumbnail.
+    openPageContextMenu(page, event.clientX, event.clientY);
+  }
+});
+ui.pdfInfoButton.addEventListener("click", () => { void showPdfInfo(); });
+ui.closePdfInfo.addEventListener("click", () => ui.pdfInfoDialog.close());
+ui.pdfInfoDialog.addEventListener("click", (event) => {
+  if (event.target === ui.pdfInfoDialog) ui.pdfInfoDialog.close();
 });
 ui.copySelection.addEventListener("click", () => {
   const text = contextSelection?.text;
