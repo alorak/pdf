@@ -136,6 +136,7 @@ function goToPage(page, smooth = true) {
   if (!state.doc) return;
   const index = clampPage(page, state.pageCount) - 1;
   setCurrentPage(index);
+  if (state.fit !== "custom") applyFit(state.fit);
   state.shells[index]?.scrollIntoView({
     behavior: smooth ? "smooth" : "auto",
     block: state.orientation === "vertical" ? "start" : "nearest",
@@ -394,6 +395,11 @@ async function renderPage(index, generation, epoch) {
     if (!previous || Math.abs(previous.width - base.width) > .5 || Math.abs(previous.height - base.height) > .5) {
       state.dimensions[index] = { width: base.width, height: base.height };
       setPageSize(index);
+      if (index === state.current - 1 && state.fit !== "custom") {
+        requestAnimationFrame(() => {
+          if (generation === state.generation && state.fit !== "custom") applyFit(state.fit);
+        });
+      }
     }
     const viewport = page.getViewport({ scale: state.scale });
     const density = chooseDeviceScale(viewport.width, viewport.height, window.devicePixelRatio || 1);
