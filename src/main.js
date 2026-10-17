@@ -624,7 +624,7 @@ async function renderPage(index, generation, epoch) {
     // Render a text overlay only for nearby pages; the canvas remains visible.
     const overlay = document.createElement("div");
     overlay.className = "textLayer";
-    overlay.style.setProperty("--total-scale-factor", String(state.scale));
+    overlay.style.setProperty("--total-scale-factor", String(state.scale * (page.userUnit || 1)));
     const layer = new pdfjs.TextLayer({
       textContentSource: page.streamTextContent({ includeMarkedContent: true, disableNormalization: true }),
       container: overlay,
@@ -888,7 +888,7 @@ document.addEventListener("keydown", (event) => {
   const modifier = event.ctrlKey || event.metaKey;
   if (modifier && event.key.toLowerCase() === "o") {
     event.preventDefault();
-    askToOpen();
+    if (!ui.replaceDialog.open) askToOpen();
     return;
   }
   if (event.key === "Escape") {
