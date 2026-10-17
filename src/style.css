@@ -43,12 +43,12 @@ button, input, dialog { color: inherit; }
   box-shadow: 0 1px 4px rgba(30, 43, 72, .025);
 }
 .topbar::-webkit-scrollbar { display: none; }
-.brand { display: flex; align-items: center; flex: 0 0 auto; gap: 7px; margin-right: 4px; }
+.brand { display: flex; align-items: center; flex: 0 0 auto; gap: 7px; margin-right: 4px; position: sticky; left: 0; z-index: 2; padding-right: 6px; background: #fff; }
 .menu-button { background: #f2f5fa; color: #344862; }
 .menu-button svg { width: 20px; height: 20px; }
 .brand-title { font-size: 22px; letter-spacing: -1.3px; font-weight: 790; }
 .brand-dot { color: #466bee; }
-.file-group { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 0 1 auto; }
+.file-group { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 0 0 auto; }
 .workspace-chip { border: 1px solid #e2e9f7; background: #f1f5fd; color: #3858a9; border-radius: 7px; padding: 6px 9px; font-size: 11px; font-weight: 750; white-space: nowrap; }
 .primary-button {
   height: 38px; min-width: 82px; padding: 0 15px;
