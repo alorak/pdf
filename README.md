@@ -10,7 +10,11 @@ Tarayıcıda çalışan sade, hızlı ve gizliliğe odaklı bir PDF görüntüle
 - **Genişliğe sığdır**, **yüksekliğe sığdır** veya **sayfanın tamamını sığdır**; pencere değiştiğinde yeniden hesaplanır.
 - Küçük resimler **solda veya altta**; Ayarlar'dan değiştirilebilir ya da gizlenebilir.
 - Sayfa numarasıyla, önceki/sonraki butonlarıyla ve küçük resimlerle gezinti.
-- Tercihler localStorage'da tutulur; PDF dosyası kaydedilmez.
+- Sol hamburger menüsünden **en fazla 10 çalışma alanı (workspace)** oluşturma ve aralarında geçiş yapma.
+- PDF metnini seçip sağ tıklayarak **Kopyala** veya **Workspace'e kaydet** işlemleri.
+- Seçilen metinler her workspace'e ayrı olarak localStorage'da kaydedilir; dosya adı ve sayfa bilgisiyle listelenir, tek tek kopyalanabilir/silinebilir.
+- **Open PDF** işlemi onay ister. Yeni PDF başarıyla açılınca yalnızca aktif workspace'in eski kayıtları silinir; diğer workspaceler ve görünüm tercihleri korunur.
+- Tercihler ve kaydedilen metinler localStorage'da tutulur. PDF dosyaları tarayıcı oturumu boyunca bellekte tutulur, kalıcı olarak kaydedilmez; sayfa yenilenince PDF yeniden seçilmelidir.
 - PDF.js worker, görünür alan bazlı çizim, iptal edilebilir işler ve canvas bellek sınırı.
 
 ## Çalıştırma
@@ -51,7 +55,7 @@ Statik çıktı `dist/` klasöründedir. ES module ve worker güvenlik kısıtla
 | `0` | Sayfanın tamamını sığdır |
 | `PageDown` / `PageUp` | Sonraki / önceki sayfa |
 | `Home` / `End` | İlk / son sayfa |
-| `Esc` | Ayarları kapat |
+| `Esc` | Ayarları / menüleri kapat |
 
 ## Kapsam
 
