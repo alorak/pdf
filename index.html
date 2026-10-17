@@ -18,8 +18,11 @@
           <span class="brand-title">pdf<span class="brand-dot">.</span></span>
         </div>
         <div class="file-group">
-          <span id="activeWorkspaceLabel" class="workspace-chip">Workspace 1</span>
+          <span id="activeWorkspaceLabel" class="workspace-chip">W1</span>
           <div class="file-label" id="fileLabel" title="Henüz dosya açılmadı">PDF açılmadı</div>
+          <button id="pdfInfoButton" class="icon-button file-info-button" type="button" aria-label="PDF bilgileri" title="PDF bilgileri" disabled>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.2h.01" stroke-linecap="round"/></svg>
+          </button>
         </div>
 
         <div class="toolbar-spacer"></div>
@@ -144,11 +147,20 @@
         <div><span class="eyebrow">WORKSPACE SİL</span><h2 id="deleteWorkspaceTitle">Çalışma alanı silinsin mi?</h2></div>
         <button id="cancelDeleteWorkspaceTop" class="icon-button" type="button" aria-label="İptal et">✕</button>
       </div>
-      <p><strong id="deleteWorkspaceName">Workspace 1</strong> içindeki PDF ve kaydedilmiş tüm metin yer imleri bu tarayıcıdan silinecek. Diğer workspace'ler korunacak.</p>
+      <p><strong id="deleteWorkspaceName">W1</strong> içindeki PDF ve kaydedilmiş tüm metin yer imleri bu tarayıcıdan silinecek. Diğer workspace'ler korunacak.</p>
       <div class="replace-actions">
         <button id="cancelDeleteWorkspace" class="secondary-button" type="button">İptal</button>
         <button id="confirmDeleteWorkspace" class="danger-button" type="button">Evet, sil</button>
       </div>
+    </dialog>
+
+    <dialog id="pdfInfoDialog" class="settings-dialog pdf-info-dialog" aria-labelledby="pdfInfoTitle">
+      <div class="dialog-top">
+        <div><span class="eyebrow">BELGE BİLGİLERİ</span><h2 id="pdfInfoTitle">PDF metadata</h2></div>
+        <button id="closePdfInfo" class="icon-button" type="button" aria-label="Kapat">✕</button>
+      </div>
+      <p id="pdfInfoFileName" class="pdf-info-file-name"></p>
+      <dl id="pdfInfoDetails" class="pdf-info-details" aria-live="polite"></dl>
     </dialog>
 
     <dialog id="replaceDialog" class="settings-dialog replace-dialog" aria-labelledby="replaceTitle">
@@ -156,7 +168,7 @@
         <div><span class="eyebrow">PDF AÇ</span><h2 id="replaceTitle">PDF değiştirilsin mi?</h2></div>
         <button id="cancelReplaceTop" class="icon-button" type="button" aria-label="İptal et">✕</button>
       </div>
-      <p><strong id="replaceWorkspaceName">Workspace 1</strong><span id="replaceMessage"></span></p>
+      <p><strong id="replaceWorkspaceName">W1</strong><span id="replaceMessage"></span></p>
       <div class="replace-actions">
         <button id="cancelReplace" class="secondary-button" type="button">İptal</button>
         <button id="confirmReplace" class="primary-button" type="button">Evet, PDF seç</button>
