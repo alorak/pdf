@@ -57,16 +57,25 @@
         <div class="toolbar-divider"></div>
 
         <div class="toolbar-group fit-controls" aria-label="Sığdırma">
-          <button class="fit-button" type="button" data-fit="width" title="Genişliğe sığdır" disabled>Genişlik</button>
-          <button class="fit-button" type="button" data-fit="height" title="Yüksekliğe sığdır" disabled>Yükseklik</button>
-          <button class="fit-button" type="button" data-fit="page" title="Sayfanın tamamını sığdır" disabled>Tümü</button>
+          <button class="fit-button" type="button" data-fit="width" title="Genişliğe sığdır" aria-label="Genişliğe sığdır" disabled>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M10 12H5m0 0 2-2m-2 2 2 2m7-2h5m0 0-2-2m2 2-2 2"/></svg>
+          </button>
+          <button class="fit-button" type="button" data-fit="height" title="Yüksekliğe sığdır" aria-label="Yüksekliğe sığdır" disabled>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M12 10V5m0 0-2 2m2-2 2 2m-2 7v5m0 0-2-2m2 2 2-2"/></svg>
+          </button>
+          <button class="fit-button" type="button" data-fit="page" title="Sayfanın tamamını sığdır" aria-label="Sayfanın tamamını sığdır" disabled>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 10V8h2m4 0h2v2m0 4v2h-2m-4 0H8v-2"/></svg>
+          </button>
         </div>
 
         <div class="toolbar-divider"></div>
 
         <div class="toolbar-group last-controls">
           <button id="directionButton" class="icon-button direction-button" type="button" title="Kaydırma yönü" aria-label="Kaydırma yönünü değiştir" disabled>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3v18m0 0-4-4m4 4 4-4M16 21V3m0 0-4 4m4-4 4 4"/></svg>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <g class="direction-vertical"><path d="M8 3v18m0 0-4-4m4 4 4-4M16 21V3m0 0-4 4m4-4 4 4"/></g>
+              <g class="direction-horizontal"><path d="M3 8h18m0 0-4-4m4 4-4 4M21 16H3m0 0 4-4m-4 4 4 4"/></g>
+            </svg>
           </button>
           <button id="thumbsToggle" class="icon-button" type="button" title="Küçük resimleri gizle / göster" aria-label="Küçük resimleri gizle / göster" aria-pressed="true">
             <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M5 8h2M5 12h2M5 16h2"/></svg>
@@ -100,10 +109,7 @@
         </section>
       </main>
 
-      <footer class="statusbar">
-        <div id="statusText">Hazır · Dosyalar cihazında kalır</div>
-        <div class="statusbar-right"><span id="fileSize"></span><span id="orientationText">Dikey akış</span><span class="local-tag"><span class="local-dot"></span> Yerel</span></div>
-      </footer>
+      <div id="statusText" class="sr-only" role="status" aria-live="polite">Hazır</div>
     </div>
 
     <div id="sidebarBackdrop" class="sidebar-backdrop" hidden></div>
