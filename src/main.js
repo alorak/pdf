@@ -939,8 +939,8 @@ function cancelAllWork() {
   state.thumbTasks.clear();
   state.activeRenders = 0;
   state.activeThumbRenders = 0;
-  if (state.doc) void state.doc.destroy().catch(() => {});
-  else if (state.loadingTask) void state.loadingTask.destroy().catch(() => {});
+  // PDF.js 6 removed PDFDocumentProxy.destroy(); the loading task owns cleanup.
+  if (state.loadingTask) void state.loadingTask.destroy().catch(() => {});
   state.loadingTask = null;
   state.doc = null;
   state.pageCount = 0;
@@ -1282,7 +1282,7 @@ async function openPDF(file, { replaceWorkspace = false, persistFile = true } = 
     state.loadingTask = pdfjs.getDocument({ data, isEvalSupported: false });
     const doc = await state.loadingTask.promise;
     if (generation !== state.generation) {
-      void doc.destroy();
+      // cancelAllWork() already destroyed this document's loading task.
       return;
     }
     state.doc = doc;
