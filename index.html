@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f5f7fb" />
+    <meta name="description" content="Hızlı, sade ve tamamen yerel PDF okuyucu." />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; img-src 'self' data: blob:; connect-src 'self' blob:; object-src 'none'; base-uri 'self'" />
+    <title>PDF — Yerel PDF Okuyucu</title>
+  </head>
+  <body>
+    <div id="app" class="app-shell thumbs-left">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M6 2.5h8l4 4V21H6a2 2 0 0 1-2-2V4.5a2 2 0 0 1 2-2Z"/><path d="M14 2.5v4h4M8 11h7M8 15h7"/></svg>
+          </div>
+          <span class="brand-title">pdf<span class="brand-dot">.</span></span>
+        </div>
+
+        <div class="file-group">
+          <button id="openButton" class="primary-button" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
+            <span>Open</span>
+          </button>
+          <input type="file" id="fileInput" accept=".pdf,application/pdf" hidden />
+          <div class="file-label" id="fileLabel" title="Henüz dosya açılmadı">PDF açılmadı</div>
+        </div>
+
+        <div class="toolbar-spacer"></div>
+
+        <div class="toolbar-group page-controls" aria-label="Sayfa gezinme">
+          <button id="prevPage" class="icon-button" type="button" aria-label="Önceki sayfa" title="Önceki sayfa" disabled>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+          </button>
+          <label class="page-field">
+            <input id="pageInput" type="number" min="1" value="1" aria-label="Sayfa numarası" disabled />
+            <span class="page-divider">/</span>
+            <span id="pageTotal">0</span>
+          </label>
+          <button id="nextPage" class="icon-button" type="button" aria-label="Sonraki sayfa" title="Sonraki sayfa" disabled>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+          </button>
+        </div>
+
+        <div class="toolbar-divider"></div>
+
+        <div class="toolbar-group zoom-controls" aria-label="Yakınlaştırma">
+          <button id="zoomOut" class="icon-button" type="button" title="Uzaklaştır" aria-label="Uzaklaştır" disabled>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg>
+          </button>
+          <input id="zoomRange" type="range" min="20" max="600" step="5" value="100" aria-label="Yakınlaştırma kaydırıcısı" disabled />
+          <label class="zoom-field" title="Yakınlaştırma yüzdesi">
+            <input id="zoomInput" type="number" min="20" max="600" step="1" value="100" aria-label="Yakınlaştırma yüzdesi" disabled />
+            <span>%</span>
+          </label>
+          <button id="zoomIn" class="icon-button" type="button" title="Yakınlaştır" aria-label="Yakınlaştır" disabled>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M12 5v14"/></svg>
+          </button>
+        </div>
+
+        <div class="toolbar-divider"></div>
+
+        <div class="toolbar-group fit-controls" aria-label="Sığdırma">
+          <button class="fit-button" type="button" data-fit="width" title="Genişliğe sığdır" disabled>Genişlik</button>
+          <button class="fit-button" type="button" data-fit="height" title="Yüksekliğe sığdır" disabled>Yükseklik</button>
+          <button class="fit-button" type="button" data-fit="page" title="Sayfanın tamamını sığdır" disabled>Tümü</button>
+        </div>
+
+        <div class="toolbar-divider"></div>
+
+        <div class="toolbar-group last-controls">
+          <button id="directionButton" class="icon-button direction-button" type="button" title="Kaydırma yönü" aria-label="Kaydırma yönünü değiştir" disabled>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3v18m0 0-4-4m4 4 4-4M16 21V3m0 0-4 4m4-4 4 4"/></svg>
+          </button>
+          <button id="thumbsToggle" class="icon-button" type="button" title="Küçük resimleri gizle / göster" aria-label="Küçük resimleri gizle / göster" aria-pressed="true">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M5 8h2M5 12h2M5 16h2"/></svg>
+          </button>
+          <button id="settingsButton" class="icon-button settings-button" type="button" title="Ayarlar" aria-label="Ayarlar">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.3 13.8a7.5 7.5 0 0 0 0-3.6l2-1.5-2-3.4-2.3.8a7.5 7.5 0 0 0-3.1-1.8L13.5 2h-4l-.4 2.3A7.5 7.5 0 0 0 6 6.1l-2.3-.8-2 3.4 2 1.5a7.5 7.5 0 0 0 0 3.6l-2 1.5 2 3.4 2.3-.8a7.5 7.5 0 0 0 3.1 1.8l.4 2.3h4l.4-2.3a7.5 7.5 0 0 0 3.1-1.8l2.3.8 2-3.4-2-1.5Z" transform="translate(.5 0) scale(.96)"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <aside id="thumbsPane" class="thumbs-pane" aria-label="Sayfa küçük resimleri">
+          <div class="pane-heading"><span>Sayfalar</span><span id="thumbCount" class="subtle-count">0</span></div>
+          <div id="thumbList" class="thumb-list"></div>
+        </aside>
+        <section class="document-panel" aria-label="PDF görüntüleyici">
+          <div id="viewer" class="viewer" tabindex="0">
+            <div id="emptyState" class="empty-state">
+              <div class="welcome-icon" aria-hidden="true">
+                <svg viewBox="0 0 64 64" fill="none"><rect x="15" y="10" width="34" height="44" rx="5" stroke="currentColor" stroke-width="2.4"/><path d="M36 10v12h13" stroke="currentColor" stroke-width="2.4"/><path d="M22 34h20M22 41h15" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+              </div>
+              <span class="eyebrow">SADE · HIZLI · YEREL</span>
+              <h1>PDF dosyanı aç,<br />okumaya başla.</h1>
+              <p>Dosyanı bilgisayarından seç veya buraya sürükle. Belgen yalnızca bu tarayıcıda açılır.</p>
+              <button id="emptyOpenButton" type="button" class="empty-open">PDF dosyası seç <span aria-hidden="true">↗</span></button>
+              <span class="drop-hint">PDF dosyalarını buraya sürükleyebilirsin</span>
+            </div>
+            <div id="pages" class="pages" aria-label="Belge sayfaları" hidden></div>
+          </div>
+          <div id="loading" class="loading-indicator" role="status" hidden><span class="loading-spinner" aria-hidden="true"></span><span id="loadingText">PDF açılıyor…</span></div>
+        </section>
+      </main>
+
+      <footer class="statusbar">
+        <div id="statusText">Hazır · Dosyalar cihazında kalır</div>
+        <div class="statusbar-right"><span id="fileSize"></span><span id="orientationText">Dikey akış</span><span class="local-tag"><span class="local-dot"></span> Yerel</span></div>
+      </footer>
+    </div>
+
+    <dialog id="settingsDialog" class="settings-dialog" aria-labelledby="settingsTitle">
+      <div class="dialog-top">
+        <div><span class="eyebrow">GÖRÜNÜM TERCİHLERİ</span><h2 id="settingsTitle">Ayarlar</h2></div>
+        <button id="closeSettings" class="icon-button" type="button" aria-label="Ayarları kapat">✕</button>
+      </div>
+      <fieldset class="setting-fieldset">
+        <legend>Küçük resimlerin konumu</legend>
+        <label class="setting-option">
+          <input type="radio" name="thumbPosition" value="left" checked />
+          <span class="option-icon side-icon" aria-hidden="true">▥</span>
+          <span><strong>Solda</strong><small>Sayfa listesi sol kenarda</small></span>
+        </label>
+        <label class="setting-option">
+          <input type="radio" name="thumbPosition" value="bottom" />
+          <span class="option-icon" aria-hidden="true">▤</span>
+          <span><strong>Altta</strong><small>Sayfa listesi alt şeritte</small></span>
+        </label>
+      </fieldset>
+      <fieldset class="setting-fieldset">
+        <legend>Sayfa akış yönü</legend>
+        <label class="setting-option">
+          <input type="radio" name="scrollDirection" value="vertical" checked />
+          <span class="option-icon" aria-hidden="true">↕</span>
+          <span><strong>Dikey</strong><small>Sayfalar aşağıya doğru devam eder</small></span>
+        </label>
+        <label class="setting-option">
+          <input type="radio" name="scrollDirection" value="horizontal" />
+          <span class="option-icon" aria-hidden="true">↔</span>
+          <span><strong>Yatay</strong><small>Sayfalar sağa doğru devam eder</small></span>
+        </label>
+      </fieldset>
+      <div class="dialog-footer">
+        <span>Seçimlerin bu tarayıcıda hatırlanır.</span>
+        <button id="doneSettings" class="primary-button" type="button">Tamam</button>
+      </div>
+    </dialog>
+    <div id="dropOverlay" class="drop-overlay" hidden><div><span class="drop-icon">↘</span><strong>PDF dosyanı bırak</strong><small>Belgen burada, cihazında açılacak</small></div></div>
+    <div id="toast" class="toast" role="alert" hidden></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
