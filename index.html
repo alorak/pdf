@@ -136,8 +136,20 @@
       <button id="createWorkspace" class="create-workspace" type="button"><span aria-hidden="true">＋</span> Yeni workspace</button>
       <div class="sidebar-section-heading notes-heading"><span>Kaydedilen metinler</span><span id="savedCount">0</span></div>
       <div id="savedTexts" class="saved-texts"></div>
-      <p class="sidebar-privacy">Seçtiğin metinler bu tarayıcıda saklanır. PDF dosyalarının kendisi kaydedilmez.</p>
+      <p class="sidebar-privacy">PDF dosyaları ve metin yer imleri, depolama izin verdiğinde bu tarayıcıda her workspace için ayrı saklanır. Tarayıcı verilerini silersen kaybolabilirler.</p>
     </aside>
+
+    <dialog id="deleteWorkspaceDialog" class="settings-dialog replace-dialog" aria-labelledby="deleteWorkspaceTitle">
+      <div class="dialog-top">
+        <div><span class="eyebrow">WORKSPACE SİL</span><h2 id="deleteWorkspaceTitle">Çalışma alanı silinsin mi?</h2></div>
+        <button id="cancelDeleteWorkspaceTop" class="icon-button" type="button" aria-label="İptal et">✕</button>
+      </div>
+      <p><strong id="deleteWorkspaceName">Workspace 1</strong> içindeki PDF ve kaydedilmiş tüm metin yer imleri bu tarayıcıdan silinecek. Diğer workspace'ler korunacak.</p>
+      <div class="replace-actions">
+        <button id="cancelDeleteWorkspace" class="secondary-button" type="button">İptal</button>
+        <button id="confirmDeleteWorkspace" class="danger-button" type="button">Evet, sil</button>
+      </div>
+    </dialog>
 
     <dialog id="replaceDialog" class="settings-dialog replace-dialog" aria-labelledby="replaceTitle">
       <div class="dialog-top">
