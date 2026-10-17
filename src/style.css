@@ -157,6 +157,12 @@ input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer
 }
 .thumb-item:hover { background: #f0f4fc; }
 .thumb-item.active { background: #eaf0ff; color: #315bdf; }
+.thumb-item.bookmarked .thumb-preview::after {
+  content: "★"; position: absolute; z-index: 2; top: 4px; right: 4px;
+  display: grid; place-items: center; width: 19px; height: 19px;
+  color: white; background: #375edb; border-radius: 6px;
+  font-size: 12px; box-shadow: 0 1px 4px #1b315d47;
+}
 .thumb-preview {
   position: relative; width: 112px; height: 150px; display: grid; place-items: center;
   background: #fff; border: 1px solid #dde4ef; border-radius: 3px;
@@ -204,7 +210,7 @@ input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer
 .page-surface canvas { display: block; position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; }
 /* Minimal PDF.js text-layer rules: transparent selectable text above the canvas. */
 .textLayer {
-  position: absolute; inset: 0; z-index: 1; overflow: clip;
+  position: absolute; inset: 0; z-index: 2; overflow: clip;
   text-align: initial; line-height: 1; letter-spacing: normal; word-spacing: normal;
   text-size-adjust: none; forced-color-adjust: none; transform-origin: 0 0;
   --min-font-size: 1;
@@ -224,6 +230,14 @@ input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer
 .textLayer span[role="img"] { user-select: none; cursor: default; }
 .textLayer ::selection { background: rgb(60 114 238 / .28); color: transparent; }
 .textLayer br::selection { background: transparent; }
+.page-highlight-layer {
+  position: absolute; inset: 0; z-index: 1; overflow: hidden; pointer-events: none;
+}
+.page-highlight {
+  position: absolute; background: rgb(255 209 59 / .42);
+  box-shadow: inset 0 0 0 1px rgb(196 142 10 / .12);
+  border-radius: 2px; mix-blend-mode: multiply;
+}
 .app-shell:not(.has-document) .viewer { display: grid; place-items: center; background: #f7f9fd; background-image: none; }
 .empty-state {
   text-align: center; padding: 36px 24px 68px; max-width: 550px;
@@ -359,6 +373,8 @@ input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer
   color: #8290a4; font-size: 12px; line-height: 1.55;
 }
 .saved-card { border: 1px solid #e4eaf5; border-radius: 11px; padding: 11px; background: #fcfdff; }
+.saved-card.page-bookmark { border-color: #cbd9fa; background: #f6f8ff; }
+.saved-card.page-bookmark p { color: #355bbd; font-weight: 750; }
 .saved-card p { font-size: 11px; line-height: 1.55; color: #34415a; margin: 0 0 9px; white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 5; overflow: hidden; }
 .saved-card-footer { display: flex; gap: 8px; align-items: center; }
 .saved-card-footer small { font-size: 9.5px; color: #93a0b1; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -380,7 +396,7 @@ input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer
 
 /* Right-click selection actions */
 .selection-menu {
-  position: fixed; z-index: 70; width: 188px; padding: 5px;
+  position: fixed; z-index: 70; width: 216px; padding: 5px;
   background: #fff; border: 1px solid #dfe6f2; border-radius: 10px;
   box-shadow: 0 12px 36px #15263d30;
 }
