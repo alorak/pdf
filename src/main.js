@@ -1392,7 +1392,9 @@ ui.createWorkspace.addEventListener("click", () => {
   persistWorkspaces();
   applyWorkspaceView();
   renderWorkspaceSidebar();
-  closeSidebar();
+  // Keep the workspace drawer open so the newly created entry is immediately
+  // visible and users can add Workspace 3, 4, etc. without reopening it.
+  ui.workspaceList.scrollTop = ui.workspaceList.scrollHeight;
   showToast(`${activeWorkspace(workspaces).name} oluşturuldu.`);
 });
 ui.cancelDeleteWorkspace.addEventListener("click", () => ui.deleteWorkspaceDialog.close());
