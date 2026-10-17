@@ -3,6 +3,21 @@ export const MAX_WORKSPACES = 10;
 export const MAX_SAVED_TEXTS = 100;
 export const MAX_TEXT_LENGTH = 10000;
 export const MAX_HIGHLIGHT_RECTS = 240;
+export const DEFAULT_WORKSPACE_VIEW = Object.freeze({
+  fit: "page",
+  orientation: "vertical",
+  thumbPosition: "left",
+  thumbsVisible: true,
+});
+
+function normalizeWorkspaceView(value) {
+  return {
+    fit: ["width", "height", "page"].includes(value?.fit) ? value.fit : DEFAULT_WORKSPACE_VIEW.fit,
+    orientation: ["vertical", "horizontal"].includes(value?.orientation) ? value.orientation : DEFAULT_WORKSPACE_VIEW.orientation,
+    thumbPosition: ["left", "bottom"].includes(value?.thumbPosition) ? value.thumbPosition : DEFAULT_WORKSPACE_VIEW.thumbPosition,
+    thumbsVisible: typeof value?.thumbsVisible === "boolean" ? value.thumbsVisible : DEFAULT_WORKSPACE_VIEW.thumbsVisible,
+  };
+}
 
 function cleanHighlightRects(rects) {
   if (!Array.isArray(rects)) return [];
@@ -18,7 +33,7 @@ export function initialWorkspaces() {
   return {
     activeId: 1,
     nextId: 2,
-    items: [{ id: 1, name: "Workspace 1", fileName: "", notes: [], bookmarkOrder: [] }],
+    items: [{ id: 1, name: "Workspace 1", fileName: "", notes: [], bookmarkOrder: [], view: { ...DEFAULT_WORKSPACE_VIEW } }],
   };
 }
 
@@ -49,6 +64,7 @@ export function readWorkspaces(serialized) {
         name: typeof item.name === "string" && item.name.trim() ? item.name.slice(0, 60) : `Workspace ${item.id}`,
         fileName: typeof item.fileName === "string" ? item.fileName.slice(0, 255) : "",
         notes,
+        view: normalizeWorkspaceView(item.view),
         bookmarkOrder: Array.isArray(item.bookmarkOrder)
           ? [...new Set(item.bookmarkOrder.filter((page) => Number.isSafeInteger(page) && page > 0))].slice(0, MAX_SAVED_TEXTS)
           : [],
@@ -77,7 +93,7 @@ export function addWorkspace(state) {
     ...state,
     activeId: id,
     nextId: id + 1,
-    items: [...state.items, { id, name: `Workspace ${id}`, fileName: "", notes: [], bookmarkOrder: [] }],
+    items: [...state.items, { id, name: `Workspace ${id}`, fileName: "", notes: [], bookmarkOrder: [], view: { ...DEFAULT_WORKSPACE_VIEW } }],
   };
 }
 
@@ -90,6 +106,10 @@ function replaceActive(state, transform) {
     ...state,
     items: state.items.map((item) => item.id === state.activeId ? transform(item) : item),
   };
+}
+
+export function setWorkspaceView(state, view) {
+  return replaceActive(state, (item) => ({ ...item, view: normalizeWorkspaceView(view) }));
 }
 
 export function setWorkspaceFile(state, fileName) {
@@ -106,7 +126,7 @@ export function clearActiveWorkspace(state) {
 export function removeWorkspace(state, id) {
   if (!state.items.some((item) => item.id === id)) return state;
   if (state.items.length === 1) {
-    return { ...state, items: [{ ...state.items[0], fileName: "", notes: [], bookmarkOrder: [] }] };
+    return { ...state, items: [{ ...state.items[0], fileName: "", notes: [], bookmarkOrder: [], view: { ...DEFAULT_WORKSPACE_VIEW } }] };
   }
   const items = state.items.filter((item) => item.id !== id);
   return {

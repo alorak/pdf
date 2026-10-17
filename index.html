@@ -56,33 +56,29 @@
 
         <div class="toolbar-divider"></div>
 
-        <div class="toolbar-group fit-controls" aria-label="Sığdırma">
-          <button class="fit-button" type="button" data-fit="width" title="Genişliğe sığdır" aria-label="Genişliğe sığdır" disabled>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M10 12H5m0 0 2-2m-2 2 2 2m7-2h5m0 0-2-2m2 2-2 2"/></svg>
+        <div class="toolbar-group view-controls last-controls" aria-label="Görünüm seçenekleri">
+          <button id="fitMenuButton" class="view-menu-button fit-menu-button" type="button" aria-label="Sığdırma seçenekleri" aria-haspopup="true" aria-expanded="false" aria-controls="fitMenu" title="Sığdırma seçenekleri">
+            <svg class="view-current-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <g class="fit-icon-width"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M10 12H5m0 0 2-2m-2 2 2 2m7-2h5m0 0-2-2m2 2-2 2"/></g>
+              <g class="fit-icon-height"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M12 10V5m0 0-2 2m2-2 2 2m-2 7v5m0 0-2-2m2 2 2-2"/></g>
+              <g class="fit-icon-page"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 10V8h2m4 0h2v2m0 4v2h-2m-4 0H8v-2"/></g>
+            </svg>
+            <svg class="view-menu-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg>
           </button>
-          <button class="fit-button" type="button" data-fit="height" title="Yüksekliğe sığdır" aria-label="Yüksekliğe sığdır" disabled>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M12 10V5m0 0-2 2m2-2 2 2m-2 7v5m0 0-2-2m2 2 2-2"/></svg>
-          </button>
-          <button class="fit-button" type="button" data-fit="page" title="Sayfanın tamamını sığdır" aria-label="Sayfanın tamamını sığdır" disabled>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 10V8h2m4 0h2v2m0 4v2h-2m-4 0H8v-2"/></svg>
-          </button>
-        </div>
-
-        <div class="toolbar-divider"></div>
-
-        <div class="toolbar-group last-controls">
-          <button id="directionButton" class="icon-button direction-button" type="button" title="Kaydırma yönü" aria-label="Kaydırma yönünü değiştir" disabled>
-            <svg viewBox="0 0 24 24" aria-hidden="true">
+          <button id="directionButton" class="view-menu-button direction-button" type="button" aria-label="Akış yönü seçenekleri" aria-haspopup="true" aria-expanded="false" aria-controls="directionMenu" title="Akış yönü seçenekleri">
+            <svg class="view-current-icon" viewBox="0 0 24 24" aria-hidden="true">
               <g class="direction-vertical"><path d="M8 3v18m0 0-4-4m4 4 4-4M16 21V3m0 0-4 4m4-4 4 4"/></g>
               <g class="direction-horizontal"><path d="M3 8h18m0 0-4-4m4 4-4 4M21 16H3m0 0 4-4m-4 4 4 4"/></g>
             </svg>
+            <svg class="view-menu-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg>
           </button>
-          <button id="thumbsToggle" class="icon-button" type="button" title="Küçük resim konumu" aria-label="Küçük resim konumunu değiştir">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
+          <button id="thumbsToggle" class="view-menu-button" type="button" aria-label="Küçük resim paneli seçenekleri" aria-haspopup="true" aria-expanded="false" aria-controls="thumbsMenu" title="Küçük resim paneli seçenekleri">
+            <svg class="view-current-icon" viewBox="0 0 24 24" aria-hidden="true">
               <g class="thumb-icon-left"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M5 8h2M5 12h2M5 16h2"/></g>
               <g class="thumb-icon-bottom"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 14h18M7 17h3m3 0h4"/></g>
               <g class="thumb-icon-hidden"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m4 20 16-16"/></g>
             </svg>
+            <svg class="view-menu-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg>
           </button>
         </div>
       </header>
@@ -177,6 +173,20 @@
       <button id="removeBookmarkedPage" type="button" role="menuitem" hidden>Yer imlerinden kaldır</button>
     </div>
     <div id="toast" class="toast" role="alert" hidden></div>
+    <div id="fitMenu" class="view-dropdown-panel" role="group" aria-label="Sığdırma" hidden>
+      <button type="button" data-fit="width" aria-pressed="true"><span>Genişliğe sığdır</span><span class="view-option-check" aria-hidden="true">✓</span></button>
+      <button type="button" data-fit="height" aria-pressed="false"><span>Yüksekliğe sığdır</span><span class="view-option-check" aria-hidden="true">✓</span></button>
+      <button type="button" data-fit="page" aria-pressed="false"><span>Tamamını sığdır</span><span class="view-option-check" aria-hidden="true">✓</span></button>
+    </div>
+    <div id="directionMenu" class="view-dropdown-panel" role="group" aria-label="Akış yönü" hidden>
+      <button type="button" data-orientation="vertical" aria-pressed="true"><span>Dikey akış</span><span class="view-option-check" aria-hidden="true">✓</span></button>
+      <button type="button" data-orientation="horizontal" aria-pressed="false"><span>Yatay akış</span><span class="view-option-check" aria-hidden="true">✓</span></button>
+    </div>
+    <div id="thumbsMenu" class="view-dropdown-panel" role="group" aria-label="Küçük resim paneli" hidden>
+      <button type="button" data-thumbs="left" aria-pressed="true"><span>Sidebar solda</span><span class="view-option-check" aria-hidden="true">✓</span></button>
+      <button type="button" data-thumbs="bottom" aria-pressed="false"><span>Sidebar aşağıda</span><span class="view-option-check" aria-hidden="true">✓</span></button>
+      <button type="button" data-thumbs="hidden" aria-pressed="false"><span>Sidebar gizli</span><span class="view-option-check" aria-hidden="true">✓</span></button>
+    </div>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

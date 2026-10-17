@@ -89,26 +89,56 @@ button, input, dialog { color: inherit; }
 .zoom-field span { color: #66748b; }
 input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 #zoomRange { width: clamp(60px, 7vw, 104px); height: 4px; margin: 0 4px; accent-color: #4267e7; cursor: pointer; }
-.fit-controls { gap: 2px; padding: 3px; background: #f3f5f9; border-radius: 10px; }
-.fit-button {
-  width: 34px; height: 32px; display: inline-grid; place-items: center;
-  border: 0; border-radius: 7px; background: transparent;
-  color: #667389; padding: 6px;
-  transition: background .15s, box-shadow .15s;
+.view-controls { gap: 4px; }
+.view-menu-button {
+  width: 43px; height: 34px; padding: 5px 4px 5px 6px;
+  border: 1px solid #e5eaf3; border-radius: 8px;
+  background: #f8fafd; color: #5b6980;
+  display: inline-flex; align-items: center; justify-content: center; gap: 2px;
+  transition: background .15s, border-color .15s, color .15s;
 }
-.fit-button svg {
-  width: 20px; height: 20px; fill: none; stroke: currentColor;
-  stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round;
+.view-menu-button:hover:not(:disabled),
+.view-menu-button[aria-expanded="true"] {
+  background: #eaf0ff; border-color: #b9cafa; color: #3157dc;
 }
-.fit-button.active { background: #fff; color: #3157dc; box-shadow: 0 1px 5px #2233591c; }
-.fit-button:hover:not(:disabled):not(.active) { color: #31415a; }
+.view-menu-button .view-current-icon {
+  width: 20px; height: 20px; flex: 0 0 20px;
+  fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round;
+}
+.view-menu-button .view-menu-chevron {
+  width: 12px; height: 12px; flex: 0 0 12px;
+  fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round;
+}
+.fit-icon-width, .fit-icon-height, .fit-icon-page,
 .thumb-icon-left, .thumb-icon-bottom, .thumb-icon-hidden { display: none; }
+.app-shell.fit-width .fit-icon-width,
+.app-shell.fit-height-mode .fit-icon-height,
+.app-shell.fit-page .fit-icon-page,
+.app-shell.fit-custom .fit-icon-page,
 .app-shell.thumbs-left:not(.thumbs-hidden) .thumb-icon-left,
 .app-shell.thumbs-bottom:not(.thumbs-hidden) .thumb-icon-bottom,
 .app-shell.thumbs-hidden .thumb-icon-hidden { display: inline; }
 .direction-button .direction-horizontal { display: none; }
 .app-shell.flow-horizontal .direction-button .direction-vertical { display: none; }
 .app-shell.flow-horizontal .direction-button .direction-horizontal { display: inline; }
+.view-dropdown-panel {
+  position: fixed; z-index: 110;
+  width: max-content; min-width: 186px; max-width: calc(100vw - 16px);
+  max-height: min(70vh, 300px); overflow-y: auto;
+  padding: 5px; border: 1px solid #dfe6f3; border-radius: 11px;
+  background: #fff; box-shadow: 0 13px 32px #172b4d27, 0 2px 8px #172b4d12;
+}
+.view-dropdown-panel > button {
+  width: 100%; min-height: 38px; padding: 8px 10px;
+  border: 0; border-radius: 7px; background: transparent; color: #485b76;
+  display: flex; align-items: center; justify-content: space-between; gap: 20px;
+  text-align: left; white-space: nowrap; font-size: 12px; font-weight: 650;
+}
+.view-dropdown-panel > button:hover,
+.view-dropdown-panel > button:focus-visible { background: #f1f5fe; color: #345ddd; }
+.view-dropdown-panel > button[aria-pressed="true"] { background: #edf2ff; color: #2d56d4; }
+.view-option-check { visibility: hidden; color: #3766e4; font-size: 15px; font-weight: 800; }
+.view-dropdown-panel > button[aria-pressed="true"] .view-option-check { visibility: visible; }
 
 .workspace { flex: 1; min-height: 0; display: grid; position: relative; overflow: hidden; }
 .app-shell.thumbs-left:not(.thumbs-hidden) .workspace { grid-template-columns: 208px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
@@ -432,7 +462,6 @@ input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer
 @media (max-width: 1350px) {
   .topbar { gap: 8px; padding: 6px 12px; }
   .toolbar-divider { margin: 6px 0; }
-  .fit-button { padding: 6px; }
 }
 @media (max-width: 1050px) {
   .toolbar-spacer { flex-basis: 5px; }
@@ -445,7 +474,6 @@ input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer
   .toolbar-group { gap: 1px; }
   .toolbar-divider { display: none; }
   #zoomRange { width: 65px; }
-  .fit-button { padding: 6px; }
   .page-controls { margin-left: 0; }
   .last-controls { margin-left: auto; }
   .app-shell.thumbs-left:not(.thumbs-hidden) .workspace { grid-template-columns: 117px minmax(0,1fr); }

@@ -7,6 +7,7 @@ import {
   setWorkspaceFile, clearActiveWorkspace, removeWorkspace, saveSelectedText, savePageBookmark,
   removeSelectedText, removePageBookmarks, bookmarkedPageNumbers, orderedBookmarkedPageNumbers,
   reorderBookmarkedPage, moveBookmarkedPage, MAX_HIGHLIGHT_RECTS,
+  DEFAULT_WORKSPACE_VIEW, setWorkspaceView,
 } from "./workspace-store.js";
 import { saveWorkspacePdf, loadWorkspacePdf, deleteWorkspacePdf } from "./pdf-storage.js";
 import "./style.css";
@@ -33,8 +34,12 @@ const ui = {
   fileLabel: $("fileLabel"), prev: $("prevPage"), next: $("nextPage"),
   pageInput: $("pageInput"), pageTotal: $("pageTotal"), zoomOut: $("zoomOut"),
   zoomIn: $("zoomIn"), zoomRange: $("zoomRange"), zoomInput: $("zoomInput"),
+  fitTrigger: $("fitMenuButton"), fitMenu: $("fitMenu"),
   fitButtons: [...document.querySelectorAll("[data-fit]")],
-  direction: $("directionButton"), thumbnails: $("thumbsToggle"),
+  direction: $("directionButton"), directionMenu: $("directionMenu"),
+  directionOptions: [...document.querySelectorAll("[data-orientation]")],
+  thumbnails: $("thumbsToggle"), thumbsMenu: $("thumbsMenu"),
+  thumbnailOptions: [...document.querySelectorAll("[data-thumbs]")],
   viewer: $("viewer"), pages: $("pages"), bookmarkPagesEmpty: $("bookmarkPagesEmpty"),
   empty: $("emptyState"), thumbPane: $("thumbsPane"), thumbList: $("thumbList"),
   thumbPages: $("thumbPages"), thumbBookmarks: $("thumbBookmarks"), thumbEmpty: $("thumbEmpty"),
@@ -44,16 +49,13 @@ const ui = {
   toast: $("toast"), dropOverlay: $("dropOverlay"),
 };
 
-const SETTINGS_KEY = "pdf-viewer-preferences-v1";
 const ZOOM_STEPS = [0.2, 0.25, 0.33, 0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5, 6];
 const MAX_PAGE_RENDERS = 2;
 const MAX_THUMB_RENDERS = 1;
-const settings = readSettings();
-
 const state = {
   doc: null, loadingTask: null, generation: 0, renderEpoch: 0, thumbEpoch: 0,
-  pageCount: 0, current: 1, scale: 1, fit: "width",
-  orientation: settings.orientation, thumbPosition: settings.thumbPosition, thumbsVisible: settings.thumbsVisible,
+  pageCount: 0, current: 1, scale: 1, fit: "page",
+  orientation: "vertical", thumbPosition: "left", thumbsVisible: true,
   thumbnailMode: "pages",
   dimensions: [], shells: [], thumbs: [], thumbEntries: [],
   visible: new Set(), pending: new Set(), rendered: new Map(),
@@ -77,6 +79,8 @@ let touchBookmarkDrag = null;
 let mousePan = null;
 let touchPinch = null;
 let trackpadGestureScale = null;
+let openViewPanel = null;
+let openViewTrigger = null;
 
 function loadWorkspaces() {
   try { return readWorkspaces(localStorage.getItem(WORKSPACE_STORAGE_KEY)); }
@@ -171,6 +175,7 @@ function changeWorkspace(id) {
   cancelAllWork();
   workspaces = switchWorkspace(workspaces, id);
   persistWorkspaces();
+  applyWorkspaceView();
   renderWorkspaceSidebar();
   closeSidebar();
   void restoreWorkspacePdf(id);
@@ -223,6 +228,7 @@ async function confirmDeleteWorkspace() {
     if (wasActive) cancelAllWork();
     workspaces = removeWorkspace(workspaces, id);
     persistWorkspaces();
+    if (wasActive) applyWorkspaceView();
     renderWorkspaceSidebar();
     ui.deleteWorkspaceDialog.close();
     pendingDeleteWorkspaceId = null;
@@ -270,6 +276,7 @@ function openPdfForWorkspace(file, workspaceId) {
     cancelAllWork();
     workspaces = switchWorkspace(workspaces, workspaceId);
     persistWorkspaces();
+    applyWorkspaceView();
     renderWorkspaceSidebar();
   }
   void openPDF(file, { replaceWorkspace: true });
@@ -556,27 +563,31 @@ function saveContextText() {
   showToast("Seçilen metin workspace'e kaydedildi.");
 }
 
-function readSettings() {
-  try {
-    const value = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
-    return {
-      orientation: ["vertical", "horizontal"].includes(value.orientation) ? value.orientation : "vertical",
-      thumbPosition: ["left", "bottom"].includes(value.thumbPosition) ? value.thumbPosition : "left",
-      thumbsVisible: value.thumbsVisible !== false,
-    };
-  } catch {
-    return { orientation: "vertical", thumbPosition: "left", thumbsVisible: true };
-  }
+function applyWorkspaceView() {
+  const view = activeWorkspace(workspaces)?.view || DEFAULT_WORKSPACE_VIEW;
+  state.fit = view.fit;
+  state.orientation = view.orientation;
+  state.thumbPosition = view.thumbPosition;
+  state.thumbsVisible = view.thumbsVisible;
+  state.scale = 1;
+  ui.pages.classList.toggle("fit-height", view.fit === "height");
+  updateSettingsView();
+  updateToolbar();
 }
 
-function saveSettings() {
-  try {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify({
-      orientation: state.orientation, thumbPosition: state.thumbPosition, thumbsVisible: state.thumbsVisible,
-    }));
-  } catch {
-    // Private mode and constrained storage must not prevent PDF reading.
-  }
+function persistWorkspaceView(fit = null) {
+  const current = activeWorkspace(workspaces);
+  if (!current) return;
+  const previous = current.view || DEFAULT_WORKSPACE_VIEW;
+  const next = {
+    fit: fit || previous.fit,
+    orientation: state.orientation,
+    thumbPosition: state.thumbPosition,
+    thumbsVisible: state.thumbsVisible,
+  };
+  if (Object.keys(next).every((key) => next[key] === previous[key])) return;
+  workspaces = setWorkspaceView(workspaces, next);
+  persistWorkspaces();
 }
 
 function showToast(message) {
@@ -714,14 +725,19 @@ function updateSettingsView() {
   ui.pages.classList.toggle("horizontal", state.orientation === "horizontal");
   ui.app.classList.toggle("flow-horizontal", state.orientation === "horizontal");
   ui.app.classList.toggle("flow-vertical", state.orientation === "vertical");
-  const nextDirection = state.orientation === "vertical" ? "Yatay akışa geç" : "Dikey akışa geç";
-  ui.direction.title = nextDirection;
-  ui.direction.setAttribute("aria-label", nextDirection);
-  const nextPosition = !state.thumbsVisible ? "left" : state.thumbPosition === "left" ? "bottom" : "hidden";
-  const title = nextPosition === "left" ? "Küçük resimleri solda göster"
-    : nextPosition === "bottom" ? "Küçük resimleri altta göster" : "Küçük resimleri gizle";
-  ui.thumbnails.title = title;
-  ui.thumbnails.setAttribute("aria-label", title);
+  const directionLabel = state.orientation === "vertical" ? "Dikey akış" : "Yatay akış";
+  ui.direction.title = `Akış yönü: ${directionLabel}`;
+  ui.direction.setAttribute("aria-label", ui.direction.title);
+  for (const option of ui.directionOptions) {
+    option.setAttribute("aria-pressed", String(option.dataset.orientation === state.orientation));
+  }
+  const position = !state.thumbsVisible ? "hidden" : state.thumbPosition;
+  const positionLabel = { left: "Sidebar solda", bottom: "Sidebar aşağıda", hidden: "Sidebar gizli" }[position];
+  ui.thumbnails.title = `Küçük resimler: ${positionLabel}`;
+  ui.thumbnails.setAttribute("aria-label", ui.thumbnails.title);
+  for (const option of ui.thumbnailOptions) {
+    option.setAttribute("aria-pressed", String(option.dataset.thumbs === position));
+  }
 }
 
 function syncPageFieldWidth() {
@@ -730,7 +746,7 @@ function syncPageFieldWidth() {
 
 function updateToolbar() {
   const hasDoc = Boolean(state.doc);
-  [ui.prev, ui.next, ui.pageInput, ui.zoomOut, ui.zoomIn, ui.zoomRange, ui.zoomInput, ui.direction, ...ui.fitButtons].forEach((button) => { button.disabled = !hasDoc; });
+  [ui.prev, ui.next, ui.pageInput, ui.zoomOut, ui.zoomIn, ui.zoomRange, ui.zoomInput].forEach((button) => { button.disabled = !hasDoc; });
   const shownPages = visiblePageNumbers();
   const shownIndex = shownPages.indexOf(state.current);
   ui.prev.disabled = !hasDoc || shownIndex <= 0;
@@ -745,8 +761,14 @@ function updateToolbar() {
   ui.pageTotal.textContent = String(state.pageCount);
   ui.zoomInput.value = String(Math.round(state.scale * 100));
   ui.zoomRange.value = String(Math.round(state.scale * 100));
+  const fitLabels = { width: "Genişliğe sığdır", height: "Yüksekliğe sığdır", page: "Tamamını sığdır", custom: "Özel yakınlaştırma" };
+  ui.fitTrigger.title = `Sığdırma: ${fitLabels[state.fit] || fitLabels.custom}`;
+  ui.fitTrigger.setAttribute("aria-label", ui.fitTrigger.title);
+  ui.app.classList.toggle("fit-width", state.fit === "width");
+  ui.app.classList.toggle("fit-height-mode", state.fit === "height");
+  ui.app.classList.toggle("fit-page", state.fit === "page");
+  ui.app.classList.toggle("fit-custom", state.fit === "custom");
   for (const button of ui.fitButtons) {
-    button.classList.toggle("active", hasDoc && state.fit === button.dataset.fit);
     button.setAttribute("aria-pressed", String(hasDoc && state.fit === button.dataset.fit));
   }
 }
@@ -846,7 +868,7 @@ function updateOrientation(direction) {
   if (!["vertical", "horizontal"].includes(direction) || direction === state.orientation) return;
   state.orientation = direction;
   updateSettingsView();
-  saveSettings();
+  persistWorkspaceView();
   if (state.doc) {
     ui.viewer.scrollTop = 0;
     ui.viewer.scrollLeft = 0;
@@ -855,20 +877,43 @@ function updateOrientation(direction) {
   }
 }
 
-function cycleThumbnails() {
-  // Left -> Bottom -> Hidden -> Left. Preferences remain local to this browser.
-  if (!state.thumbsVisible) {
-    state.thumbPosition = "left";
-    state.thumbsVisible = true;
-  } else if (state.thumbPosition === "left") {
-    state.thumbPosition = "bottom";
-  } else {
-    state.thumbsVisible = false;
-  }
+function setThumbnailPosition(position) {
+  if (!["left", "bottom", "hidden"].includes(position)) return;
+  const current = state.thumbsVisible ? state.thumbPosition : "hidden";
+  if (position === current) return;
+  state.thumbsVisible = position !== "hidden";
+  if (position !== "hidden") state.thumbPosition = position;
   hideSelectionMenu();
   updateSettingsView();
-  saveSettings();
+  persistWorkspaceView();
   if (state.doc && state.fit !== "custom") requestAnimationFrame(() => applyFit(state.fit));
+}
+
+function closeViewMenu(restoreFocus = false) {
+  if (!openViewPanel) return;
+  openViewPanel.hidden = true;
+  openViewTrigger.setAttribute("aria-expanded", "false");
+  const previousTrigger = openViewTrigger;
+  openViewPanel = null;
+  openViewTrigger = null;
+  if (restoreFocus) previousTrigger.focus({ preventScroll: true });
+}
+
+function toggleViewMenu(trigger, panel) {
+  if (openViewPanel === panel) {
+    closeViewMenu(true);
+    return;
+  }
+  closeViewMenu();
+  if (trigger.disabled) return;
+  panel.hidden = false;
+  trigger.setAttribute("aria-expanded", "true");
+  openViewPanel = panel;
+  openViewTrigger = trigger;
+  const bounds = trigger.getBoundingClientRect();
+  panel.style.left = `${Math.max(8, Math.min(bounds.left, window.innerWidth - panel.offsetWidth - 8))}px`;
+  panel.style.top = `${bounds.bottom + 7}px`;
+  (panel.querySelector('[aria-pressed="true"]') || panel.querySelector("button"))?.focus({ preventScroll: true });
 }
 
 function cancelAllWork() {
@@ -1226,6 +1271,8 @@ async function openPDF(file, { replaceWorkspace = false, persistFile = true } = 
   }
   const workspaceId = workspaces.activeId;
   cancelAllWork();
+  state.fit = activeWorkspace(workspaces)?.view?.fit || DEFAULT_WORKSPACE_VIEW.fit;
+  ui.pages.classList.toggle("fit-height", state.fit === "height");
   const generation = state.generation;
   setLoading(true);
   ui.status.textContent = "Dosya okunuyor…";
@@ -1338,9 +1385,15 @@ ui.closeSidebar.addEventListener("click", closeSidebar);
 ui.sidebarBackdrop.addEventListener("click", closeSidebar);
 ui.emptyOpen.addEventListener("click", openSidebar);
 ui.createWorkspace.addEventListener("click", () => {
-  if (workspaces.items.length >= MAX_WORKSPACES) return;
+  const next = addWorkspace(workspaces);
+  if (next === workspaces) return;
   cancelAllWork();
-  updateWorkspaces(addWorkspace(workspaces));
+  workspaces = next;
+  persistWorkspaces();
+  applyWorkspaceView();
+  renderWorkspaceSidebar();
+  closeSidebar();
+  showToast(`${activeWorkspace(workspaces).name} oluşturuldu.`);
 });
 ui.cancelDeleteWorkspace.addEventListener("click", () => ui.deleteWorkspaceDialog.close());
 ui.cancelDeleteWorkspaceTop.addEventListener("click", () => ui.deleteWorkspaceDialog.close());
@@ -1424,9 +1477,46 @@ ui.zoomInput.addEventListener("change", () => setScale(Number(ui.zoomInput.value
 ui.zoomInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") { setScale(Number(ui.zoomInput.value) / 100); ui.zoomInput.blur(); }
 });
-for (const button of ui.fitButtons) button.addEventListener("click", () => applyFit(button.dataset.fit));
-ui.direction.addEventListener("click", () => updateOrientation(state.orientation === "vertical" ? "horizontal" : "vertical"));
-ui.thumbnails.addEventListener("click", cycleThumbnails);
+const viewMenus = [
+  [ui.fitTrigger, ui.fitMenu],
+  [ui.direction, ui.directionMenu],
+  [ui.thumbnails, ui.thumbsMenu],
+];
+for (const [trigger, panel] of viewMenus) {
+  trigger.addEventListener("click", () => toggleViewMenu(trigger, panel));
+}
+for (const button of ui.fitButtons) button.addEventListener("click", () => {
+  if (state.doc) applyFit(button.dataset.fit);
+  else {
+    state.fit = button.dataset.fit;
+    ui.pages.classList.toggle("fit-height", state.fit === "height");
+    updateToolbar();
+  }
+  persistWorkspaceView(button.dataset.fit);
+  closeViewMenu(true);
+});
+for (const button of ui.directionOptions) button.addEventListener("click", () => {
+  updateOrientation(button.dataset.orientation);
+  closeViewMenu(true);
+});
+for (const button of ui.thumbnailOptions) button.addEventListener("click", () => {
+  setThumbnailPosition(button.dataset.thumbs);
+  closeViewMenu(true);
+});
+document.addEventListener("pointerdown", (event) => {
+  if (openViewPanel && !openViewPanel.contains(event.target) && !openViewTrigger.contains(event.target)) closeViewMenu();
+});
+document.addEventListener("keydown", (event) => {
+  if (openViewPanel && event.key === "Escape") {
+    event.preventDefault();
+    closeViewMenu(true);
+  }
+});
+document.addEventListener("focusin", (event) => {
+  if (openViewPanel && !openViewPanel.contains(event.target) && !openViewTrigger.contains(event.target)) closeViewMenu();
+});
+window.addEventListener("resize", () => closeViewMenu());
+ui.app.querySelector(".topbar").addEventListener("scroll", () => closeViewMenu(), { passive: true });
 ui.thumbPages.addEventListener("click", () => setThumbnailMode("pages"));
 ui.thumbBookmarks.addEventListener("click", () => setThumbnailMode("bookmarks"));
 
@@ -1649,7 +1739,6 @@ const resizeObserver = new ResizeObserver(() => {
 });
 resizeObserver.observe(ui.viewer);
 
-updateSettingsView();
-updateToolbar();
+applyWorkspaceView();
 renderWorkspaceSidebar();
 void restoreWorkspacePdf(workspaces.activeId);
