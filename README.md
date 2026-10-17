@@ -36,6 +36,12 @@ Statik çıktı `dist/` klasöründedir. ES module ve worker güvenlik kısıtla
 
 `.github/workflows/pages.yml` testleri çalıştırır ve Pages'e dağıtımı **yalnızca PR birleştirilince** (ya da elle başlatılınca) yapar; güvenilir `main` branch'ini kullanır. Depoda Settings → Pages → Build and deployment → Source: **GitHub Actions** seçilmelidir. Çıktı yolu `/pdf/` olarak ayarlanmıştır.
 
+### Yayında CSS/JS görünmüyorsa
+
+Önce GitHub Pages ayarlarında yayın kaynağının **GitHub Actions** olduğunu doğrulayın. GitHub'ın otomatik `pages build and deployment` (Jekyll) işi, Vite ile derlenmiş `dist/` yerine depo kaynak dosyalarını yayımlarsa tasarım bozulur. Bu işin başarılı olması, PDF görüntüleyicinin doğru yayımlandığı anlamına gelmez.
+
+**Actions → Build and publish PDF viewer → Run workflow → main** üzerinden **yeni** bir çalıştırma başlatın. Mevcut bir çalıştırmanın `Re-run jobs` seçeneği aynı `github-pages` artefaktını tekrar kullanabildiğinden, bu workflow her denemeye farklı bir artefakt adı verir. Son yayın başarılı olduktan sonra sayfayı önbelleği atlayarak yenileyin.
+
 ## Klavye kısayolları
 
 | Kısayol | İşlem |
