@@ -1,5 +1,5 @@
 export const WORKSPACE_STORAGE_KEY = "pdf-viewer-workspaces-v1";
-export const MAX_WORKSPACES = 10;
+export const MAX_WORKSPACES = 20;
 export const MAX_SAVED_TEXTS = 100;
 export const MAX_TEXT_LENGTH = 10000;
 export const MAX_HIGHLIGHT_RECTS = 240;

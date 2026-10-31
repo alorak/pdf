@@ -1,3 +1,5 @@
+import { MAX_WORKSPACES } from "./workspace-store.js";
+
 /**
  * IndexedDB records are keyed by workspace ID rather than by file name.
  * A stale or mismatched record cannot be restored by the PDF reader.
@@ -41,7 +43,7 @@ export function formatBytes(value) {
 }
 
 /** Always reserve a fixed number of UI slots without altering workspace storage. */
-export function libraryWorkspaceSlots(state, max = 10) {
+export function libraryWorkspaceSlots(state, max = MAX_WORKSPACES) {
   const existing = state.items.slice(0, max).map((workspace) => ({
     id: workspace.id,
     workspace,

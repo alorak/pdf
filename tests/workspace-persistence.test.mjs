@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   initialWorkspaces, addWorkspace, switchWorkspace, activeWorkspace,
-  saveSelectedText, setWorkspaceFile, clearActiveWorkspace, removeWorkspace,
+  saveSelectedText, setWorkspaceFile, clearActiveWorkspace, removeWorkspace, MAX_WORKSPACES,
 } from "../src/workspace-store.js";
 
 function withFileAndNote(state, fileName, noteId) {
@@ -11,13 +11,13 @@ function withFileAndNote(state, fileName, noteId) {
   return next;
 }
 
-test("ten workspaces keep independent PDF names and bookmarks", () => {
+test("twenty workspaces keep independent PDF names and bookmarks", () => {
   let state = withFileAndNote(initialWorkspaces(), "first.pdf", "first");
-  for (let id = 2; id <= 10; id++) {
+  for (let id = 2; id <= MAX_WORKSPACES; id++) {
     state = addWorkspace(state);
     state = withFileAndNote(state, `file-${id}.pdf`, `note-${id}`);
   }
-  assert.equal(state.items.length, 10);
+  assert.equal(state.items.length, MAX_WORKSPACES);
   assert.equal(addWorkspace(state), state);
   for (const item of state.items) {
     assert.equal(item.notes.length, 1);
