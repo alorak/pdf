@@ -15,14 +15,14 @@ test("workspaces start with a persistent first workspace", () => {
   assert.deepEqual(readWorkspaces(JSON.stringify(state)), state);
 });
 
-test("only ten workspaces may be created and selection survives switching", () => {
+test("up to twenty workspaces may be created and selection survives switching", () => {
   let state = initialWorkspaces();
   for (let index = 1; index < MAX_WORKSPACES; index++) state = addWorkspace(state);
-  assert.equal(state.items.length, 10);
+  assert.equal(state.items.length, MAX_WORKSPACES);
   assert.equal(addWorkspace(state), state);
   state = switchWorkspace(state, 1);
   state = saveSelectedText(state, { id: "first", text: "Merhaba PDF", page: 2, fileName: "example.pdf", savedAt: 10 });
-  state = switchWorkspace(state, 10);
+  state = switchWorkspace(state, MAX_WORKSPACES);
   assert.equal(activeWorkspace(state).notes.length, 0);
   state = switchWorkspace(state, 1);
   assert.equal(activeWorkspace(state).notes[0].text, "Merhaba PDF");
@@ -149,4 +149,28 @@ test("manual bookmark order stays isolated per workspace and clears with PDF rep
   assert.deepEqual(activeWorkspace(state).bookmarkOrder, []);
   state = setWorkspaceFile(state, "replacement.pdf");
   assert.deepEqual(orderedBookmarkedPageNumbers(activeWorkspace(state), "replacement.pdf", 8), []);
+});
+
+test("previously saved ten workspaces can be expanded to twenty without data loss", () => {
+  let state = initialWorkspaces();
+  for (let id = 2; id <= 10; id++) state = addWorkspace(state);
+  state = switchWorkspace(state, 10);
+  state = setWorkspaceFile(state, "original-ten.pdf");
+  const previouslySaved = readWorkspaces(JSON.stringify(state));
+  for (let id = 11; id <= MAX_WORKSPACES; id++) state = addWorkspace(state);
+  assert.equal(state.items.length, 20);
+  assert.equal(state.activeId, 20);
+  assert.equal(state.items.find((item) => item.id === 10).fileName, "original-ten.pdf");
+  assert.equal(previouslySaved.items.length, 10);
+  assert.equal(readWorkspaces(JSON.stringify(state)).items.length, MAX_WORKSPACES);
+});
+
+test("workspace restore preserves at most twenty entries", () => {
+  const items = Array.from({ length: MAX_WORKSPACES + 3 }, (_, index) => ({
+    id: index + 1, fileName: `pdf-${index + 1}.pdf`, notes: [],
+  }));
+  const restored = readWorkspaces(JSON.stringify({ items, activeId: 20, nextId: 24 }));
+  assert.equal(restored.items.length, MAX_WORKSPACES);
+  assert.equal(restored.activeId, 20);
+  assert.equal(restored.items.at(-1).fileName, "pdf-20.pdf");
 });
