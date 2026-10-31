@@ -6,20 +6,17 @@
 - **P2.6-B: Yerel corpus**: Kullanıcı tarafından lisans/izin kontrolü yapılmış, SHA-256'ları kilitlenmiş gerçek PDF dosyalarını çevrimdışı doğrulayan komut ve Chromium E2E protokolü. Bu depoda gerçek dosya **bulunmaz**; manifest sağlanmadan gerçek corpus kabulü geçilmiş sayılmaz.
 - **P2.6-C: Fiziksel Android**: ADB üzerinden PSS/boş RAM örnekleri ve cihazda manuel sekme sonlandırma/kurtarma protokolü. CI'da fiziksel cihaz olmadığı için **bekleyen saha doğrulamasıdır**.
 
-## A. Chromium IndexedDB kota/kurtarma
+## A. Chromium IndexedDB kota gözlemi ve deterministik işlem abort
 
-`e2e/p2-6-quota.spec.mjs`, Chromium DevTools Protocol `Storage.overrideQuotaForOrigin` ile origin disk kotasını sınırlar. Bu, transaction yapay olarak hata fırlatmak yerine tarayıcının kendi kota mekanizmasını çalıştırır; yine de fiziksel disk doldurma veya işletim sistemi OOM testi değildir.
+`e2e/p2-6-quota.spec.mjs` iki **ayrı kanıt** üretir:
 
-1. Geçerli 7 sayfalık PDF ve sayfa 3 yer imi aynı IndexedDB revizyonunda kaydedilir.
-2. PDF'nin gerçek SHA-256'sı ve metadata revizyonu ölçülür.
-3. CDP kota override aktifken 4 MiB yeni Blob ile `writeWorkspaceAndPdf` veya `restoreWorkspaceBackup` denenir. İşlemin reddedilmesi zorunludur.
-4. Transaction reddedildikten sonra PDF SHA, PDF ismi, yer imi ve revizyon birebir korunmalıdır.
-5. Sayfa reload sonrası aynı 7 sayfalık PDF'yi açmalıdır.
-6. Kota override'ı kaldırılır. Geçerli 9 sayfalık dosyayla sonraki gerçek write işlemi başarılıdır; revizyon +1 olur, reload'da 9 sayfa açılır.
+1. **Kota gözlemi (CDP):** `Storage.overrideQuotaForOrigin` ile sınır azaltılır, ayrı bir geçici IndexedDB PDF kaydı kullanılarak kota motorunun yazımı reddedip reddetmediği ölçülür. `quotaProbe.enforced` hem `true` hem `false` olabilir. Override aktif olduğu halde yazımın reddedilmemesi, gerçek kota uygulamasının doğrulanmadığı anlamına gelir. Geçici kayıt varsa silinir. **Kota gerçekten uygulanmadığında bunu başarılı kota reddi olarak raporlamıyoruz.**
+2. **Gerçek tarayıcı transaction abort:** `IDBObjectStore.put` sonrasında aynı `readwrite` transaction içinde yerel `IDBTransaction.abort()` çağrılır. Bu, mock edilmiş `put` istisnası değil, Chrome'un gerçek transaction rollback mekanizmasıdır. Hem `writeWorkspaceAndPdf` hem `restoreWorkspaceBackup` aynı senaryoyu çalıştırır.
+3. İlk PDF'nin SHA-256'sı, adı, sayfa 3 yer imi ve metadata revizyonu redden önce ve sonra eşit olmalıdır. Sayfa yeniden yüklendiğinde 7 sayfa korunmalıdır.
+4. Abort enjeksiyonu kaldırıldıktan sonra **hem write hem restore** geçerli yeni 9 sayfalık PDF ile başarıyla tamamlanmalı, revizyon +1 olmalı, reload'da yeni PDF açılmalıdır.
+5. `scripts/verify-p2-6-quota.mjs`, iki ayrı JSON raporunun bütünlüğünü kontrol eder.
 
-Test verileri tarayıcı bağlamına özeldir. Snapshot'lar `test-results/stress/p2-6-quota-{write,restore}.json` içine yalnız metadata/hash olarak yazılır.
-
-**Not:** CDP'de kota kaldırma `Storage.overrideQuotaForOrigin({origin})` çağrısıyla yapılır. Desteklenmeyen Chromium sürümünde test atlanmaz, hata olarak görünür.
+Bu otomatik test **gerçek fiziksel disk dolmasını, Chrome'un tüm kota politikalarını veya Android OOM'u kanıtlamaz**. CDP kota motoru yazımı reddetmediyse ilgili olgu **P2.6-B/C için açık** kalır. Kotayı resetlemek için `Storage.overrideQuotaForOrigin({origin})` kullanılır.
 
 ## B. Gerçek PDF corpus — elle sağlanır, ağdan indirilmez
 

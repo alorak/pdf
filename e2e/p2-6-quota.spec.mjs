@@ -51,19 +51,70 @@ async function quotaSession(page) {
   return { cdp, initial, active };
 }
 
-async function attemptOversizedWrite(page, kind) {
+
+async function probeActualQuota(page) {
+  const quota = await quotaSession(page);
+  let result;
+  try {
+    result = await page.evaluate(async () => {
+      const { openDatabase } = await import("/pdf/src/pdf-storage.js");
+      const db = await openDatabase();
+      const bytes = new Uint8Array(12 * 1024 * 1024);
+      let x = 0x12345678;
+      for (let i = 0; i < bytes.length; i++) {
+        x ^= x << 13; x ^= x >>> 17; x ^= x << 5; bytes[i] = x & 255;
+      }
+      const txResult = await new Promise(resolve => {
+        const tx = db.transaction("pdfs", "readwrite");
+        tx.objectStore("pdfs").put({ workspaceId: 999, name: "quota-probe.pdf",
+          blob: new Blob([bytes], { type: "application/pdf" }), lastModified: 222 });
+        tx.oncomplete = () => resolve({ enforced: false, outcome: "write-committed" });
+        tx.onabort = () => resolve({ enforced: true, outcome: "native-IDB-abort",
+          errorName: tx.error?.name ?? "AbortError" });
+        tx.onerror = event => event.preventDefault();
+      });
+      // Probes must never leave orphaned PDF records.
+      if (!txResult.enforced) {
+        await new Promise((resolve, reject) => {
+          const tx = db.transaction("pdfs", "readwrite");
+          tx.objectStore("pdfs").delete(999);
+          tx.oncomplete = resolve;
+          tx.onabort = () => reject(tx.error);
+        });
+      }
+      return txResult;
+    });
+    return { ...result, overrideBytes: quota.active.quota,
+      overrideActive: quota.active.overrideActive };
+  } finally {
+    await quota.cdp.send("Storage.overrideQuotaForOrigin", { origin });
+    await quota.cdp.detach();
+  }
+}
+
+async function attemptNativeTransactionAbort(page, kind) {
   return page.evaluate(async operation => {
     const { readWorkspaceData, writeWorkspaceAndPdf, restoreWorkspaceBackup } =
       await import("/pdf/src/workspace-data.js");
     const { setWorkspaceFile } = await import("/pdf/src/workspace-store.js");
     const current = await readWorkspaceData();
     const next = setWorkspaceFile(current.state, "oversized.pdf");
-    const content = new Uint8Array(4 * 1024 * 1024);
-    let x = 0x12345678;
-    for (let i = 0; i < content.length; i++) {
-      x ^= x << 13; x ^= x >>> 17; x ^= x << 5; content[i] = x & 255;
-    }
-    const file = new File([content], "oversized.pdf", { type: "application/pdf", lastModified: 222 });
+    const content = new Uint8Array(128 * 1024);
+    const file = new File([content], "oversized.pdf",
+      { type: "application/pdf", lastModified: 222 });
+    const nativePut = IDBObjectStore.prototype.put;
+    let abortTriggered = false;
+    // Force a genuine browser IDBTransaction.abort() after a PDF Blob put is
+    // queued, while the metadata and PDF write are in the SAME transaction.
+    IDBObjectStore.prototype.put = function (...args) {
+      const request = nativePut.apply(this, args);
+      if (!abortTriggered && this.name === "pdfs" && args[0]?.name === "oversized.pdf") {
+        abortTriggered = true;
+        const tx = this.transaction;
+        queueMicrotask(() => { try { tx.abort(); } catch { /* already finished */ } });
+      }
+      return request;
+    };
     try {
       if (operation === "write") {
         await writeWorkspaceAndPdf(next, current.revision, { put: { id: 1, file } });
@@ -73,58 +124,61 @@ async function attemptOversizedWrite(page, kind) {
             lastModified: file.lastModified, blob: file }],
         }, current.revision);
       }
-      return { rejected: false, name: null, message: "write unexpectedly succeeded" };
+      return { rejected: false, abortTriggered, name: null };
     } catch (error) {
-      return { rejected: true, name: error.name, message: error.message.slice(0, 160) };
+      return { rejected: true, abortTriggered, name: error.name };
+    } finally {
+      IDBObjectStore.prototype.put = nativePut;
     }
   }, kind);
 }
 
+
 for (const operation of ["write", "restore"]) {
-  test("P2.6 CDP real quota abort preserves PDF, bookmark and revision: " + operation, async ({ page }) => {
+  test("P2.6 native transaction abort and quota probe preserve PDF: " + operation, async ({ page }) => {
     await seed(page);
     const before = await readSnapshot(page);
-    const quota = await quotaSession(page);
-    let failure, afterFailure;
-    try {
-      failure = await attemptOversizedWrite(page, operation);
-      expect(failure.rejected, "overquota IDB transaction must fail closed").toBe(true);
-      afterFailure = await readSnapshot(page);
-      expect(afterFailure).toEqual(before);
-      await page.reload();
-      await expect(page.locator("#pageTotal")).toHaveText("7", { timeout: 30_000 });
-      expect(await readSnapshot(page)).toEqual(before);
-    } finally {
-      await quota.cdp.send("Storage.overrideQuotaForOrigin", { origin });
-      await quota.cdp.detach();
-    }
-    if (operation === "write") {
-      await page.evaluate(async bytes => {
-        const { readWorkspaceData, writeWorkspaceAndPdf } = await import("/pdf/src/workspace-data.js");
-        const { setWorkspaceFile } = await import("/pdf/src/workspace-store.js");
-        const current = await readWorkspaceData();
-        const next = setWorkspaceFile(current.state, "recovered.pdf");
-        const file = new File([new Uint8Array(bytes)], "recovered.pdf",
-          { type: "application/pdf", lastModified: 333 });
+    const quotaProbe = await probeActualQuota(page);
+    expect(quotaProbe.overrideActive).toBe(true);
+    const failure = await attemptNativeTransactionAbort(page, operation);
+    expect(failure.abortTriggered, "a PDF put must trigger native IDBTransaction.abort()").toBe(true);
+    expect(failure.rejected, "native transaction abort must fail closed").toBe(true);
+    const afterFailure = await readSnapshot(page);
+    expect(afterFailure).toEqual(before);
+    await page.reload();
+    await expect(page.locator("#pageTotal")).toHaveText("7", { timeout: 30_000 });
+    expect(await readSnapshot(page)).toEqual(before);
+    await page.evaluate(async ({ bytes, operation }) => {
+      const { readWorkspaceData, writeWorkspaceAndPdf, restoreWorkspaceBackup } =
+        await import("/pdf/src/workspace-data.js");
+      const { setWorkspaceFile } = await import("/pdf/src/workspace-store.js");
+      const current = await readWorkspaceData();
+      const next = setWorkspaceFile(current.state, "recovered.pdf");
+      const file = new File([new Uint8Array(bytes)], "recovered.pdf",
+        { type: "application/pdf", lastModified: 333 });
+      if (operation === "write") {
         await writeWorkspaceAndPdf(next, current.revision, { put: { id: 1, file } });
-      }, [...replacement]);
-      await page.reload();
-      await expect(page.locator("#pageTotal")).toHaveText("9", { timeout: 30_000 });
-      const recovered = await readSnapshot(page);
-      expect(recovered.fileName).toBe("recovered.pdf");
-      expect(recovered.sha256).toBe(createHash("sha256").update(replacement).digest("hex"));
-      expect(recovered.revision).toBe(before.revision + 1);
-    }
+      } else {
+        await restoreWorkspaceBackup({ state: next, records: [{ workspaceId: 1,
+          name: file.name, type: file.type, lastModified: file.lastModified, blob: file }] },
+          current.revision);
+      }
+    }, { bytes: [...replacement], operation });
+    await page.reload();
+    await expect(page.locator("#pageTotal")).toHaveText("9", { timeout: 30_000 });
+    const recovered = await readSnapshot(page);
+    expect(recovered.fileName).toBe("recovered.pdf");
+    expect(recovered.sha256).toBe(createHash("sha256").update(replacement).digest("hex"));
+    expect(recovered.revision).toBe(before.revision + 1);
     await mkdir("test-results/stress", { recursive: true });
-    const report = { schema: 1, kind: "real-chromium-quota", operation,
-      before, afterFailure, failure,
-      quotaBeforeBytes: quota.initial.quota, overrideBytes: quota.active.quota,
-      pass: true, note: "CDP quota override, not physical disk exhaustion" };
+    const report = { schema: 2, kind: "chromium-quota-probe-and-native-abort",
+      operation, before, afterFailure, recovered, failure, quotaProbe, pass: true,
+      note: "Quota probe may not be enforced by Chromium. Native transaction abort is deterministic." };
     await writeFile("test-results/stress/p2-6-quota-" + operation + ".json",
       JSON.stringify(report, null, 2));
-    console.log("P2_6_QUOTA_PASSED " + JSON.stringify({
-      operation, failureName: failure.name, overrideBytes: quota.active.quota,
-      revision: before.revision, persistedOriginalSha256: before.sha256,
+    console.log("P2_6_NATIVE_ABORT_PASSED " + JSON.stringify({
+      operation, failureName: failure.name, quotaEnforced: quotaProbe.enforced,
+      originalSha256: before.sha256, finalRevision: recovered.revision,
     }));
   });
 }
