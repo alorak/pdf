@@ -16,6 +16,10 @@ jobs:
         with:
           node-version: '24'
           cache: npm
+      - name: Generate PDF export dependency lockfile for review
+        run: |
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          node -e 'const s=require("fs").readFileSync("package-lock.json").toString("base64"); for(let i=0;i<s.length;i+=2000) console.log("LOCKSEG"+String(i/2000).padStart(3,"0")+"="+s.slice(i,i+2000))'
       - name: Install exact dependencies
         run: npm ci --no-audit --no-fund
       - name: Workspace, migration and backup tests
