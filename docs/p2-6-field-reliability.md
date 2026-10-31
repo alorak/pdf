@@ -2,7 +2,7 @@
 # P2.6 — Gerçek PDF corpus, Chromium kota/kurtarma ve fiziksel Android
 
 ## Durum ve kabul ayrımı
-- **P2.6-A: Otomatik CI**: Gerçek Chromium IndexedDB kota baskısı (CDP quota override), başarısız PDF yazma/backup restore, önceki PDF'nin SHA-256'sı, yer imleri ve metadata revizyonunun korunması, reload ve başarılı yeniden deneme.
+- **P2.6-A: Otomatik CI (geçti)**: CDP kota override *gözlemi* ve bağımsız gerçek IndexedDB native abort işlemleri; PDF SHA-256, yer imi, metadata revizyonu, cold reload ve sonraki geçerli yazma/restore korunumu. **Gerçek kota reddi bu CI ortamında oluşmadı.**
 - **P2.6-B: Yerel corpus**: Kullanıcı tarafından lisans/izin kontrolü yapılmış, SHA-256'ları kilitlenmiş gerçek PDF dosyalarını çevrimdışı doğrulayan komut ve Chromium E2E protokolü. Bu depoda gerçek dosya **bulunmaz**; manifest sağlanmadan gerçek corpus kabulü geçilmiş sayılmaz.
 - **P2.6-C: Fiziksel Android**: ADB üzerinden PSS/boş RAM örnekleri ve cihazda manuel sekme sonlandırma/kurtarma protokolü. CI'da fiziksel cihaz olmadığı için **bekleyen saha doğrulamasıdır**.
 
@@ -16,7 +16,7 @@
 4. Abort enjeksiyonu kaldırıldıktan sonra **hem write hem restore** geçerli yeni 9 sayfalık PDF ile başarıyla tamamlanmalı, revizyon +1 olmalı, reload'da yeni PDF açılmalıdır.
 5. `scripts/verify-p2-6-quota.mjs`, iki ayrı JSON raporunun bütünlüğünü kontrol eder.
 
-Bu otomatik test **gerçek fiziksel disk dolmasını, Chrome'un tüm kota politikalarını veya Android OOM'u kanıtlamaz**. CDP kota motoru yazımı reddetmediyse ilgili olgu **P2.6-B/C için açık** kalır. Kotayı resetlemek için `Storage.overrideQuotaForOrigin({origin})` kullanılır.
+Bu otomatik test **gerçek fiziksel disk dolmasını, Chrome'un tüm kota politikalarını veya Android OOM'u kanıtlamaz**. CDP kota reddi doğrulanmadığı için bu başlık ayrıca açık kalır. Kotayı resetlemek için `Storage.overrideQuotaForOrigin({origin})` kullanılır.
 
 ## B. Gerçek PDF corpus — elle sağlanır, ağdan indirilmez
 
@@ -80,3 +80,23 @@ Bu aşama yalnız **sahip olunan/izinli** cihazda uygulanır. USB debugging aç�
 - GitHub-hosted Chromium'ta kota override, **gerçek fiziksel disk dolması veya Android OOM killer** testi değildir.
 - Gerçek lisanslı corpus ve fiziksel Android oturumu henüz sağlanmadı; kabul kayıtları gelmeden P2.6-B/C tamamlandı denemez.
 - Cihaz telemetrisi gerçek kullanıcı PDF'leriyle birleştirilmeden önce mahremiyet ve izin doğrulaması gerektirir.
+
+## Kabul kaydı — 31 Ekim 2026
+
+- PR: [#37](https://github.com/alorak/pdf/pull/37)
+- Otomatik kabul: [GitHub Actions #41223973463](https://github.com/alorak/pdf/actions/runs/41223973463) — `validate` ve `browser-e2e` başarılı.
+- `P2_6_NATIVE_ABORT_PASSED`: **write** ve **restore** senaryoları başarılı.
+- `P2_6_ATOMIC_RECOVERY_PASSED`: SHA-256, yer imi ve revizyon kanıtları eksiksiz.
+- Eski 7 sayfalık dosyanın SHA-256'sı: `5883dcf75590b5fbca9f43ae3a20d75c45773fe6087b70823c41c831f92552c9`; iki abort senaryosunda aynı kaldı.
+- Başlangıç revizyonu: `2`; abort sonrası aynı, geçerli yeniden deneme sonrası `3`.
+- CDP kota override: 262.144 byte; `quotaProbe.enforced=false` — **gerçek kota reddi oluşmadı**, yalnızca native abort doğrulandı.
+
+| Bileşen | Durum |
+|---|---|
+| P2.6-A native transaction rollback, cold reload, sonraki yazma/restore | **Geçti** |
+| P2.6-A CDP quota override bildirimi | **Doğrulandı** |
+| P2.6-A gerçek kota aşımı nedeniyle yazmanın reddi | **Doğrulanmadı** |
+| P2.6-B lisanslı gerçek PDF corpus'u üzerinde PDF.js + Chromium koşusu | **Beklemede: dosyalar/manifest gerekli** |
+| P2.6-C fiziksel Android düşük-RAM ve sekme yeniden açma | **Beklemede: cihaz testi gerekli** |
+
+Otomatik testte PDF ve çalışma alanı verileri GitHub'a taşınmaz; yalnızca fixture'ların hash ve metadata test raporları arşivlenir. Gerçek belge corpus'u ve fiziksel cihaz sonuçları elde edilmeden bütün P2.6 aşaması için genel **tamamlandı** iddiasında bulunulmaz.
