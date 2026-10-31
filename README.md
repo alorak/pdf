@@ -39,6 +39,13 @@ Tarayıcıda çalışan sade, hızlı ve gizliliğe odaklı bir PDF görüntüle
 - **Eksik PDF sayfaları**: Kaynak PDF kaybolmuş, değiştirilmiş ya da ilgili sayfa bulunamıyorsa o sanal sayfa yerinde açıklamalı bir PDF uyarı sayfası görünür. Sağlam sayfalar kullanılabilir; sıra ve mevcut yer imi sayfa numaraları kaymaz.
 - **Kayıtları denetle → Bozuk bağlantıları yönet**: Geçersiz sayfa referansları listelenir. Her bağlantı ayrı onayla kaldırılabilir. Kaynak PDF silinmez; kaldırılan derleme sayfasına ait yer imleri kaldırılır, sonraki sayfaların yer imi/okuma konumları düzeltilir. Kaynak geri gelmişse silme reddedilir.
 
+### P1.2 — PDF içinde arama, içindekiler ve performans
+
+- Üst çubuktaki **arama** simgesi veya `Ctrl/Cmd+F` ile belge metni taranır. Sonuçlar ilgili sayfa ve kısa bağlamla listelenir; önceki/sonraki veya sonuç kartına tıklayarak sayfaya gidilir. Taranan içerik cihazda kalır, dış hizmetlere gönderilmez.
+- PDF.js'in orijinal `getOutline()` verisi küçük resim panelindeki **İçindekiler** sekmesinde gösterilir. Bölüm tıklaması PDF hedef sayfasına gider; gömülü outline yoksa açıklama gösterilir. Dış URL'ler güvenlik amacıyla otomatik açılmaz.
+- PDF.js sayfa çizimi görünür alan tabanlı kalır. Ağır canvas/text katmanları için **12 sayfa**, küçük resim canvas'ları için **90 sayfa** üst sınırı uygulanır. Uzakta kalan sayfa tekrar görünür olursa yeniden çizilir. Ana belge sayfa kabuklarının tamamı hâlâ DOM'dadır; çok büyük belgelerde tam sanallaştırma ayrı bir iyileştirme konusudur.
+- `npm test` birim/mantık testlerini, PR üzerindeki `browser-e2e` işi ise Chromium'da PDF açma, arama, PDF outline gezinme ve okuma konumunu koruma senaryolarını doğrular. Yerelde Playwright çalıştırmak için `npm install --no-save --package-lock=false @playwright/test@1.56.1`, `npx playwright install chromium` ve `npx playwright test` kullanılabilir.
+
 ## Çalıştırma
 
 Node.js 22+ gerektirir (Node.js 24 önerilir).
