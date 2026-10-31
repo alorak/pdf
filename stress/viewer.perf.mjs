@@ -23,6 +23,27 @@ for (const pages of pageCounts) {
     const browserVersion = browser.version();
     const errors = [];
     page.on("pageerror", error => errors.push(error.message));
+    await page.addInitScript(() => {
+      const diagnostics = { observers: 0, observed: 0, callbacks: 0, intersecting: 0, canvasContexts: 0 };
+      window.__p2ObserverDiagnostics = diagnostics;
+      const OriginalObserver = window.IntersectionObserver;
+      window.IntersectionObserver = class extends OriginalObserver {
+        constructor(callback, options) {
+          diagnostics.observers++;
+          super((entries, observer) => {
+            diagnostics.callbacks++;
+            diagnostics.intersecting += entries.filter(entry => entry.isIntersecting).length;
+            callback(entries, observer);
+          }, options);
+        }
+        observe(target) { diagnostics.observed++; return super.observe(target); }
+      };
+      const oldGetContext = HTMLCanvasElement.prototype.getContext;
+      HTMLCanvasElement.prototype.getContext = function (...args) {
+        diagnostics.canvasContexts++;
+        return oldGetContext.apply(this, args);
+      };
+    });
     await page.goto("");
     await expect(page.locator("#emptyOpenButton")).toBeVisible();
     const chooserEvent = page.waitForEvent("filechooser");
@@ -56,6 +77,7 @@ for (const pages of pageCounts) {
         viewerScrollHeight: reader?.scrollHeight,
         viewerClientHeight: reader?.clientHeight,
         body: document.body.className,
+        observerDiagnostics: window.__p2ObserverDiagnostics,
       };
     });
     console.log("P2_RENDER_DIAGNOSTIC " + JSON.stringify({ pages, renderDiagnostic, browserConsoleErrors }));
