@@ -14,7 +14,7 @@ import { saveWorkspacePdf, loadWorkspacePdf, deleteWorkspacePdf, listWorkspacePd
 import { samePdfContent, replacementWorkspaceState } from "./pdf-replacement.js";
 import { initializeWorkspaceData, readWorkspaceData, saveWorkspaceData, writeWorkspaceAndPdf,
   getAllStoredPdfs, readWorkspaceBundle, createWorkspaceBackup, parseWorkspaceBackup, restoreWorkspaceBackup,
-  inspectWorkspaceIntegrity } from "./workspace-data.js";
+  inspectWorkspaceIntegrity, deleteOrphanPdfSafe } from "./workspace-data.js";
 import { classifyLibraryPdfs, measureLocalStorage, formatBytes, libraryWorkspaceSlots, libraryBookmarkSummary, paginateLibraryBookmarkPages } from "./library-utils.js";
 import { linkedPickerWindow, isOutsideDialogRect } from "./linked-picker-utils.js";
 import { openLinkedDocument, isLinkedOnlyWorkspace, workspaceDocumentName } from "./linked-document.js";
@@ -2739,13 +2739,7 @@ async function confirmDeleteLibraryPdf() {
     // Check both in-memory and saved workspace metadata immediately before removal.
     // Never remove a PDF that became associated with a workspace meanwhile.
     await waitForWorkspaceSaves();
-    const persisted = await readWorkspaceData();
-    const linked = [...workspaces.items, ...persisted.state.items].some(
-      (item) => item.id === record.workspaceId && item.fileName === record.name
-    );
-    if (linked) {
-      showToast("PDF artık bir workspace'e bağlı; silinmedi.");
-    } else if (await deleteWorkspacePdfIfMatches(record.workspaceId, record)) {
+    if (await deleteOrphanPdfSafe(record)) {
       const cached = workspaceFiles.get(record.workspaceId);
       if (cached?.name === record.name && cached.size === record.size) workspaceFiles.delete(record.workspaceId);
       libraryPreviewCache.delete(record.workspaceId);
