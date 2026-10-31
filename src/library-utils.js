@@ -54,3 +54,51 @@ export function libraryWorkspaceSlots(state, max = MAX_WORKSPACES) {
     workspace: null,
   }))];
 }
+
+/**
+ * Count saved bookmarks for the current PDF, grouped into distinct navigable
+ * pages. Multiple text selections on the same page count separately but appear
+ * as one destination in the five-pages-per-view dialog.
+ */
+export function libraryBookmarkSummary(workspace) {
+  if (!workspace?.fileName) return { count: 0, pages: [] };
+  const byPage = new Map();
+  let count = 0;
+  for (const note of workspace.notes || []) {
+    if (note?.fileName !== workspace.fileName
+      || !Number.isSafeInteger(note.page) || note.page < 1) continue;
+    count++;
+    if (!byPage.has(note.page)) {
+      byPage.set(note.page, { page: note.page, pageBookmarks: 0, textNotes: 0, preview: "" });
+    }
+    const group = byPage.get(note.page);
+    if (note.kind === "page") group.pageBookmarks++;
+    else {
+      group.textNotes++;
+      if (!group.preview && typeof note.text === "string") group.preview = note.text.trim().slice(0, 140);
+    }
+  }
+  const order = [...new Set((workspace.bookmarkOrder || []).filter(
+    (page) => Number.isSafeInteger(page) && byPage.has(page)
+  ))];
+  const indexed = new Map(order.map((page, index) => [page, index]));
+  const pages = [...byPage.values()].sort((a, b) => {
+    const aIndex = indexed.get(a.page);
+    const bIndex = indexed.get(b.page);
+    if (aIndex !== undefined && bIndex !== undefined) return aIndex - bIndex;
+    if (aIndex !== undefined) return -1;
+    if (bIndex !== undefined) return 1;
+    return a.page - b.page;
+  });
+  return { count, pages };
+}
+
+export function paginateLibraryBookmarkPages(pages, pageIndex, pageSize = 5) {
+  const totalPages = Math.max(1, Math.ceil(pages.length / pageSize));
+  const index = Math.max(0, Math.min(totalPages - 1, Math.trunc(pageIndex) || 0));
+  return {
+    pageIndex: index,
+    totalPages,
+    items: pages.slice(index * pageSize, (index + 1) * pageSize),
+  };
+}

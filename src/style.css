@@ -528,13 +528,30 @@ input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer
 }
 .library-workspace-grid { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 8px; }
 .library-workspace-card {
-  display: block; width: 100%; min-width: 0; text-align: left;
-  border: 1px solid #e3e8f2; border-radius: 9px; padding: 6px; background: #fff;
+  display: block; width: 100%; min-width: 0; text-align: left; position: relative;
+  border: 1px solid #e3e8f2; border-radius: 9px; background: #fff;
   transition: border-color .15s, box-shadow .15s;
 }
 .library-workspace-card:hover { border-color: #9bb3ec; box-shadow: 0 3px 14px #26477a0d; }
 .library-workspace-card.is-active { border-color: #8ba5ea; }
 .library-workspace-card.is-uncreated { border-style: dashed; background: #fbfcfe; }
+.library-workspace-select {
+  display: block; width: 100%; min-width: 0; border: 0; border-radius: 8px; padding: 6px;
+  background: transparent; color: inherit; text-align: left;
+}
+.library-workspace-select:focus-visible { outline: 3px solid #9bbefa; outline-offset: -2px; }
+.library-bookmark-badge {
+  position: absolute; z-index: 1; top: 10px; right: 10px;
+  min-width: 26px; height: 26px; padding: 0 5px;
+  border: 2px solid #fff; border-radius: 999px;
+  background: #375dd3; color: #fff; box-shadow: 0 2px 6px #1d316847;
+  font-size: 11px; font-weight: 800; line-height: 1;
+  display: grid; place-items: center;
+}
+.library-bookmark-badge:hover { background: #2044b9; }
+.library-bookmark-badge:focus-visible { outline: 3px solid #99b6ff; outline-offset: 2px; }
+.library-bookmark-badge.is-empty { background: #8795ac; }
+.library-bookmark-badge.is-empty:hover { background: #64758c; }
 .library-workspace-preview {
   width: 100%; aspect-ratio: 210 / 297; background: #eef2f8; border-radius: 5px;
   display: grid; place-items: center; overflow: hidden; position: relative;
@@ -553,7 +570,44 @@ input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer
 .library-workspace-name strong { font-size: 11px; color: #2d3c54; font-weight: 800; }
 .library-workspace-name small { font-size: 9px; color: #8090a7; white-space: nowrap; }
 .library-workspace-file { display: block; font-size: 10px; color: #7c899f; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; margin-top: 4px; min-height: 14px; }
-.library-workspace-card:focus-visible { outline: 3px solid #9bbefa; outline-offset: 2px; }
+.library-workspace-card:focus-within { border-color: #8da9ed; }
+
+
+/* Bookmark picker: five navigable PDF pages per modal view. */
+.library-bookmarks-dialog { width: min(500px, calc(100vw - 24px)); max-height: min(85dvh, 690px); overflow: auto; }
+.library-bookmarks-dialog .dialog-top { margin-bottom: 9px; }
+.library-bookmarks-dialog .dialog-top h2 { overflow-wrap: anywhere; }
+.library-bookmarks-summary {
+  margin: 0 0 12px; font-size: 12px; line-height: 1.5; color: #71819b;
+  overflow-wrap: anywhere;
+}
+.library-bookmark-pages { display: flex; flex-direction: column; gap: 7px; min-height: 48px; }
+.library-bookmark-destination {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  border: 1px solid #e3e9f4; border-radius: 9px; background: #f9fbff;
+  color: #31415e; padding: 10px 12px; text-align: left;
+}
+.library-bookmark-destination:hover { background: #edf3ff; border-color: #b9cef7; }
+.library-bookmark-page-number {
+  display: grid; place-items: center; flex: 0 0 34px; height: 36px;
+  border-radius: 7px; background: #e8effe; color: #355bba;
+  font-size: 12px; font-weight: 800;
+}
+.library-bookmark-details { display: flex; flex-direction: column; min-width: 0; gap: 3px; flex: 1; }
+.library-bookmark-details strong { font-size: 12px; }
+.library-bookmark-details small { font-size: 10px; color: #74839b; }
+.library-bookmark-snippet {
+  display: block; font-size: 11px; color: #687890;
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width: 100%;
+}
+.library-bookmark-arrow { font-size: 22px; line-height: 1; color: #8298c2; }
+.library-bookmark-empty { margin: 0; padding: 18px 12px; color: #78869e; font-size: 12px; text-align: center; }
+.library-bookmark-pagination {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin-top: 14px; padding-top: 13px; border-top: 1px solid #e8edf5;
+}
+.library-bookmark-pagination > span { font-size: 12px; color: #6f7f96; font-weight: 750; }
+.library-bookmark-pagination button { padding: 7px 10px; }
 
 .library-list { border: 1px solid #e4eaf4; border-radius: 10px; overflow: hidden; background: #fff; min-height: 49px; font-size: 12px; color: #708098; }
 .library-list[aria-busy="true"] { padding: 14px; }

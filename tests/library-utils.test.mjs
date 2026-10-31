@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { classifyLibraryPdfs, measureLocalStorage, formatBytes, libraryWorkspaceSlots } from "../src/library-utils.js";
+import { classifyLibraryPdfs, measureLocalStorage, formatBytes, libraryWorkspaceSlots, libraryBookmarkSummary, paginateLibraryBookmarkPages } from "../src/library-utils.js";
 import { MAX_WORKSPACES } from "../src/workspace-store.js";
 
 test("library matches PDF records by workspace ID and file name, never file name alone", () => {
@@ -81,4 +81,58 @@ test("Library preserves workspace IDs and order across the two groups of ten", (
   assert.deepEqual(slots.slice(0, 10).map((slot) => slot.id), [1,2,3,4,5,6,7,8,9,10]);
   assert.deepEqual(slots.slice(10).map((slot) => slot.id), [11,12,13,14,15,16,17,18,19,20]);
   assert.ok(slots.slice(12).every((slot) => slot.workspace === null));
+});
+
+test("Library bookmark badge counts page and text bookmarks for the current PDF", () => {
+  const workspace = {
+    fileName: "active.pdf",
+    notes: [
+      { id: "p3", kind: "page", page: 3, fileName: "active.pdf" },
+      { id: "t3", kind: "text", page: 3, fileName: "active.pdf", text: "Important observation" },
+      { id: "t3b", kind: "text", page: 3, fileName: "active.pdf", text: "Another note" },
+      { id: "p8", kind: "page", page: 8, fileName: "active.pdf" },
+      { id: "old", kind: "page", page: 11, fileName: "old.pdf" },
+      { id: "invalid", kind: "text", page: null, fileName: "active.pdf", text: "Not navigable" },
+    ],
+    bookmarkOrder: [8, 3],
+  };
+  const summary = libraryBookmarkSummary(workspace);
+  assert.equal(summary.count, 4);
+  assert.deepEqual(summary.pages.map((entry) => entry.page), [8, 3]);
+  assert.equal(summary.pages[1].pageBookmarks, 1);
+  assert.equal(summary.pages[1].textNotes, 2);
+  assert.equal(summary.pages[1].preview, "Important observation");
+  assert.equal(workspace.notes.length, 6, "source bookmarks must not be modified");
+});
+
+test("Library bookmark modal lists five distinct pages at a time", () => {
+  const workspace = {
+    fileName: "guide.pdf",
+    bookmarkOrder: [],
+    notes: Array.from({ length: 12 }, (_, index) => ({
+      id: `p-${index + 1}`, kind: "page", page: index + 1, fileName: "guide.pdf",
+    })),
+  };
+  const pages = libraryBookmarkSummary(workspace).pages;
+  const first = paginateLibraryBookmarkPages(pages, 0);
+  const second = paginateLibraryBookmarkPages(pages, 1);
+  const third = paginateLibraryBookmarkPages(pages, 2);
+  assert.equal(first.totalPages, 3);
+  assert.deepEqual(first.items.map((entry) => entry.page), [1, 2, 3, 4, 5]);
+  assert.deepEqual(second.items.map((entry) => entry.page), [6, 7, 8, 9, 10]);
+  assert.deepEqual(third.items.map((entry) => entry.page), [11, 12]);
+  assert.equal(paginateLibraryBookmarkPages(pages, 99).pageIndex, 2);
+  assert.equal(paginateLibraryBookmarkPages(pages, -1).pageIndex, 0);
+});
+
+test("Library bookmark modal handles empty and mismatched PDFs", () => {
+  assert.deepEqual(libraryBookmarkSummary({ fileName: "", notes: [] }), { count: 0, pages: [] });
+  assert.deepEqual(libraryBookmarkSummary(null), { count: 0, pages: [] });
+  const workspace = {
+    fileName: "current.pdf", notes: [{ kind: "page", page: 2, fileName: "replaced.pdf" }],
+  };
+  assert.equal(libraryBookmarkSummary(workspace).count, 0);
+  const empty = paginateLibraryBookmarkPages([], 0);
+  assert.equal(empty.totalPages, 1);
+  assert.deepEqual(empty.items, []);
 });
