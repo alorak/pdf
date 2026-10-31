@@ -1859,6 +1859,126 @@ async function chooseLinkedPickerSource(session, sourceId) {
   }
 }
 
+function linkedPickerAlreadyAdded(session, page) {
+  const target = workspaces.items.find(item => item.id === session.targetId);
+  const file = session.file;
+  return Boolean(target?.linkedPages?.some(ref =>
+    ref.sourceWorkspaceId === session.sourceId && ref.sourceFileName === file?.name
+    && ref.sourceSize === file.size && ref.sourceLastModified === file.lastModified
+    && ref.page === page));
+}
+
+function toggleLinkedPickerPage(session, page, button, check) {
+  if (!linkedPickerActive(session) || session.saving || !session.doc) return;
+  if (session.selected.has(page)) session.selected.delete(page);
+  else {
+    const target = workspaces.items.find(item => item.id === session.targetId);
+    const remaining = MAX_LINKED_PAGES - (target?.linkedPages?.length || 0);
+    if (session.selected.size >= remaining) {
+      linkedPickerMessage("Bu workspace en fazla " + MAX_LINKED_PAGES + " bağlantılı sayfa tutabilir.");
+      return;
+    }
+    session.selected.add(page);
+  }
+  const selected = session.selected.has(page);
+  button.setAttribute("aria-pressed", String(selected));
+  check.hidden = !selected;
+  button.setAttribute("aria-label", "Sayfa " + page + (selected ? " seçili" : " seç"));
+  updateLinkedPickerSelection(session);
+}
+
+function renderLinkedPickerPage(session, index) {
+  if (!linkedPickerActive(session) || !session.doc) return;
+  const max = Math.max(0, Math.ceil(session.total / LINKED_PICKER_PAGE_SIZE) - 1);
+  session.index = Math.max(0, Math.min(max, index));
+  const epoch = ++session.renderEpoch;
+  try { session.renderTask?.cancel(); } catch { /* Render finished */ }
+  session.renderTask = null;
+  const first = session.index * LINKED_PICKER_PAGE_SIZE + 1;
+  const last = Math.min(session.total, first + LINKED_PICKER_PAGE_SIZE - 1);
+  const fragment = document.createDocumentFragment();
+  const previews = [];
+  for (let pageNumber = first; pageNumber <= last; pageNumber++) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "linked-picker-page";
+    const already = linkedPickerAlreadyAdded(session, pageNumber);
+    const selected = session.selected.has(pageNumber);
+    button.disabled = already;
+    button.setAttribute("aria-pressed", String(selected));
+    button.setAttribute("aria-label", "Sayfa " + pageNumber +
+      (already ? " zaten ekli" : selected ? " seçili" : " seç"));
+    const { paper, placeholder } = linkedPickerPaper("Yükleniyor…");
+    const title = document.createElement("span");
+    title.className = "linked-picker-page-number";
+    title.textContent = "Sayfa " + pageNumber + (already ? " · Ekli" : "");
+    const check = document.createElement("span");
+    check.className = "linked-picker-check";
+    check.textContent = "✓";
+    check.hidden = !selected;
+    check.setAttribute("aria-hidden", "true");
+    button.append(paper, title, check);
+    if (!already) button.addEventListener("click", () => toggleLinkedPickerPage(session, pageNumber, button, check));
+    previews.push({ pageNumber, paper, placeholder });
+    fragment.append(button);
+  }
+  ui.linkedPagePickerGrid.replaceChildren(fragment);
+  ui.linkedPickerPageLabel.textContent = (session.index + 1) + " / " + (max + 1) + " · Sayfa " + first + "–" + last;
+  ui.linkedPickerPrev.disabled = session.index === 0;
+  ui.linkedPickerNext.disabled = session.index === max;
+  updateLinkedPickerSelection(session);
+  void renderLinkedPickerPagePreviews(session, previews, epoch);
+}
+
+async function renderLinkedPickerPagePreviews(session, entries, epoch) {
+  const current = () => linkedPickerActive(session, epoch);
+  for (const { pageNumber, paper, placeholder } of entries) {
+    if (!current()) return;
+    const cached = session.pageCache.get(pageNumber);
+    if (cached) {
+      const img = document.createElement("img");
+      img.src = cached;
+      img.alt = "";
+      img.setAttribute("aria-hidden", "true");
+      paper.replaceChildren(img);
+      continue;
+    }
+    try {
+      const page = await session.doc.getPage(pageNumber);
+      if (!current()) return;
+      const base = page.getViewport({ scale: 1 });
+      const ratio = Math.min(window.devicePixelRatio || 1, 1.5);
+      const scale = Math.max(.01, Math.min(
+        Math.max(1, paper.clientWidth - 10) / base.width,
+        Math.max(1, paper.clientHeight - 10) / base.height
+      ));
+      const viewport = page.getViewport({ scale: scale * ratio });
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.ceil(viewport.width));
+      canvas.height = Math.max(1, Math.ceil(viewport.height));
+      canvas.style.width = Math.floor(viewport.width / ratio) + "px";
+      canvas.style.height = Math.floor(viewport.height / ratio) + "px";
+      canvas.setAttribute("aria-hidden", "true");
+      const context = canvas.getContext("2d", { alpha: false });
+      if (!context) throw new Error("Canvas kullanılamıyor");
+      const task = page.render({ canvas, canvasContext: context, viewport });
+      session.renderTask = task;
+      await task.promise;
+      if (session.renderTask === task) session.renderTask = null;
+      if (!current()) return;
+      paper.replaceChildren(canvas);
+      if (session.pageCache.size >= 40) session.pageCache.delete(session.pageCache.keys().next().value);
+      try { session.pageCache.set(pageNumber, canvas.toDataURL("image/webp", .72)); }
+      catch { /* Rendered thumbnail remains visible. */ }
+      page.cleanup();
+    } catch (error) {
+      if (!current()) return;
+      console.warn("Page thumbnail failed:", error);
+      placeholder.textContent = "Önizleme yok";
+    }
+  }
+}
+
 function openAddLinkedPagesDialog() {
   const target = activeWorkspace(workspaces);
   ui.linkedSourceWorkspace.replaceChildren();
