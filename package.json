@@ -7,7 +7,11 @@
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0",
-    "test": "node --test"
+    "test": "node --test",
+    "test:stress:model": "node --test stress/*.stress.mjs",
+    "test:stress:browser": "playwright test --config=playwright.stress.config.mjs",
+    "test:stress:report": "node stress/report.mjs",
+    "fixture:generate": "node scripts/generate-stress-pdf.mjs"
   },
   "dependencies": {
     "pdfjs-dist": "6.4.299",
