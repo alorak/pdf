@@ -1622,7 +1622,11 @@ async function refreshLinkedPages() {
       }
       let doc = documents.get(ref.sourceWorkspaceId);
       if (!doc) {
-        const file = workspaceFiles.get(ref.sourceWorkspaceId) || await loadWorkspacePdf(ref.sourceWorkspaceId);
+        let file = workspaceFiles.get(ref.sourceWorkspaceId);
+        if (!file || file.name !== ref.sourceFileName || file.size !== ref.sourceSize
+          || file.lastModified !== ref.sourceLastModified) {
+          file = await loadWorkspacePdf(ref.sourceWorkspaceId);
+        }
         if (!current()) break;
         if (!file || file.name !== ref.sourceFileName || file.size !== ref.sourceSize
           || file.lastModified !== ref.sourceLastModified) {
@@ -1649,7 +1653,8 @@ async function refreshLinkedPages() {
         if (!current()) break;
         const bounds = page.getViewport({ scale: 1 });
         const width = Math.max(200, Math.min(410, entry.paper.clientWidth - 16));
-        const scale = width / bounds.width;
+        const height = Math.max(240, entry.paper.clientHeight - 16);
+        const scale = Math.min(width / bounds.width, height / bounds.height);
         const ratio = Math.min(window.devicePixelRatio || 1, 1.5);
         const viewport = page.getViewport({ scale: scale * ratio });
         const canvas = document.createElement("canvas");
@@ -1741,30 +1746,46 @@ async function confirmAddLinkedPages() {
 }
 
 async function openLinkedSourcePage(ref) {
+  const targetAtClick = workspaces.activeId;
   const source = workspaces.items.find((item) => item.id === ref.sourceWorkspaceId);
   if (!source || source.fileName !== ref.sourceFileName) {
     showToast("Kaynak workspace veya PDF artık mevcut değil.");
     return;
   }
-  const file = workspaceFiles.get(source.id) || await loadWorkspacePdf(source.id);
-  if (!file || file.name !== ref.sourceFileName || file.size !== ref.sourceSize
-    || file.lastModified !== ref.sourceLastModified) {
-    showToast("Kaynak PDF değişmiş veya silinmiş; yanlış belge açılmadı.");
-    return;
+  try {
+    let file = workspaceFiles.get(source.id);
+    if (!file || file.name !== ref.sourceFileName || file.size !== ref.sourceSize
+      || file.lastModified !== ref.sourceLastModified) {
+      file = await loadWorkspacePdf(source.id);
+    }
+    if (workspaces.activeId !== targetAtClick || ui.linkedPagesPage.hidden) return;
+    if (!file || file.name !== ref.sourceFileName || file.size !== ref.sourceSize
+      || file.lastModified !== ref.sourceLastModified
+      || workspaces.items.find((item) => item.id === source.id)?.fileName !== ref.sourceFileName) {
+      showToast("Kaynak PDF değişmiş veya silinmiş; yanlış belge açılmadı.");
+      return;
+    }
+    workspaceFiles.set(source.id, file);
+    closeLinkedPages();
+    cancelAllWork();
+    workspaces = switchWorkspace(workspaces, source.id);
+    persistWorkspaces();
+    applyWorkspaceView();
+    renderWorkspaceSidebar();
+    await restoreWorkspacePdf(source.id);
+    if (workspaces.activeId !== source.id || !state.doc || ref.page > state.pageCount) {
+      showToast("Kaynak PDF'nin istenen sayfası açılamadı.");
+      return;
+    }
+    setThumbnailMode("pages");
+    const generation = state.generation;
+    requestAnimationFrame(() => {
+      if (generation === state.generation && state.doc) goToPage(ref.page, false);
+    });
+  } catch (error) {
+    console.warn("Linked source navigation failed:", error);
+    showToast("Kaynak PDF okunamadı. Tarayıcı depolamasını kontrol et.");
   }
-  closeLinkedPages();
-  cancelAllWork();
-  workspaces = switchWorkspace(workspaces, source.id);
-  persistWorkspaces();
-  applyWorkspaceView();
-  renderWorkspaceSidebar();
-  await restoreWorkspacePdf(source.id);
-  if (workspaces.activeId !== source.id || !state.doc || ref.page > state.pageCount) return;
-  setThumbnailMode("pages");
-  const generation = state.generation;
-  requestAnimationFrame(() => {
-    if (generation === state.generation && state.doc) goToPage(ref.page, false);
-  });
 }
 
 function cancelLibraryPreviews() {
@@ -2615,7 +2636,7 @@ document.addEventListener("keydown", (event) => {
     hideSelectionMenu();
     if (ui.workspaceSidebar.classList.contains("is-open")) closeSidebar();
   }
-  if (!ui.libraryPage.hidden || !state.doc || document.querySelector("dialog[open]") || event.altKey || event.shiftKey || modifier || event.defaultPrevented) return;
+  if (!ui.libraryPage.hidden || !ui.linkedPagesPage.hidden || !state.doc || document.querySelector("dialog[open]") || event.altKey || event.shiftKey || modifier || event.defaultPrevented) return;
   const active = document.activeElement;
   if (["INPUT", "TEXTAREA", "SELECT"].includes(active?.tagName) || active?.isContentEditable) return;
   // The arrow keys move by whole pages in either flow direction; wheel/touch/mouse handle panning.
