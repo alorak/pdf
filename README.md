@@ -58,7 +58,7 @@ Tarayıcıda çalışan sade, hızlı ve gizliliğe odaklı bir PDF görüntüle
 **Aşama 1 — Her PR'da:** 20 workspace/100 bağlantılı sayfa sınırları, yer imi ve vurguların doğru sayfaya bağlı kalması, kaynak PDF değişimlerinde yanlış yönlendirmeme, byte-doğru yedek geri yükleme ve bozuk yedeği reddetme testleri.
 Node testlerinde gerçek PDF.js ile deterministik 10 ve 100 sayfalık PDF'ler doğrulanır. Chromium E2E yedek alma, bozuk yedeği reddetme ve kayıtları geri yükleme senaryosunu kontrol eder.
 
-**Aşama 2 — Ölçümlü stres:** Her PR'da 100 sayfalık PDF ve 20 workspace/100 sayfa tarayıcı testi; manuel ve haftalık iş akışında ayrıca 1.000 ve 5.000 sayfalık PDF profilleri çalışır.
+**Aşama 2 — Ölçümlü stres:** Her PR'da 100 ve 1.000 sayfalık PDF profilleri ile 20 workspace/100 sayfa tarayıcı testi; manuel ve haftalık iş akışında ayrıca 5.000 sayfalık PDF profili çalışır.
 Ayrı Playwright yapılandırması: playwright.stress.config.mjs; normal PR E2E bu ağır dosyaları çalıştırmaz. Açılış, sayfa atlama, JS heap, DOM node ve canvas sayısı JSON rapor olarak test-results/stress klasörüne yazılır.
 GitHub Summary raporu scripts/p2-stress-summary.mjs tarafından üretilir. 16 ana canvas / 100 thumbnail sınırı ve temel işlevsel doğruluk kontrol edilir; henüz ölçülmemiş açılış zamanı ve bellek eşikleri başarı olarak gösterilmez.
 
