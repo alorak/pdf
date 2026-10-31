@@ -55,15 +55,16 @@ Tarayıcıda çalışan sade, hızlı ve gizliliğe odaklı bir PDF görüntüle
 
 ### P2 Aşama 1–2: Regresyon ve stres altyapısı
 
-**Aşama 1 — Her PR'da:** 20 workspace/100 bağlantılı sayfa sınırları, yer imi ve vurguların doğru sayfaya bağlı kalması, kaynak PDF değişimlerinde yanlış yönlendirmeme, byte-doğru yedek geri yükleme ve bozuk yedeği reddetme testleri.
-Node testlerinde gerçek PDF.js ile deterministik 10 ve 100 sayfalık PDF'ler doğrulanır. Chromium E2E yedek alma, bozuk yedeği reddetme ve kayıtları geri yükleme senaryosunu kontrol eder.
+İki tamamlayıcı P2 test grubu birlikte korunur:
 
-**Aşama 2 — Ölçümlü stres:** Her PR'da 100 ve 1.000 sayfalık PDF profilleri ile 20 workspace/100 sayfa tarayıcı testi; manuel ve haftalık iş akışında ayrıca 5.000 sayfalık PDF profili çalışır.
-Ayrı Playwright yapılandırması: playwright.stress.config.mjs; normal PR E2E bu ağır dosyaları çalıştırmaz. Açılış, sayfa atlama, JS heap, DOM node ve canvas sayısı JSON rapor olarak test-results/stress klasörüne yazılır.
-GitHub Summary raporu scripts/p2-stress-summary.mjs tarafından üretilir. 16 ana canvas / 100 thumbnail sınırı ve temel işlevsel doğruluk kontrol edilir; henüz ölçülmemiş açılış zamanı ve bellek eşikleri başarı olarak gösterilmez.
+- **Birim ve regresyon testleri (`npm test`)**: 20 workspace / 100 bağlantılı sayfa sınırları, sıralama, bookmark/vurgu, kaynak PDF değişimi, byte-doğru yedek/geri yükleme, PDF export ve PDF.js uyumluluk testleri. PR #32'nin yeni bütünleşik model regresyonları ve 1.900 bağlantılı sayfa stresi de eklenir.
+- **Kapasite Chromium testleri**: `playwright.stress.config.mjs` ile 100/1.000/5.000 sayfalık PDF derin gezinme, canvas/DOM sınırları ve 20-workspace senaryosu. `P2_STRESS_PAGES=100` PR smoke; geniş profiller gece/manüel çalışır. GitHub Summary: `scripts/p2-stress-summary.mjs`.
+- **Arama ve performans Chromium testleri**: `playwright.perf.config.mjs` ve `stress/viewer.perf.mjs` ile ilk sayfa, son sayfaya atlama, metin arama, heap ve canvas ölçülür. `P2_STRESS_PROFILE=smoke` yalnızca 100, `quick` 100/1.000, `full` 100/1.000/5.000 sayfa. JSONL/Markdown rapor: `stress/report.mjs`.
+- **Deterministik PDF fixture'ları**: `tests/helpers/pdf-fixtures.mjs` ve `scripts/pdf-fixtures.mjs` farklı test senaryolarına hizmet eder; her ikisi de korunur.
+- **CI politikası**: Normal PR'da standart E2E ile 100 sayfalık iki smoke grubu; 1.000/5.000 sayfa ve model stresleri gece 02:17 UTC veya manuel quick/full ile çalışır. Ölçülen süre/bellek değerleri SLA değildir.
 
-Yerel stres: npm ci; npm install --no-save --package-lock=false @playwright/test@1.56.1; npx playwright install chromium; P2_STRESS_PAGES=100,1000 npx playwright test --config playwright.stress.config.mjs.
-Test PDF'leri tests/helpers/pdf-fixtures.mjs dosyasından dış veri indirmeden üretilir. Ölçümler sabit 1365×900 Chromium ortamında kıyaslanmalıdır. Resim ağırlıklı gerçek 100–500 MB PDF testi ayrı bir ileri aşamadır.
+Test matrisi ve tekrar üretme: [stress/README.md](stress/README.md). Yerel çalıştırma: `P2_STRESS_PAGES=100 npm run test:stress:capacity`, `P2_STRESS_PROFILE=smoke npm run test:stress:browser`, `npm run test:stress:model`.
+
 ## Çalıştırma
 
 Node.js 22+ gerektirir (Node.js 24 önerilir).

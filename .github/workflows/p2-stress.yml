@@ -1,9 +1,18 @@
 name: P2 capacity and performance baseline
 
 on:
-  workflow_dispatch:
   schedule:
-    - cron: "15 2 * * 0"
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: "Quick: 100/1000 pages; Full: 100/1000/5000 pages"
+        required: true
+        type: choice
+        default: full
+        options:
+          - quick
+          - full
 
 permissions:
   contents: read
@@ -15,10 +24,11 @@ concurrency:
 jobs:
   p2-stress:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 75
     env:
       CI: "true"
-      P2_STRESS_PAGES: "100,1000,5000"
+      P2_STRESS_PROFILE: ${{ inputs.profile || 'full' }}
+      P2_STRESS_PAGES: ${{ inputs.profile == 'quick' && '100,1000' || '100,1000,5000' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -27,18 +37,29 @@ jobs:
           cache: npm
       - name: Install pinned app dependencies
         run: npm ci --no-audit --no-fund
+      - name: Run model and 1,900-linked-page stress
+        shell: bash
+        run: |
+          mkdir -p test-results/stress
+          set -o pipefail
+          npm run test:stress:model 2>&1 | tee test-results/stress/model.log
       - name: Install pinned Playwright runner
         run: npm install --no-save --package-lock=false @playwright/test@1.56.1
       - name: Install Chromium and OS libraries
         run: npx playwright install --with-deps chromium
       - name: Build production site
         run: npm run build
-      - name: Run large-PDF / workspace stress tests
-        run: npx playwright test --config playwright.stress.config.mjs
-      - name: Collect measured baseline summary
+      - name: Run large-PDF capacity and workspace Chromium tests
+        run: npm run test:stress:capacity
+      - name: Run large-PDF search/navigation Chromium baselines
+        run: npm run test:stress:browser
+      - name: Summarize capacity baseline
         if: always()
         run: node scripts/p2-stress-summary.mjs
-      - name: Upload performance baseline and failures
+      - name: Summarize search baseline
+        if: always()
+        run: npm run test:stress:report
+      - name: Upload performance baselines and failures
         if: always()
         uses: actions/upload-artifact@v4
         with:
