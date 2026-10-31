@@ -86,6 +86,7 @@ let pendingDeleteWorkspaceId = null;
 let pendingLibraryDeletion = null;
 let libraryRequestId = 0;
 const libraryPreviewTasks = new Set();
+const libraryPreviewCache = new Map(); // Small in-memory first-page thumbnails, not PDF files.
 let pendingDropFile = null;
 let pendingOpenWorkspaceId = null;
 let pickingWorkspaceId = null;
@@ -1560,11 +1561,22 @@ function buildLibraryWorkspaceCards(records) {
     preview.append(placeholder);
 
     if (record) {
-      const canvas = document.createElement("canvas");
-      canvas.hidden = true;
-      canvas.setAttribute("aria-hidden", "true");
-      preview.append(canvas);
-      previews.push({ canvas, placeholder, record });
+      const cached = libraryPreviewCache.get(record.workspaceId);
+      if (cached && cached.name === record.name && cached.size === record.size
+        && cached.lastModified === record.lastModified) {
+        const image = document.createElement("img");
+        image.src = cached.src;
+        image.alt = "";
+        image.setAttribute("aria-hidden", "true");
+        placeholder.hidden = true;
+        preview.append(image);
+      } else {
+        const canvas = document.createElement("canvas");
+        canvas.hidden = true;
+        canvas.setAttribute("aria-hidden", "true");
+        preview.append(canvas);
+        previews.push({ canvas, placeholder, record });
+      }
     }
     const footer = document.createElement("div");
     footer.className = "library-workspace-meta";
@@ -1633,6 +1645,12 @@ async function renderLibraryPreview({ record, canvas, placeholder }, requestId) 
     if (!isCurrent()) return;
     canvas.hidden = false;
     placeholder.hidden = true;
+    try {
+      libraryPreviewCache.set(record.workspaceId, {
+        name: record.name, size: record.size, lastModified: record.lastModified,
+        src: canvas.toDataURL("image/png"),
+      });
+    } catch { /* A failed cache export must never hide a successfully drawn thumbnail. */ }
   } catch (error) {
     if (isCurrent()) {
       console.warn("Library preview failed:", error);
@@ -1806,6 +1824,7 @@ async function confirmDeleteLibraryPdf() {
     } else if (await deleteWorkspacePdfIfMatches(record.workspaceId, record)) {
       const cached = workspaceFiles.get(record.workspaceId);
       if (cached?.name === record.name && cached.size === record.size) workspaceFiles.delete(record.workspaceId);
+      libraryPreviewCache.delete(record.workspaceId);
       showToast("Sahipsiz PDF silindi.");
     } else {
       showToast("PDF değişmiş veya zaten silinmiş; kayıtlar yeniden okunuyor.");
