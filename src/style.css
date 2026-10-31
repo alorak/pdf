@@ -48,6 +48,13 @@ button, input, dialog { color: inherit; }
 .menu-button svg { width: 20px; height: 20px; }
 .brand-title { font-size: 22px; letter-spacing: -1.3px; font-weight: 790; }
 .brand-dot { color: #466bee; }
+.topbar-page-title {
+  display: inline-flex; align-items: center;
+  border-left: 1px solid #dbe2ef; margin-left: 6px; padding-left: 13px;
+  color: #344862; font-size: 15px; font-weight: 750; letter-spacing: -.02em;
+  white-space: nowrap;
+}
+.app-shell.library-open .file-group { display: none; }
 .file-group { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 0 0 auto; }
 .workspace-chip { border: 1px solid #e2e9f7; background: #f1f5fd; color: #3858a9; border-radius: 7px; padding: 6px 9px; font-size: 11px; font-weight: 750; white-space: nowrap; }
 .primary-button {
@@ -487,11 +494,7 @@ input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer
 .open-library:hover { background: #edf2ff; border-color: #bacdf8; }
 
 .library-page { flex: 1; min-height: 0; overflow: auto; background: #f6f8fc; }
-.library-container { width: 100%; max-width: none; margin: 0; padding: 17px clamp(14px, 2vw, 30px) 40px; }
-.library-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px; }
-.library-heading h1 { font-size: 21px; font-weight: 800; letter-spacing: -.035em; margin: 0; }
-.library-heading-actions { display: flex; align-items: center; gap: 8px; }
-.library-heading-actions button { white-space: nowrap; padding: 7px 11px; }
+.library-container { width: 100%; max-width: none; margin: 0; padding: 13px clamp(14px, 2vw, 30px) 40px; }
 
 .library-overview { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .library-stat {
@@ -576,12 +579,9 @@ input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer
   .library-workspace-preview { height: 137px; }
 }
 @media (max-width: 640px) {
-  .library-container { padding: 14px 12px 30px; }
+  .library-container { padding: 12px 12px 30px; }
   .library-workspace-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
   .library-workspace-preview { height: 125px; }
-  .library-heading h1 { font-size: 19px; }
-  .library-heading-actions { gap: 4px; }
-  .library-heading-actions button { padding: 6px 7px; font-size: 11px; }
   .library-overview { gap: 7px; }
   .library-stat { padding: 9px; min-height: 90px; }
   .library-stat > strong { font-size: 17px; }
@@ -616,6 +616,7 @@ input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer
 @media (max-width: 670px) {
   .topbar { gap: 7px; padding: 6px 10px; }
   .brand-title { font-size: 20px; }
+  .topbar-page-title { font-size: 13px; padding-left: 10px; margin-left: 3px; }
   .menu-button { width: 32px; height: 32px; }
   .toolbar-group { gap: 1px; }
   .toolbar-divider { display: none; }
