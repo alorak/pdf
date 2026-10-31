@@ -1,33 +1,46 @@
-# P2.3 — Birleşik tam stres testi ve kabul kaydı
+# P2.3 — Tam stres testi kabul raporu
 
-## Amaç
-PR #32 ile birleşmiş iki P2 test altyapısını **aynı main commit'inde** ve gerçek GitHub Actions Chromium koşullarında doğrulamak. Bu PR'ın amacı uygulama davranışını değiştirmek değil, doğrulanabilir performans/kabul kanıtı üretmektir.
+**Durum: KABUL EDİLDİ (31 Ekim 2026)**
 
-## Çalışma profili
-- `P2_STRESS_PROFILE=full` (100 / 1000 / 5000 sayfa; PDF.js model ve Chromium arama/gezinti)
-- `P2_STRESS_PAGES=100,1000,5000` (Chromium kapasite, çoklu derin gezinme)
-- 20 workspace ve 19 × 100 = 1900 bağlantılı sayfa; bookmark, sıralama, backup/restore ve gerçek PDF dışa aktarımı
-- Normal `npm test`, `npm run build`, `node scripts/check-pages.mjs`
-- Pinned `@playwright/test@1.56.1` ve Node.js 24
+- Kabul PR'ı: [#33](https://github.com/alorak/pdf/pull/33)
+- Doğrulanan PR commit'i: `7be80048433f0029ae692b69cdabe60b435a9fb4`
+- GitHub Actions [full kabul koşusu #41209634699](https://github.com/alorak/pdf/actions/runs/41209634699): **başarılı**
+- Standart `validate` ve `browser-e2e` kontrolleri de başarılı.
+- Tam kabul artifact'ı: `p2-3-full-acceptance-41209634699` (GitHub Actions çalışma sayfasında, 30 gün).
+- Ortam: GitHub-hosted Linux x64, Node `v24.22.1`, Chromium `141.0.7390.37`, 4 vCPU, 1365×900 viewport.
 
-## Kabul kriterleri
-| Alan | Kriter | Kanıt |
+## Kapsam ve kanıt
+
+| Kabul alanı | Sonuç | Kanıt |
 |---|---|---|
-| Regresyon | Unit/integration testlerin tamamı geçer | GitHub Actions job |
-| Model | 1900 referans, round-trip yedek, 100-sayfa export; PDF.js 100/1000/5000 parse ve metin kontrolü geçer | `test-results/stress/model.log` |
-| Kapasite/UI | Hedef sayfaya navigasyon, sayfa sayıları ve istisnasız çalışma | `pages-*.json`, `workspace-*.json` |
-| Render sınırları | Kapasite testi en fazla 16 page canvas / 100 thumbnail canvas; arama testi en fazla 30 / 110 | İki test grubunun kendi assertions |
-| Arama | Son sayfa ve tam metin araması doğru sonuç verir | `baseline.jsonl` |
-| Build | Production build ve GitHub Pages asset kontrolü başarılı | GitHub Actions job |
-| İzlenebilirlik | Commit, tarayıcı, Node, fixture SHA-256, ölçüm raporları artifact'a dahil | `baseline.jsonl`, `baseline.md`, `p2-summary.md` |
+| P0/P1 regresyon, build ve Pages asset doğrulaması | Geçti | GitHub Actions adımları |
+| 20 workspace / 1900 bağlantı, sıralama, bookmark, backup/restore ve 100-sayfa export | Geçti | `model.log` |
+| Gerçek PDF.js ile deterministik 100/1000/5000 sayfa ve SHA-256 doğrulaması | Geçti | `model.log` |
+| Chromium derin gezinme, kapasite/canvas testleri (100/1000/5000) | Geçti | `pages-{100,1000,5000}.json` |
+| 20-workspace Chromium arayüz testi | Geçti | `workspace-20-links-100.json` |
+| Son sayfanın **gerçek canvas render'ı**, tam metin arama ve ölçüm kaydı | Geçti | `baseline.jsonl` |
+| Artifact'ın eksiksizliği, SHA uyumu, raporlarda model/kapasite verisi | Geçti | `scripts/verify-p2-3.mjs` çıktısı: `P2_3_ACCEPTANCE_PASSED` |
 
-## Ölçüm disiplini
-Bu ilk birleşik **tam kabul koşusudur**. Bir başarı raporu tek başına karşılaştırmalı performans bütçesi oluşturmaz. Süre, JS heap ve DOM metrikleri yalnızca baseline'dır. Benzer runner/browser koşullarında 3–5 tekrardan sonra ortanca, p95 ve değişkenlik ölçülerek P2.4 sanallaştırma öncesi referans belirlenmelidir. Metin ağırlıklı deterministik fixture, görüntü ağırlıklı 500 MB PDF yerine geçmez.
+## Tek-koşu performans baseline'ı
 
-## Yürütme
-`.github/workflows/p2-3-acceptance.yml` yalnızca bu kabul PR'ında değiştiğinde ve `test/p2-3-full-acceptance` dalında çalışır; mevcut günlük/gecelik akışı veya diğer PR'ların CI maliyetini artırmaz.
+| Sayfa sayısı | İlk gerçek sayfa render'ı (ms) | Son sayfanın gerçek render'ı (ms) | Tam metin arama (ms) | Arama sonrası JS heap (MiB) |
+|---:|---:|---:|---:|---:|
+| 100 | 936.3 | 895.5 | 386.9 | 13.0 |
+| 1.000 | 1.023,0 | 945,0 | 932,2 | 14,1 |
+| 5.000 | 1.641,2 | 1.396,0 | 13.358,0 | 29,6 |
 
-**Durum:** Kabul sonucu henüz kaydedilmedi. CI job ve artifact sonuçları incelenmeden P2.3 tamamlandı olarak işaretlenmez.
+Ayrı kapasite testinde 100/1.000/5.000 sayfalarda ilk görüntüleme sırasıyla 1.019/1.072/1.456 ms, DOM düğümü sayısı 2.258/14.021/65.997 idi. Model testinde 1900 bağlantının yedek/geri yükleme ve export işlemleri `324,3 ms` sürdü (tek ölçüm).
 
-## Temizlik
-Sonuçlar değerlendirildikten sonra tek-seferlik workflow dosyası kaldırılıp kalıcı kabul özeti ayrı bir commit'e taşınabilir. `main` dalında gereksiz tetikleyici tutulmamalıdır.
+## P2.3 sırasında saptanan ve giderilen sorunlar
+
+1. İki Playwright konfigürasyonu aynı varsayılan `test-results` çıktı alanını temizliyordu. İlk koşu testleri geçmesine rağmen kapasite JSON'ları ve `model.log` artifact'tan silinmişti. `outputDir` yolları `test-results/playwright-capacity` ve `test-results/playwright-perf` olarak ayrıldı.
+2. Son sayfaya geçiş metriği, sayfa numarası değişimini ölçüp **gerçek canvas'ı beklemiyordu**; ilk koşuda 5000 sayfa örneği sıfır canvas ile raporlanmıştı. Son sayfa canvas'ı bekleme ve `lastPageCanvasRendered` kanıtı eklendi.
+3. `scripts/verify-p2-3.mjs` tüm model/kapasite/arama çıktılarını, fixture hash'lerini, sayfa sayısını ve rapor bütünlüğünü doğrulayan bir CI kabul kapısı olarak eklendi.
+4. Düzeltilmiş koşunun artifact'ı **8 dosya** içerir: `model.log`, üç `pages-*.json`, workspace JSON, `baseline.jsonl`, `baseline.md`, `p2-summary.md`.
+
+## Değerlendirme ve kalan sınırlar
+
+- **P2.3 fonksiyonel ve kanıt bütünlüğü kabulü geçmiştir.** Verilen süre/bellek sonuçları SLA veya regresyon eşiği olarak henüz kullanılamaz; aynı koşullarda 3–5 tekrar ile istatistiksel değişkenlik ölçülmelidir.
+- 5.000 sayfada yaklaşık 66 bin DOM düğümü ve 13,36 saniyelik tam metin arama ölçümü P2.4 için önemli optimizasyon adaylarıdır. DOM virtual scrolling ve arama indeksleme ayrı profillerde değerlendirilmelidir.
+- Fixture 5.000 sayfa için yaklaşık 1,74 MB ve metin ağırlıklıdır; 100–500 MB taranmış/resim ağırlıklı PDF davranışını kanıtlamaz. Bu iş P2.5 kapsamındadır.
+- CI sürelerini gereksiz artırmamak için P2.3'ü tetikleyen geçici workflow kalıcı PR'dan çıkarılır; mevcut gecelik `p2-stress.yml` tam profil ve artifact bütünlüğü doğrulamasıyla devam eder.

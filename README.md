@@ -63,7 +63,7 @@ Tarayıcıda çalışan sade, hızlı ve gizliliğe odaklı bir PDF görüntüle
 - **Deterministik PDF fixture'ları**: `tests/helpers/pdf-fixtures.mjs` ve `scripts/pdf-fixtures.mjs` farklı test senaryolarına hizmet eder; her ikisi de korunur.
 - **CI politikası**: Normal PR'da standart E2E ile 100 sayfalık iki smoke grubu; 1.000/5.000 sayfa ve model stresleri gece 02:17 UTC veya manuel quick/full ile çalışır. Ölçülen süre/bellek değerleri SLA değildir.
 
-Test matrisi ve tekrar üretme: [stress/README.md](stress/README.md). Yerel çalıştırma: `P2_STRESS_PAGES=100 npm run test:stress:capacity`, `P2_STRESS_PROFILE=smoke npm run test:stress:browser`, `npm run test:stress:model`.
+Test matrisi ve tekrar üretme: [stress/README.md](stress/README.md). [P2.3 tam stres kabul raporu](docs/p2-3-acceptance.md). Yerel çalıştırma: `P2_STRESS_PAGES=100 npm run test:stress:capacity`, `P2_STRESS_PROFILE=smoke npm run test:stress:browser`, `npm run test:stress:model`.
 
 ## Çalıştırma
 

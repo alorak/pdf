@@ -48,3 +48,7 @@ Fonksiyonel kapılar ilk günden zorunludur: doğru sayfa/metin, veri bütünlü
 - 5.000 sayfalık PDF'nin tüm sayfa kabukları DOM'da oluşturulur; gerçek DOM virtual scrolling P2'nin ileri performans geliştirmesidir. Bu benchmark bu olası darboğazı görünür kılmak için vardır.
 - IndexedDB kota/yazım abort testleri halen mevcut fake-IDB birim testleriyle doğrulanır; fiziksel tarayıcı diski tükenmesi nightly CI üzerinde uygulanmaz.
 - `performance.memory` yalnızca Chromium'da desteklendiği için heap alanı diğer tarayıcılarda `n/a` olabilir.
+
+## P2.3 kabulü
+
+31 Ekim 2026'da iki Playwright test grubu birlikte tam profilde geçti. Artifact bütünlüğü `node scripts/verify-p2-3.mjs` ile zorunlu doğrulanır; farklı test grupları kendi `outputDir` alanlarını temizler, `test-results/stress/` ölçümleri korunur. Kabul raporu: [docs/p2-3-acceptance.md](../docs/p2-3-acceptance.md).
