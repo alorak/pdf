@@ -8,7 +8,7 @@ import {
   removeSelectedText, removePageBookmarks, bookmarkedPageNumbers, orderedBookmarkedPageNumbers,
   reorderBookmarkedPage, moveBookmarkedPage, MAX_HIGHLIGHT_RECTS,
   DEFAULT_WORKSPACE_VIEW, setWorkspaceView, setWorkspaceLastPage,
-  MAX_LINKED_PAGES, addLinkedWorkspacePages, removeLinkedWorkspacePage, removeWorkspaceLinkedPage,
+  MAX_LINKED_PAGES, addLinkedWorkspacePages, removeLinkedWorkspacePage, removeWorkspaceLinkedPage, reorderLinkedWorkspacePage,
 } from "./workspace-store.js";
 import { saveWorkspacePdf, loadWorkspacePdf, deleteWorkspacePdf, listWorkspacePdfs, deleteWorkspacePdfIfMatches, replaceWorkspacePdfWithMetadata } from "./pdf-storage.js";
 import { samePdfContent, replacementWorkspaceState } from "./pdf-replacement.js";
@@ -18,6 +18,7 @@ import { initializeWorkspaceData, readWorkspaceData, saveWorkspaceData, writeWor
 import { classifyLibraryPdfs, measureLocalStorage, formatBytes, libraryWorkspaceSlots, libraryBookmarkSummary, paginateLibraryBookmarkPages } from "./library-utils.js";
 import { linkedPickerWindow, isOutsideDialogRect } from "./linked-picker-utils.js";
 import { openLinkedDocument, isLinkedOnlyWorkspace, workspaceDocumentName } from "./linked-document.js";
+import { exportLinkedPages } from "./pdf-export.js";
 import { dependentPageLinks, groupDependentLinks, stalePageLinks } from "./workspace-dependencies.js";
 import { findTextMatches, searchableText, evictDistantPages, flattenOutline, MAX_SEARCH_RESULTS } from "./pdf-navigation.js";
 import "./style.css";
@@ -35,6 +36,9 @@ const ui = {
   emptyHeading: $("emptyHeading"), emptyDescription: $("emptyDescription"),
   emptyDropHint: $("emptyDropHint"),
   emptyAddPages: $("emptyAddPagesButton"), addPagesToolbar: $("addPagesToolbar"),
+  exportLinkedPdf: $("exportLinkedPdf"), showSourceRelations: $("showSourceRelations"),
+  sourceRelationsDialog: $("sourceRelationsDialog"), closeSourceRelations: $("closeSourceRelations"),
+  sourceRelationsList: $("sourceRelationsList"),
   activeWorkspaceLabel: $("activeWorkspaceLabel"), workspaceSidebar: $("workspaceSidebar"),
   sidebarBackdrop: $("sidebarBackdrop"), closeSidebar: $("closeSidebar"),
   workspaceList: $("workspaceList"), workspaceCount: $("workspaceCount"),
@@ -128,6 +132,8 @@ let pendingSaves = Promise.resolve();
 const workspaceBroadcast = typeof BroadcastChannel !== "undefined"
   ? new BroadcastChannel("pdf-workspace-database-v2") : null;
 let staleExternalRevision = false;
+let linkedExportBusy = false;
+let linkedPageReorderBusy = false;
 let lastPageSaveTimer = 0;
 const workspaceFiles = new Map(); // Active files are cached in memory; persistent copies live in IndexedDB.
 let pendingDeleteWorkspaceId = null;
@@ -251,6 +257,8 @@ function renderWorkspaceSidebar() {
   const active = activeWorkspace(workspaces);
   ui.activeWorkspaceLabel.textContent = workspaceDisplayName(active);
   ui.addPagesToolbar.hidden = !isLinkedOnlyWorkspace(active);
+  ui.exportLinkedPdf.hidden = !isLinkedOnlyWorkspace(active) || !active?.linkedPages?.length;
+  ui.exportLinkedPdf.disabled = linkedExportBusy;
   ui.emptyOpen.hidden = isLinkedOnlyWorkspace(active);
   ui.emptyAddPages.hidden = Boolean(active?.fileName || active?.mode === "pdf");
   if (isLinkedOnlyWorkspace(active)) {
