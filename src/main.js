@@ -840,7 +840,7 @@ function visiblePageNumbers() {
   if (!state.doc) return [];
   if (state.thumbnailMode === "bookmarks") {
     const workspace = activeWorkspace(workspaces);
-    return orderedBookmarkedPageNumbers(workspace, workspace.fileName, state.pageCount);
+    return orderedBookmarkedPageNumbers(workspace, workspaceDocumentName(workspace), state.pageCount);
   }
   return Array.from({ length: state.pageCount }, (_, index) => index + 1);
 }
@@ -1252,7 +1252,7 @@ function createPageElements() {
       event.preventDefault();
       event.stopPropagation(); // Arrow keys here reorder bookmarks, not PDF pages.
       const workspace = activeWorkspace(workspaces);
-      updateWorkspaces(moveBookmarkedPage(workspaces, workspace.fileName, state.pageCount, index + 1, direction));
+      updateWorkspaces(moveBookmarkedPage(workspaces, workspaceDocumentName(workspace), state.pageCount, index + 1, direction));
     });
     entry.append(thumb, remove, grip);
     entry.addEventListener("contextmenu", (event) => {
