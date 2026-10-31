@@ -53,6 +53,14 @@ Tarayıcıda çalışan sade, hızlı ve gizliliğe odaklı bir PDF görüntüle
 - **PDF dışa aktar**: Sayfa workspace'inin üst çubuğunda **PDF dışa aktar** komutu seçilen sayfaları mevcut sıra ile **gerçek PDF** olarak birleştirir. `pdf-lib` ile orijinal PDF sayfa nesneleri kopyalandığından ekran görüntüsü/bitmap rasterization yapılmaz; kaynak sayfaların metin ve vektör içerikleri korunur. Kaynak workspace silinmiş, değişmiş veya belirtilen sayfa artık mevcut değilse işlem güvenli biçimde reddedilir. Kaynak PDF'ler ve çalışma alanı verileri değişmez. Çıktı yeni dosya olarak indirilir; yeni bir workspace oluşturulmaz. Kaynak PDF'lerin tüm üst düzey outline, form ve belge metadata özelliklerinin birebir taşınması garanti edilmez.
 - **Testler**: Reorder→bookmark/highlight/okuma konumu eşleşmeleri, source cache, PDF sayfa boyutları/sırası, eksik kaynak ve iptal senaryoları birim testlerinde kontrol edilir.
 
+### P2 test altyapısı — Aşama 1 ve 2
+
+- **Birleşik P0/P1 regresyon testleri**: PDF sayfa sıralama → bookmark/vurgu → yedek/geri yükle → gerçek PDF export; kaynak PDF değiştirme/silme, aynı bayta sahip PDF'yi yeniden açma ve 20 workspace / 100 bağlantılı sayfa sınırları. Her PR'da `npm test` ile çalışır.
+- **Deterministik büyük PDF fixture'ları**: 100, 1.000, 5.000 sayfa; rastgele veya indirilen örnek yerine `scripts/pdf-fixtures.mjs` ile sabit metin/xref ve SHA-256.
+- **Performans baseline**: Chromium açılış, son sayfaya gezinme, metin arama, ana/thumbnail canvas sayısı ve (desteklenirse) JavaScript heap kullanımı JSONL + Markdown olarak kaydedilir.
+- **CI sınırları**: PR başına yalnızca 100 sayfalık hızlı tarayıcı benchmark; 1.000 ve 5.000 sayfa ile 20 workspace / 1.900 bağlantılı sayfa ağır testleri gece 02:17 UTC veya manuel çalışır. Sonuçlar 30 gün GitHub Actions artifact olarak saklanır.
+- Senaryo matrisi, tekrar üretme komutları, metodoloji ve ölçüm sınırları: [stress/README.md](stress/README.md). Raporlanan hızlar başlangıç baseline'ıdır; gerçek ölçüm yapılmadan mutlak performans iddiası oluşturulmaz.
+
 ## Çalıştırma
 
 Node.js 22+ gerektirir (Node.js 24 önerilir).
