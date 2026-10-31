@@ -11,7 +11,10 @@ import {
   MAX_LINKED_PAGES, addLinkedWorkspacePages, removeLinkedWorkspacePage,
 } from "./workspace-store.js";
 import { saveWorkspacePdf, loadWorkspacePdf, deleteWorkspacePdf, listWorkspacePdfs, deleteWorkspacePdfIfMatches, replaceWorkspacePdfWithMetadata } from "./pdf-storage.js";
-import { samePdfContent, replacementWorkspaceState, makePdfMetadataCommit } from "./pdf-replacement.js";
+import { samePdfContent, replacementWorkspaceState } from "./pdf-replacement.js";
+import { initializeWorkspaceData, readWorkspaceData, saveWorkspaceData, writeWorkspaceAndPdf,
+  getAllStoredPdfs, createWorkspaceBackup, parseWorkspaceBackup, restoreWorkspaceBackup,
+  inspectWorkspaceIntegrity } from "./workspace-data.js";
 import { classifyLibraryPdfs, measureLocalStorage, formatBytes, libraryWorkspaceSlots, libraryBookmarkSummary, paginateLibraryBookmarkPages } from "./library-utils.js";
 import { linkedPickerWindow, isOutsideDialogRect } from "./linked-picker-utils.js";
 import { openLinkedDocument, isLinkedOnlyWorkspace, workspaceDocumentName } from "./linked-document.js";
@@ -45,6 +48,8 @@ const ui = {
   libraryWorkspaceCount: $("libraryWorkspaceCount"), libraryQuotaText: $("libraryQuotaText"),
   libraryQuotaProgress: $("libraryQuotaProgress"), libraryPersistenceStatus: $("libraryPersistenceStatus"),
   libraryPersist: $("libraryPersist"),
+  backupExport: $("backupExport"), backupImport: $("backupImport"), backupFile: $("backupFile"),
+  backupStatus: $("backupStatus"), integrityStatus: $("integrityStatus"), integrityRefresh: $("integrityRefresh"),
   libraryBookmarksDialog: $("libraryBookmarksDialog"),
   libraryBookmarksTitle: $("libraryBookmarksTitle"),
   libraryBookmarksSummary: $("libraryBookmarksSummary"),
@@ -102,6 +107,14 @@ const state = {
 };
 
 let workspaces = loadWorkspaces();
+let workspaceRevision = 0;
+let persistedWorkspaces = workspaces;
+let persistenceReady = false;
+let persistenceFailed = false;
+let pendingSaves = Promise.resolve();
+const workspaceBroadcast = typeof BroadcastChannel !== "undefined"
+  ? new BroadcastChannel("pdf-workspace-database-v2") : null;
+let staleExternalRevision = false;
 const workspaceFiles = new Map(); // Active files are cached in memory; persistent copies live in IndexedDB.
 let pendingDeleteWorkspaceId = null;
 let pendingLibraryDeletion = null;
@@ -132,16 +145,83 @@ function loadWorkspaces() {
   catch { return initialWorkspaces(); }
 }
 
-function persistWorkspaces() {
-  try {
-    localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(workspaces));
-  } catch {
-    showToast("Tarayıcı depolaması dolu veya kullanılamıyor; kayıtlar kalıcı olmayabilir.");
+function ensureWritable() {
+  if (!persistenceReady || persistenceFailed || staleExternalRevision) {
+    throw new Error(staleExternalRevision
+      ? "Başka sekmede yeni kayıt var. Kaybetmemek için bu sekmeyi yenile."
+      : "Veri deposu hazır değil veya yazma hatası oluştu. Sayfayı yenile.");
   }
 }
+function broadcastWorkspaceRevision() {
+  workspaceBroadcast?.postMessage({ revision: workspaceRevision });
+}
+async function handlePersistenceFailure(error) {
+  if (persistenceFailed) return;
+  persistenceFailed = true;
+  console.error("Workspace IndexedDB save failed:", error);
+  showToast("Kayıt yapılamadı! Önceki kayıtlar korunuyor. Veri kaybını önlemek için sayfayı yenile.");
+  const old = workspaces.activeId;
+  cancelAllWork();
+  workspaces = persistedWorkspaces;
+  renderWorkspaceSidebar();
+  applyWorkspaceView();
+  void restoreWorkspacePdf(workspaces.activeId);
+}
+function persistWorkspaces() {
+  if (!persistenceReady || persistenceFailed || staleExternalRevision) {
+    showToast("Workspace kaydedilemedi. Diğer sekmeleri kapatıp sayfayı yenile.");
+    return Promise.reject(new Error("Workspace kayıtları kilitlendi"));
+  }
+  // Each immutable snapshot is committed in order; compare-and-swap revision
+  // prevents any other tab from silently overwriting this tab's changes.
+  const snapshot = workspaces;
+  pendingSaves = pendingSaves.then(async () => {
+    ensureWritable();
+    const revision = await saveWorkspaceData(snapshot, workspaceRevision);
+    workspaceRevision = revision;
+    persistedWorkspaces = snapshot;
+    broadcastWorkspaceRevision();
+    return revision;
+  });
+  pendingSaves.catch(error => { void handlePersistenceFailure(error); });
+  return pendingSaves;
+}
+async function waitForWorkspaceSaves() {
+  await pendingSaves;
+  ensureWritable();
+}
+async function initializePersistence() {
+  try {
+    const legacy = (() => { try { return localStorage.getItem(WORKSPACE_STORAGE_KEY); } catch { return null; } })();
+    const loaded = await initializeWorkspaceData(legacy);
+    workspaces = loaded.state;
+    persistedWorkspaces = loaded.state;
+    workspaceRevision = loaded.revision;
+    persistenceReady = true;
+    renderWorkspaceSidebar();
+    applyWorkspaceView();
+    await restoreWorkspacePdf(workspaces.activeId);
+    if (loaded.migrated) showToast("Workspace ve yer imleri IndexedDB'ye güvenle aktarıldı.");
+  } catch (error) {
+    console.error("Workspace IndexedDB initialisation failed:", error);
+    persistenceFailed = true;
+    showToast("IndexedDB açılamadı: değişiklikler kaydedilmeyecek. Tarayıcı depolama ayarlarını kontrol et.");
+    renderWorkspaceSidebar();
+    applyWorkspaceView();
+  } finally {
+    document.body.style.pointerEvents = "";
+  }
+}
+workspaceBroadcast?.addEventListener("message", (event) => {
+  if (event.data?.revision > workspaceRevision) {
+    staleExternalRevision = true;
+    showToast("Workspace başka sekmede değişti. Çakışmayı önlemek için sayfayı yenile.");
+  }
+});
 
 function updateWorkspaces(next) {
   if (next === workspaces) return;
+  try { ensureWritable(); } catch (error) { showToast(error.message); return; }
   workspaces = next;
   persistWorkspaces();
   hideHighlightRemove();
@@ -3139,6 +3219,5 @@ const resizeObserver = new ResizeObserver(() => {
 });
 resizeObserver.observe(ui.viewer);
 
-applyWorkspaceView();
-renderWorkspaceSidebar();
-void restoreWorkspacePdf(workspaces.activeId);
+document.body.style.pointerEvents = "none";
+void initializePersistence();
