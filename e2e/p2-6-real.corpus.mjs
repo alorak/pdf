@@ -20,7 +20,7 @@ for (const item of cases) {
     const renderErrors = [];
     page.on("pageerror", e => errors.push(e.message));
     page.on("console", async m => {
-      if (/PDF page render failed|PDF thumbnail render failed|Unable to decode image|failed to initialize/i.test(m.text())) {
+      if (/PDF open failed|PDF transaction failed|PDF page render failed|PDF thumbnail render failed|Unable to decode image|failed to initialize/i.test(m.text())) {
         errors.push(m.text().slice(0, 240));
         for (const handle of m.args().slice(1)) {
           try {
@@ -45,7 +45,7 @@ for (const item of cases) {
     await chooser.setFiles(path);
     await page.locator("#confirmReplace").click();
     try {
-      await expect(page.locator("#pageTotal")).not.toHaveText("0", { timeout: 35_000 });
+      await expect(page.locator("#pageTotal")).not.toHaveText("0", { timeout: 9_000 });
     } catch (error) {
       const diagnostic = await page.evaluate(() => ({
         pageTotal: document.querySelector("#pageTotal")?.textContent,

@@ -1,5 +1,5 @@
 name: P2.6 one-off licensed real PDF corpus acceptance
-# Diagnose worker bootstrap loading with 35s timeout and source-preserving metrics
+# Diagnose govinfo PDF open failure at 9s with console exception message
 # Pinned SHA-256 and explicit WASM decoder acceptance
 
 on:
