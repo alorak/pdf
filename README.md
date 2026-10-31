@@ -65,6 +65,12 @@ Tarayıcıda çalışan sade, hızlı ve gizliliğe odaklı bir PDF görüntüle
 
 Test matrisi ve tekrar üretme: [stress/README.md](stress/README.md). [P2.3 tam stres kabul raporu](docs/p2-3-acceptance.md). Yerel çalıştırma: `P2_STRESS_PAGES=100 npm run test:stress:capacity`, `P2_STRESS_PROFILE=smoke npm run test:stress:browser`, `npm run test:stress:model`.
 
+### P2.4 — Büyük PDF optimizasyonu
+
+- Dikey tam sayfa görünümünde 300 ve üzeri sayfalarda yalnızca yakın sayfa kabukları DOM'da oluşturulur; toplam kaydırma yüksekliği spacer'larla korunur.
+- Tam metin aramada bounded eşzamanlı PDF.js okuma, sayfa sırasını koruyan sonuç birleştirme ve 24 MiB RAM-only belge metin önbelleği kullanılır. Kaynak dosya ve workspace kayıtlarına dokunulmaz.
+- Yatay görünüm, yalnızca yer imleri modu ve küçük resimler henüz pencerelemeli değildir. Kabul matrisi: [P2.4 tasarım ve sınırlar](docs/p2-4-performance.md).
+
 ## Çalıştırma
 
 Node.js 22+ gerektirir (Node.js 24 önerilir).
