@@ -1719,7 +1719,7 @@ function buildLibraryWorkspaceCards(records) {
       const { count } = libraryBookmarkSummary(workspace);
       const badge = document.createElement("button");
       badge.type = "button";
-      badge.className = "library-bookmark-badge";
+      badge.className = "library-bookmark-badge" + (count === 0 ? " is-empty" : "");
       badge.textContent = String(count);
       badge.setAttribute("aria-label", `W${workspace.id}: ${count} yer imi, listeyi aç`);
       badge.title = `${count} yer imi · Sayfalara git`;
