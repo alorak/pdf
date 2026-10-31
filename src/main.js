@@ -2801,6 +2801,96 @@ ui.libraryBookmarkNext.addEventListener("click", () => {
   libraryBookmarkPageIndex++;
   renderLibraryBookmarkModal();
 });
+let backupBusy = false;
+function setBackupBusy(busy, status) {
+  backupBusy = busy;
+  ui.backupExport.disabled = busy;
+  ui.backupImport.disabled = busy;
+  ui.integrityRefresh.disabled = busy;
+  if (status) ui.backupStatus.textContent = status;
+}
+async function refreshIntegrityReport() {
+  try {
+    await waitForWorkspaceSaves();
+    const report = await inspectWorkspaceIntegrity(workspaces, await getAllStoredPdfs());
+    const bits = [];
+    bits.push(`${report.missing.length} eksik PDF`);
+    bits.push(`${report.orphan.length} sahipsiz kayıt`);
+    bits.push(`${report.brokenLinks.length} bozuk sayfa bağlantısı`);
+    ui.integrityStatus.textContent = "Depolama denetimi: " + bits.join(" · ");
+    if (report.missing.length || report.brokenLinks.length) {
+      ui.integrityStatus.textContent += " · Kaynaklar silinmiş/değişmiş olabilir; yer imleri silinmedi.";
+    }
+  } catch (error) {
+    ui.integrityStatus.textContent = "Denetim yapılamadı: " + (error?.message || error);
+  }
+}
+ui.integrityRefresh.addEventListener("click", () => { void refreshIntegrityReport(); });
+ui.backupExport.addEventListener("click", async () => {
+  if (backupBusy) return;
+  setBackupBusy(true, "PDF'ler ve yer imleri yedekleniyor…");
+  try {
+    await waitForWorkspaceSaves();
+    const snapshot = await readWorkspaceData();
+    if (snapshot.revision !== workspaceRevision) throw new Error("Başka sekmede kayıt değişmiş. Önce sayfayı yenile.");
+    const records = await getAllStoredPdfs();
+    const blob = await createWorkspaceBackup(snapshot.state, records);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `pdf-workspace-${new Date().toISOString().slice(0, 10)}.pdfworkspace`;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+    ui.backupStatus.textContent = `Yedek hazır · ${records.length} PDF · ${snapshot.state.items.length} workspace · ${formatBytes(blob.size)}`;
+  } catch (error) {
+    console.warn("Workspace backup failed:", error);
+    ui.backupStatus.textContent = "Yedekleme başarısız: " + (error?.message || error);
+  } finally { setBackupBusy(false); }
+});
+ui.backupImport.addEventListener("click", () => {
+  if (!backupBusy) { ui.backupFile.value = ""; ui.backupFile.click(); }
+});
+ui.backupFile.addEventListener("change", async () => {
+  const file = ui.backupFile.files?.[0];
+  ui.backupFile.value = "";
+  if (!file || backupBusy) return;
+  setBackupBusy(true, "Yedek dosyası ve PDF bütünlükleri doğrulanıyor…");
+  try {
+    const parsed = await parseWorkspaceBackup(file);
+    const report = await inspectWorkspaceIntegrity(parsed.state, parsed.records);
+    const problems = report.missing.length + report.brokenLinks.length;
+    const warning = problems ? `Yedekte ${problems} eksik veya bozuk kaynak bağlantısı var.\n` : "";
+    if (!window.confirm(
+      `${parsed.state.items.length} workspace ve ${parsed.records.length} PDF geri yüklenecek.\n` +
+      warning + "MEVCUT TÜM WORKSPACE'LER, PDF'LER VE YER İMLERİ DEĞİŞTİRİLECEK.\n" +
+      "Devam etmeden mevcut verilerini ayrıca yedeklediğinden emin misin?"
+    )) {
+      ui.backupStatus.textContent = "Geri yükleme iptal edildi. Mevcut veriler korunuyor.";
+      return;
+    }
+    await waitForWorkspaceSaves();
+    const revision = await restoreWorkspaceBackup(parsed, workspaceRevision);
+    cancelAllWork();
+    workspaces = parsed.state;
+    persistedWorkspaces = parsed.state;
+    workspaceRevision = revision;
+    workspaceFiles.clear();
+    libraryPreviewCache.clear();
+    broadcastWorkspaceRevision();
+    applyWorkspaceView();
+    renderWorkspaceSidebar();
+    await refreshLibrary();
+    await restoreWorkspacePdf(workspaces.activeId);
+    ui.backupStatus.textContent = `Yedek geri yüklendi · ${parsed.records.length} PDF, ${parsed.state.items.length} workspace`;
+    void refreshIntegrityReport();
+  } catch (error) {
+    console.warn("Backup import failed:", error);
+    ui.backupStatus.textContent = "Geri yükleme başarısız; önceki kayıtlar korundu: " + (error?.message || error);
+  } finally { setBackupBusy(false); }
+});
+
 ui.libraryPersist.addEventListener("click", async () => {
   ui.libraryPersist.disabled = true;
   try {
