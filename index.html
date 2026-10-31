@@ -129,27 +129,44 @@
       <section id="libraryPage" class="library-page" aria-labelledby="libraryTitle" hidden>
         <div class="library-container">
           <div class="library-heading">
-            <div>
-              <span class="eyebrow">YEREL PDF ARŞİVİ</span>
-              <h1 id="libraryTitle">Library</h1>
-              <p>Tarayıcındaki PDF dosyalarını ve kullanılan depolama alanını yönet.</p>
+            <h1 id="libraryTitle">Library</h1>
+            <div class="library-heading-actions">
+              <button id="refreshLibrary" class="secondary-button" type="button">Yenile</button>
+              <button id="libraryBack" class="secondary-button" type="button">← Okuyucuya dön</button>
             </div>
-            <button id="libraryBack" class="secondary-button" type="button">← Okuyucuya dön</button>
           </div>
-          <div class="library-stats" aria-label="Depolama özeti">
-            <div class="library-stat"><span>PDF dosyaları · IndexedDB</span><strong id="libraryPdfSize">—</strong><small id="libraryPdfCount">Hesaplanıyor…</small></div>
-            <div class="library-stat"><span>localStorage · yaklaşık</span><strong id="libraryLocalSize">—</strong><small id="libraryLocalCount">Hesaplanıyor…</small></div>
-            <div class="library-stat"><span>PDF + localStorage · yaklaşık</span><strong id="libraryTotalSize">—</strong><small id="libraryOrphanCount">Sahipsiz dosyalar kontrol ediliyor…</small></div>
+          <div class="library-overview" aria-label="Depolama özeti">
+            <div class="library-stat">
+              <span>PDF dosyaları · IndexedDB</span>
+              <strong id="libraryPdfSize">—</strong>
+              <small id="libraryPdfCount">Hesaplanıyor…</small>
+            </div>
+            <div class="library-stat">
+              <span>localStorage · yaklaşık</span>
+              <strong id="libraryLocalSize">—</strong>
+              <small id="libraryLocalCount">Hesaplanıyor…</small>
+            </div>
+            <div class="library-stat">
+              <span>PDF + localStorage</span>
+              <strong id="libraryTotalSize">—</strong>
+              <small>İçerik boyutlarının yaklaşık toplamı</small>
+            </div>
+            <section class="library-stat library-quota" aria-label="Tarayıcı depolama kotası" title="Tahmini tarayıcı kotası aynı origin'deki diğer uygulamaları ve depolama türlerini de içerir.">
+              <span>Tarayıcı kotası · tahmini</span>
+              <strong id="libraryQuotaText">Hesaplanıyor…</strong>
+              <progress id="libraryQuotaProgress" max="100" value="0" aria-label="Origin kota kullanım yüzdesi"></progress>
+              <div class="library-quota-actions">
+                <small id="libraryPersistenceStatus">Kontrol ediliyor…</small>
+                <button id="libraryPersist" class="secondary-button" type="button" hidden>Kalıcı yap</button>
+              </div>
+            </section>
           </div>
-          <section class="library-quota" aria-label="Tarayıcı depolama kotası">
-            <div class="library-quota-row"><strong>Tarayıcı kotası (tahmini)</strong><span id="libraryQuotaText">Kontrol ediliyor…</span></div>
-            <progress id="libraryQuotaProgress" max="100" value="0" aria-label="Origin kota kullanım yüzdesi"></progress>
-            <div class="library-quota-actions"><span id="libraryPersistenceStatus">Kalıcı depolama durumu kontrol ediliyor…</span><button id="libraryPersist" class="secondary-button" type="button" hidden>Kalıcı depolama iste</button></div>
-          </section>
-          <p class="library-storage-note">PDF boyutları IndexedDB'deki dosyaların içerik boyutudur. localStorage miktarı anahtar ve değerler için UTF-16 tahminidir. Kota verisi bu origin'deki diğer uygulamaların verilerini de kapsayabilir; gerçek disk alanı farklı olabilir.</p>
-          <div class="library-list-heading">
-            <div><h2>Kaydedilen PDF'ler</h2><p>Workspace'e bağlı dosyalar korunur. Sahipsiz kayıtları onaylayarak silebilirsin.</p></div>
-            <button id="refreshLibrary" class="secondary-button" type="button">Yenile</button>
+          <div class="library-section-title">
+            <h2>Workspace'ler <span id="libraryWorkspaceCount" class="library-count">0 / 10</span></h2>
+          </div>
+          <div id="libraryWorkspaceGrid" class="library-workspace-grid" aria-label="Workspace kartları" aria-busy="false"></div>
+          <div class="library-section-title">
+            <h2>Sahipsiz PDF'ler <span id="libraryOrphanCount" class="library-count">0</span></h2>
           </div>
           <div id="libraryList" class="library-list" aria-live="polite" aria-busy="false"></div>
         </div>
