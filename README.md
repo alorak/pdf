@@ -77,7 +77,7 @@ Test matrisi ve tekrar üretme: [stress/README.md](stress/README.md). [P2.3 tam 
 
 ### P2.5 — Görüntü ağırlıklı PDF ve bellek dayanıklılığı
 
-Taranmış (OCR'siz), karma görüntü+metin ve mobil Chromium senaryoları için tekrarlanabilir, büyük ve bağımsız RGB raster PDF'ler üretilir. Gerçek raster pikseli, son sayfa, metin arama, DOM/canvas sınırları ve gözlemsel JS heap ölçümleri doğrulanır. Normal PR'larda hafif profil, nightly CI'da 100+ MiB raster PDF koşusu kullanılır. [P2.5 kapsamı, ölçüm protokolü ve sınırlamalar](docs/p2-5-raster-memory.md).
+Taranmış (OCR'siz), karma görüntü+metin ve mobil Chromium senaryoları için tekrarlanabilir, büyük ve bağımsız RGB raster PDF'ler üretilir. Gerçek raster pikseli, son sayfa, metin arama, DOM/canvas sınırları ve gözlemsel JS heap ölçümleri doğrulanır. Normal PR'larda hafif profil, nightly CI'da 100+ MiB raster PDF koşusu kullanılır. **Tam P2.5 kabul testi 31.10.2026'da başarılı tamamlandı.** [P2.5 kapsamı, ölçüm protokolü ve sınırlamalar](docs/p2-5-raster-memory.md).
 
 ## Çalıştırma
 

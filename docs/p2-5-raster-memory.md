@@ -31,4 +31,31 @@ Bunlar yüksek entropili, **sentetik raster** PDF'lerdir; gerçek tarayıcı ç�
 - Chromium mobil emülasyonu gerçek Android donanımının bellek baskısını ve işletim sistemi tarafından sekme sonlandırmayı taklit etmez.
 - 256 px/512 px raster'lar çıktı boyutu açısından ağırdır, fakat yüksek çözünürlüklü gerçek tarama davranışını birebir temsil etmez.
 - IndexedDB kota hatası ve oturum yenilemede PDF'nin tekrar açılması ayrı, kontrollü end-to-end testlerle genişletilebilir.
-- Kabul CI sonuçları gözlenmeden P2.5 bitmiş olarak işaretlenmez.
+- Kabul CI sonuçları aşağıda kaydedilmiştir. Daha geniş gerçek tarama corpus'u ve fiziksel mobil RAM limiti ayrıca doğrulanmalıdır.
+
+## Tam kabul kaydı — 31 Ekim 2026
+
+**Durum: GEÇTİ — sentetik raster/karma/mobil test kapsamı.**
+
+- [Başarılı tam CI #41222315643](https://github.com/alorak/pdf/actions/runs/41222315643)
+- Doğrulanan commit: `e89b35f39a3f00467c3654ea7b3698c8291e7281`
+- Artifact: `p2-5-raster-acceptance-41222315643` (JSON metrikleri, PDF kaynakları hariç; 30 gün saklama).
+- Tarayıcı: Chromium, GitHub-hosted Linux; Node.js 24; mobil senaryoda 390×844, DPR 2, touch.
+- Hem `P2_5_ACCEPTANCE_PASSED` hem de `P2_3_ACCEPTANCE_PASSED` kanıt kapıları başarılı. Normal PR smoke, tüm birim testleri ve 100/1.000/5.000 sayfalı regresyonlar da başarılı.
+
+| İş yükü | PDF (byte) | Sayfa | İlk boyanmış raster (ms) | Chromium PSS (MiB) | Toplam Chromium RSS (MiB) | Ana JS heap (MiB) | DOM |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Scan desktop | 100.757.000 | 128 | 969,1 | 548,5 | 767,5 | 7,0 | 2.632 |
+| Mixed desktop | 75.577.766 | 96 | 973,4 | 533,6 | 766,4 | 7,3 | 2.293 |
+| Scan mobile viewport | 25.189.350 | 32 | 944,8 | 358,7 | 592,7 | 6,3 | 1.383 |
+
+- Her PDF'ye özgü SHA-256 manifestte ve artifact'ta bulunur; fixture her sayfada ayrı RGB raster XObject taşır. `getTextContent` tarama senaryosunda boştur; karma senaryoda her sayfanın benzersiz metni vardır.
+- Canvas üzerinde beyaz olmayan boyanmış pikseller ilk, orta ve son sayfada doğrulandı. 16 sayfa canvas/100 thumbnail canvas sınırları ve yakalanmamış browser hatası yok koşulu korundu.
+- Chromium PSS, CDP `SystemInfo.getProcessInfo` ile tanımlanabilen süreçler için Linux `/proc/<pid>/smaps_rollup` üzerinden ölçülür. PDF'ye özel fark belleği **değildir**; Chromium taban/worker/native allocations da içerir. RSS toplamı paylaşılan sayfaları tekrarlı sayabilir, PSS tercih edilir.
+- Ölçülen açılış süresi test dosyasının diske yazılmasını **içermez**; dosya yükleme, açma, kaydetme ve görünür rasterın boyanmasını içerir. Birer koşuluk gözlem olduğundan performans SLA'sı veya p95 verilmez.
+- Playwright'ın 50 MiB üzeri `setFiles({buffer})` sınırı ilk full koşuda tespit edildi. Dosyalar geçici diske yazılıp path ile yüklenerek düzeltildi; geçici dosya sonunda silinir, 100 MiB PDF artifact'a girmez.
+
+### Önerilen P2.6 / saha doğrulaması
+
+Gerçek 300–600 DPI JPEG/JPX/JBIG2/CCITT/CMYK çok sayfalı corpus; mobil Android üzerinde düşük RAM/sekme öldürülmesi; IndexedDB kota ve tekrar açma; aynı runner'da 3–5 tekrar ile PSS değişkenliği ve p50/p95; gerekirse PDF.js worker bellek salımı ve büyük dosyalarda storage/disk etkileşimi incelenmelidir.
+
