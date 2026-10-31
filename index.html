@@ -159,6 +159,17 @@
               </div>
             </section>
           </div>
+          <section class="library-backup-tools" aria-label="Yedekleme ve kurtarma">
+            <strong>Yedekleme ve kurtarma</strong>
+            <div class="library-backup-actions">
+              <button id="backupExport" class="secondary-button" type="button">Tümünü yedekle</button>
+              <button id="backupImport" class="secondary-button" type="button">Yedeği geri yükle</button>
+              <button id="integrityRefresh" class="secondary-button" type="button">Kayıtları denetle</button>
+              <input id="backupFile" type="file" accept=".pdfworkspace,.bin,application/octet-stream" hidden />
+            </div>
+            <p id="backupStatus" role="status" aria-live="polite">PDF'ler, yer imleri, vurgular ve sayfa bağlantıları tek yedek dosyasına alınır.</p>
+            <p id="integrityStatus" role="status" aria-live="polite"></p>
+          </section>
           <div class="library-section-title">
             <h2>Workspace'ler <span id="libraryWorkspaceCount" class="library-count">0 / 20</span></h2>
           </div>

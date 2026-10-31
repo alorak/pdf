@@ -2,14 +2,15 @@ const DB_NAME = "pdf-viewer-workspace-files-v1";
 const STORE_NAME = "pdfs";
 let databasePromise;
 
-function openDatabase() {
+export function openDatabase() {
   if (databasePromise) return databasePromise;
   if (typeof indexedDB === "undefined") return Promise.reject(new Error("IndexedDB kullanılamıyor"));
   databasePromise = new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, 1);
+    const request = indexedDB.open(DB_NAME, 2);
     request.onupgradeneeded = () => {
       const db = request.result;
       if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME, { keyPath: "workspaceId" });
+      if (!db.objectStoreNames.contains("workspace-metadata")) db.createObjectStore("workspace-metadata", { keyPath: "key" });
     };
     request.onsuccess = () => {
       const db = request.result;

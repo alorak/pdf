@@ -11,7 +11,10 @@ import {
   MAX_LINKED_PAGES, addLinkedWorkspacePages, removeLinkedWorkspacePage,
 } from "./workspace-store.js";
 import { saveWorkspacePdf, loadWorkspacePdf, deleteWorkspacePdf, listWorkspacePdfs, deleteWorkspacePdfIfMatches, replaceWorkspacePdfWithMetadata } from "./pdf-storage.js";
-import { samePdfContent, replacementWorkspaceState, makePdfMetadataCommit } from "./pdf-replacement.js";
+import { samePdfContent, replacementWorkspaceState } from "./pdf-replacement.js";
+import { initializeWorkspaceData, readWorkspaceData, saveWorkspaceData, writeWorkspaceAndPdf,
+  getAllStoredPdfs, readWorkspaceBundle, createWorkspaceBackup, parseWorkspaceBackup, restoreWorkspaceBackup,
+  inspectWorkspaceIntegrity, deleteOrphanPdfSafe } from "./workspace-data.js";
 import { classifyLibraryPdfs, measureLocalStorage, formatBytes, libraryWorkspaceSlots, libraryBookmarkSummary, paginateLibraryBookmarkPages } from "./library-utils.js";
 import { linkedPickerWindow, isOutsideDialogRect } from "./linked-picker-utils.js";
 import { openLinkedDocument, isLinkedOnlyWorkspace, workspaceDocumentName } from "./linked-document.js";
@@ -45,6 +48,8 @@ const ui = {
   libraryWorkspaceCount: $("libraryWorkspaceCount"), libraryQuotaText: $("libraryQuotaText"),
   libraryQuotaProgress: $("libraryQuotaProgress"), libraryPersistenceStatus: $("libraryPersistenceStatus"),
   libraryPersist: $("libraryPersist"),
+  backupExport: $("backupExport"), backupImport: $("backupImport"), backupFile: $("backupFile"),
+  backupStatus: $("backupStatus"), integrityStatus: $("integrityStatus"), integrityRefresh: $("integrityRefresh"),
   libraryBookmarksDialog: $("libraryBookmarksDialog"),
   libraryBookmarksTitle: $("libraryBookmarksTitle"),
   libraryBookmarksSummary: $("libraryBookmarksSummary"),
@@ -102,6 +107,14 @@ const state = {
 };
 
 let workspaces = loadWorkspaces();
+let workspaceRevision = 0;
+let persistedWorkspaces = workspaces;
+let persistenceReady = false;
+let persistenceFailed = false;
+let pendingSaves = Promise.resolve();
+const workspaceBroadcast = typeof BroadcastChannel !== "undefined"
+  ? new BroadcastChannel("pdf-workspace-database-v2") : null;
+let staleExternalRevision = false;
 const workspaceFiles = new Map(); // Active files are cached in memory; persistent copies live in IndexedDB.
 let pendingDeleteWorkspaceId = null;
 let pendingLibraryDeletion = null;
@@ -132,16 +145,83 @@ function loadWorkspaces() {
   catch { return initialWorkspaces(); }
 }
 
-function persistWorkspaces() {
-  try {
-    localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(workspaces));
-  } catch {
-    showToast("Tarayıcı depolaması dolu veya kullanılamıyor; kayıtlar kalıcı olmayabilir.");
+function ensureWritable() {
+  if (!persistenceReady || persistenceFailed || staleExternalRevision) {
+    throw new Error(staleExternalRevision
+      ? "Başka sekmede yeni kayıt var. Kaybetmemek için bu sekmeyi yenile."
+      : "Veri deposu hazır değil veya yazma hatası oluştu. Sayfayı yenile.");
   }
 }
+function broadcastWorkspaceRevision() {
+  workspaceBroadcast?.postMessage({ revision: workspaceRevision });
+}
+async function handlePersistenceFailure(error) {
+  if (persistenceFailed) return;
+  persistenceFailed = true;
+  console.error("Workspace IndexedDB save failed:", error);
+  showToast("Kayıt yapılamadı! Önceki kayıtlar korunuyor. Veri kaybını önlemek için sayfayı yenile.");
+  const old = workspaces.activeId;
+  cancelAllWork();
+  workspaces = persistedWorkspaces;
+  renderWorkspaceSidebar();
+  applyWorkspaceView();
+  void restoreWorkspacePdf(workspaces.activeId);
+}
+function persistWorkspaces() {
+  if (!persistenceReady || persistenceFailed || staleExternalRevision) {
+    showToast("Workspace kaydedilemedi. Diğer sekmeleri kapatıp sayfayı yenile.");
+    return Promise.reject(new Error("Workspace kayıtları kilitlendi"));
+  }
+  // Each immutable snapshot is committed in order; compare-and-swap revision
+  // prevents any other tab from silently overwriting this tab's changes.
+  const snapshot = workspaces;
+  pendingSaves = pendingSaves.then(async () => {
+    ensureWritable();
+    const revision = await saveWorkspaceData(snapshot, workspaceRevision);
+    workspaceRevision = revision;
+    persistedWorkspaces = snapshot;
+    broadcastWorkspaceRevision();
+    return revision;
+  });
+  pendingSaves.catch(error => { void handlePersistenceFailure(error); });
+  return pendingSaves;
+}
+async function waitForWorkspaceSaves() {
+  await pendingSaves;
+  ensureWritable();
+}
+async function initializePersistence() {
+  try {
+    const legacy = (() => { try { return localStorage.getItem(WORKSPACE_STORAGE_KEY); } catch { return null; } })();
+    const loaded = await initializeWorkspaceData(legacy);
+    workspaces = loaded.state;
+    persistedWorkspaces = loaded.state;
+    workspaceRevision = loaded.revision;
+    persistenceReady = true;
+    renderWorkspaceSidebar();
+    applyWorkspaceView();
+    await restoreWorkspacePdf(workspaces.activeId);
+    if (loaded.migrated) showToast("Workspace ve yer imleri IndexedDB'ye güvenle aktarıldı.");
+  } catch (error) {
+    console.error("Workspace IndexedDB initialisation failed:", error);
+    persistenceFailed = true;
+    showToast("IndexedDB açılamadı: değişiklikler kaydedilmeyecek. Tarayıcı depolama ayarlarını kontrol et.");
+    renderWorkspaceSidebar();
+    applyWorkspaceView();
+  } finally {
+    document.body.style.pointerEvents = "";
+  }
+}
+workspaceBroadcast?.addEventListener("message", (event) => {
+  if (event.data?.revision > workspaceRevision) {
+    staleExternalRevision = true;
+    showToast("Workspace başka sekmede değişti. Çakışmayı önlemek için sayfayı yenile.");
+  }
+});
 
 function updateWorkspaces(next) {
   if (next === workspaces) return;
+  try { ensureWritable(); } catch (error) { showToast(error.message); return; }
   workspaces = next;
   persistWorkspaces();
   hideHighlightRemove();
@@ -363,12 +443,17 @@ async function confirmDeleteWorkspace() {
   ui.cancelDeleteWorkspace.disabled = true;
   ui.cancelDeleteWorkspaceTop.disabled = true;
   try {
-    await deleteWorkspacePdf(id);
-    workspaceFiles.delete(id);
+    await waitForWorkspaceSaves();
+    if (pendingDeleteWorkspaceId !== id) throw new Error("Silme hedefi değişti");
     const wasActive = workspaces.activeId === id;
+    const next = removeWorkspace(workspaces, id);
+    const revision = await writeWorkspaceAndPdf(next, workspaceRevision, { remove: id });
+    workspaceRevision = revision;
+    persistedWorkspaces = next;
+    workspaces = next;
+    broadcastWorkspaceRevision();
+    workspaceFiles.delete(id);
     if (wasActive) cancelAllWork();
-    workspaces = removeWorkspace(workspaces, id);
-    persistWorkspaces();
     if (wasActive) applyWorkspaceView();
     renderWorkspaceSidebar();
     ui.deleteWorkspaceDialog.close();
@@ -1597,47 +1682,28 @@ async function openPDF(file, { replaceWorkspace = false, persistFile = true } = 
     if (generation !== state.generation) return;
     const rect = first.getViewport({ scale: 1 });
     if (persistFile) {
-      if (replaceWorkspace) {
-        const before = workspaces;
-        try {
-          const next = replacementWorkspaceState(before, workspaceId, file.name);
-          const metadata = makePdfMetadataCommit(
-            localStorage, WORKSPACE_STORAGE_KEY, before, next,
-            () => generation === state.generation &&
-              workspaces.activeId === workspaceId && workspaces === before,
-          );
-          // The PDF and the metadata update are coordinated inside an active
-          // IndexedDB transaction. A failed localStorage write aborts the PDF put.
-          await replaceWorkspacePdfWithMetadata(workspaceId, file, metadata);
-          workspaces = next;
-        } catch (error) {
-          console.warn("PDF replacement transaction failed:", error);
-          cancelAllWork();
-          if (error instanceof AggregateError) {
-            showToast("PDF değiştirme tamamlanamadı. Workspace verisi geri alınamadı; sayfayı yenilemeden önce verilerini yedekle.");
-          } else {
-            showToast("Yeni PDF kaydedilemedi; eski PDF ve yer imleri korundu.");
-          }
-          void restoreWorkspacePdf(workspaceId);
-          return;
-        }
-      } else {
-        try {
-          await saveWorkspacePdf(workspaceId, file);
-        } catch (error) {
-          console.warn("PDF save failed:", error);
-          cancelAllWork();
-          showToast("PDF kaydedilemedi; workspace değiştirilmedi.");
-          void restoreWorkspacePdf(workspaceId);
-          return;
-        }
+      try {
+        await waitForWorkspaceSaves();
+        if (generation !== state.generation || workspaces.activeId !== workspaceId) return;
+        const next = replaceWorkspace
+          ? replacementWorkspaceState(workspaces, workspaceId, file.name)
+          : setWorkspaceFile(workspaces, file.name);
+        const revision = await writeWorkspaceAndPdf(next, workspaceRevision, {
+          put: { id: workspaceId, file },
+        });
+        workspaceRevision = revision;
+        workspaces = next;
+        persistedWorkspaces = next;
+        broadcastWorkspaceRevision();
+      } catch (error) {
+        console.error("PDF transaction failed:", error);
+        cancelAllWork();
+        showToast("PDF kaydedilemedi; eski PDF ve yer imleri korundu. Sayfayı yenilemeden tekrar deneme.");
+        void restoreWorkspacePdf(workspaceId);
+        return;
       }
     }
     if (generation !== state.generation || workspaces.activeId !== workspaceId) return;
-    if (persistFile && !replaceWorkspace) {
-      workspaces = setWorkspaceFile(workspaces, file.name);
-      persistWorkspaces();
-    }
     // Restoring an existing PDF must not rewrite its bookmark metadata.
     workspaceFiles.set(workspaceId, file);
     if (persistFile && replaceWorkspace) libraryPreviewCache.delete(workspaceId);
@@ -2672,13 +2738,8 @@ async function confirmDeleteLibraryPdf() {
   try {
     // Check both in-memory and saved workspace metadata immediately before removal.
     // Never remove a PDF that became associated with a workspace meanwhile.
-    const persisted = loadWorkspaces();
-    const linked = [...workspaces.items, ...persisted.items].some(
-      (item) => item.id === record.workspaceId && item.fileName === record.name
-    );
-    if (linked) {
-      showToast("PDF artık bir workspace'e bağlı; silinmedi.");
-    } else if (await deleteWorkspacePdfIfMatches(record.workspaceId, record)) {
+    await waitForWorkspaceSaves();
+    if (await deleteOrphanPdfSafe(record)) {
       const cached = workspaceFiles.get(record.workspaceId);
       if (cached?.name === record.name && cached.size === record.size) workspaceFiles.delete(record.workspaceId);
       libraryPreviewCache.delete(record.workspaceId);
@@ -2734,6 +2795,96 @@ ui.libraryBookmarkNext.addEventListener("click", () => {
   libraryBookmarkPageIndex++;
   renderLibraryBookmarkModal();
 });
+let backupBusy = false;
+function setBackupBusy(busy, status) {
+  backupBusy = busy;
+  ui.backupExport.disabled = busy;
+  ui.backupImport.disabled = busy;
+  ui.integrityRefresh.disabled = busy;
+  if (status) ui.backupStatus.textContent = status;
+}
+async function refreshIntegrityReport() {
+  try {
+    await waitForWorkspaceSaves();
+    const report = await inspectWorkspaceIntegrity(workspaces, await getAllStoredPdfs());
+    const bits = [];
+    bits.push(`${report.missing.length} eksik PDF`);
+    bits.push(`${report.orphan.length} sahipsiz kayıt`);
+    bits.push(`${report.brokenLinks.length} bozuk sayfa bağlantısı`);
+    ui.integrityStatus.textContent = "Depolama denetimi: " + bits.join(" · ");
+    if (report.missing.length || report.brokenLinks.length) {
+      ui.integrityStatus.textContent += " · Kaynaklar silinmiş/değişmiş olabilir; yer imleri silinmedi.";
+    }
+  } catch (error) {
+    ui.integrityStatus.textContent = "Denetim yapılamadı: " + (error?.message || error);
+  }
+}
+ui.integrityRefresh.addEventListener("click", () => { void refreshIntegrityReport(); });
+ui.backupExport.addEventListener("click", async () => {
+  if (backupBusy) return;
+  setBackupBusy(true, "PDF'ler ve yer imleri yedekleniyor…");
+  try {
+    await waitForWorkspaceSaves();
+    const snapshot = await readWorkspaceBundle();
+    if (snapshot.revision !== workspaceRevision) throw new Error("Başka sekmede kayıt değişmiş. Önce sayfayı yenile.");
+    const records = snapshot.records;
+    const blob = await createWorkspaceBackup(snapshot.state, records);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `pdf-workspace-${new Date().toISOString().slice(0, 10)}.pdfworkspace`;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+    ui.backupStatus.textContent = `Yedek hazır · ${records.length} PDF · ${snapshot.state.items.length} workspace · ${formatBytes(blob.size)}`;
+  } catch (error) {
+    console.warn("Workspace backup failed:", error);
+    ui.backupStatus.textContent = "Yedekleme başarısız: " + (error?.message || error);
+  } finally { setBackupBusy(false); }
+});
+ui.backupImport.addEventListener("click", () => {
+  if (!backupBusy) { ui.backupFile.value = ""; ui.backupFile.click(); }
+});
+ui.backupFile.addEventListener("change", async () => {
+  const file = ui.backupFile.files?.[0];
+  ui.backupFile.value = "";
+  if (!file || backupBusy) return;
+  setBackupBusy(true, "Yedek dosyası ve PDF bütünlükleri doğrulanıyor…");
+  try {
+    const parsed = await parseWorkspaceBackup(file);
+    const report = await inspectWorkspaceIntegrity(parsed.state, parsed.records);
+    const problems = report.missing.length + report.brokenLinks.length;
+    const warning = problems ? `Yedekte ${problems} eksik veya bozuk kaynak bağlantısı var.\n` : "";
+    if (!window.confirm(
+      `${parsed.state.items.length} workspace ve ${parsed.records.length} PDF geri yüklenecek.\n` +
+      warning + "MEVCUT TÜM WORKSPACE'LER, PDF'LER VE YER İMLERİ DEĞİŞTİRİLECEK.\n" +
+      "Devam etmeden mevcut verilerini ayrıca yedeklediğinden emin misin?"
+    )) {
+      ui.backupStatus.textContent = "Geri yükleme iptal edildi. Mevcut veriler korunuyor.";
+      return;
+    }
+    await waitForWorkspaceSaves();
+    const revision = await restoreWorkspaceBackup(parsed, workspaceRevision);
+    cancelAllWork();
+    workspaces = parsed.state;
+    persistedWorkspaces = parsed.state;
+    workspaceRevision = revision;
+    workspaceFiles.clear();
+    libraryPreviewCache.clear();
+    broadcastWorkspaceRevision();
+    applyWorkspaceView();
+    renderWorkspaceSidebar();
+    await refreshLibrary();
+    await restoreWorkspacePdf(workspaces.activeId);
+    ui.backupStatus.textContent = `Yedek geri yüklendi · ${parsed.records.length} PDF, ${parsed.state.items.length} workspace`;
+    void refreshIntegrityReport();
+  } catch (error) {
+    console.warn("Backup import failed:", error);
+    ui.backupStatus.textContent = "Geri yükleme başarısız; önceki kayıtlar korundu: " + (error?.message || error);
+  } finally { setBackupBusy(false); }
+});
+
 ui.libraryPersist.addEventListener("click", async () => {
   ui.libraryPersist.disabled = true;
   try {
@@ -3139,6 +3290,5 @@ const resizeObserver = new ResizeObserver(() => {
 });
 resizeObserver.observe(ui.viewer);
 
-applyWorkspaceView();
-renderWorkspaceSidebar();
-void restoreWorkspacePdf(workspaces.activeId);
+document.body.style.pointerEvents = "none";
+void initializePersistence();
