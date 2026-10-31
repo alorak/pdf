@@ -10,7 +10,7 @@ import {
   DEFAULT_WORKSPACE_VIEW, setWorkspaceView,
 } from "./workspace-store.js";
 import { saveWorkspacePdf, loadWorkspacePdf, deleteWorkspacePdf, listWorkspacePdfs, deleteWorkspacePdfIfMatches } from "./pdf-storage.js";
-import { classifyLibraryPdfs, measureLocalStorage, formatBytes } from "./library-utils.js";
+import { classifyLibraryPdfs, measureLocalStorage, formatBytes, libraryWorkspaceSlots } from "./library-utils.js";
 import "./style.css";
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
@@ -28,7 +28,8 @@ const ui = {
   libraryPdfSize: $("libraryPdfSize"), libraryPdfCount: $("libraryPdfCount"),
   libraryLocalSize: $("libraryLocalSize"), libraryLocalCount: $("libraryLocalCount"),
   libraryTotalSize: $("libraryTotalSize"), libraryOrphanCount: $("libraryOrphanCount"),
-  libraryList: $("libraryList"), libraryQuotaText: $("libraryQuotaText"),
+  libraryList: $("libraryList"), libraryWorkspaceGrid: $("libraryWorkspaceGrid"),
+  libraryWorkspaceCount: $("libraryWorkspaceCount"), libraryQuotaText: $("libraryQuotaText"),
   libraryQuotaProgress: $("libraryQuotaProgress"), libraryPersistenceStatus: $("libraryPersistenceStatus"),
   libraryPersist: $("libraryPersist"),
   deleteLibraryPdfDialog: $("deleteLibraryPdfDialog"), deleteLibraryPdfName: $("deleteLibraryPdfName"),
@@ -84,6 +85,7 @@ const workspaceFiles = new Map(); // Active files are cached in memory; persiste
 let pendingDeleteWorkspaceId = null;
 let pendingLibraryDeletion = null;
 let libraryRequestId = 0;
+const libraryPreviewTasks = new Set();
 let pendingDropFile = null;
 let pendingOpenWorkspaceId = null;
 let pickingWorkspaceId = null;
@@ -1485,9 +1487,15 @@ function stepZoom(direction) {
 }
 
 
+function cancelLibraryPreviews() {
+  for (const task of libraryPreviewTasks) void task.destroy().catch(() => {});
+  libraryPreviewTasks.clear();
+}
+
 function closeLibrary() {
   if (ui.libraryPage.hidden) return;
   libraryRequestId++;
+  cancelLibraryPreviews();
   ui.libraryPage.hidden = true;
   ui.readerPage.hidden = false;
   ui.app.classList.remove("library-open");
@@ -1502,6 +1510,151 @@ function openLibraryPage() {
   ui.openLibrary.setAttribute("aria-current", "page");
   ui.libraryBack.focus();
   void refreshLibrary();
+}
+
+function createWorkspaceFromLibrary() {
+  const next = addWorkspace(workspaces);
+  if (next === workspaces) return;
+  cancelAllWork();
+  workspaces = next;
+  persistWorkspaces();
+  applyWorkspaceView();
+  renderWorkspaceSidebar();
+  closeLibrary();
+  askToOpen(null, next.activeId);
+}
+
+function buildLibraryWorkspaceCards(records) {
+  const byWorkspace = new Map(records.filter((record) => !record.orphan)
+    .map((record) => [record.workspaceId, record]));
+  const previews = [];
+  const fragment = document.createDocumentFragment();
+  ui.libraryWorkspaceCount.textContent = `${workspaces.items.length} / ${MAX_WORKSPACES}`;
+
+  for (const slot of libraryWorkspaceSlots(workspaces, MAX_WORKSPACES)) {
+    const { workspace } = slot;
+    const record = workspace ? byWorkspace.get(workspace.id) : null;
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "library-workspace-card";
+    if (!workspace) card.classList.add("is-uncreated");
+    if (workspace && workspace.id === workspaces.activeId) card.classList.add("is-active");
+    const label = workspace
+      ? `W${workspace.id}: ${workspace.fileName || "PDF yok"}`
+      : `Yeni workspace oluştur (W${slot.id})`;
+    card.setAttribute("aria-label", label);
+    card.title = label;
+
+    const preview = document.createElement("div");
+    preview.className = "library-workspace-preview";
+    const placeholder = document.createElement("span");
+    placeholder.className = "library-workspace-placeholder";
+    const symbol = document.createElement("span");
+    symbol.className = "symbol";
+    symbol.textContent = record ? "PDF" : workspace?.fileName ? "!" : "+";
+    const message = document.createElement("span");
+    message.className = "message";
+    message.textContent = record ? "Önizleme…" :
+      workspace?.fileName ? "PDF kaydı bulunamadı" : workspace ? "PDF ekle" : "Yeni workspace";
+    placeholder.append(symbol, message);
+    preview.append(placeholder);
+
+    if (record) {
+      const canvas = document.createElement("canvas");
+      canvas.hidden = true;
+      canvas.setAttribute("aria-hidden", "true");
+      preview.append(canvas);
+      previews.push({ canvas, placeholder, record });
+    }
+    const footer = document.createElement("div");
+    footer.className = "library-workspace-meta";
+    const title = document.createElement("div");
+    title.className = "library-workspace-name";
+    const workspaceName = document.createElement("strong");
+    workspaceName.textContent = `W${slot.id}`;
+    const size = document.createElement("small");
+    size.textContent = record ? formatBytes(record.size) :
+      workspace ? `${workspace.notes.length} kayıt` : "Oluşturulmadı";
+    title.append(workspaceName, size);
+    const filename = document.createElement("span");
+    filename.className = "library-workspace-file";
+    filename.textContent = record?.name || workspace?.fileName || (workspace ? "Boş workspace" : "Oluşturmak için tıkla");
+    filename.title = filename.textContent;
+    footer.append(title, filename);
+    card.append(preview, footer);
+    card.addEventListener("click", () => {
+      if (!workspace) {
+        createWorkspaceFromLibrary();
+      } else {
+        changeWorkspace(workspace.id);
+        if (!workspace.fileName) askToOpen(null, workspace.id);
+      }
+    });
+    fragment.append(card);
+  }
+  ui.libraryWorkspaceGrid.replaceChildren(fragment);
+  return previews;
+}
+
+/* First-page previews are generated on demand without persisting another copy
+   of the PDF; at most two PDF.js instances are active at once. */
+async function renderLibraryPreview({ record, canvas, placeholder }, requestId) {
+  let loadingTask = null;
+  const isCurrent = () => requestId === libraryRequestId && !ui.libraryPage.hidden;
+  try {
+    let file = workspaceFiles.get(record.workspaceId);
+    if (!file || file.name !== record.name || file.size !== record.size) {
+      file = await loadWorkspacePdf(record.workspaceId);
+    }
+    if (!file || !isCurrent() || file.name !== record.name || file.size !== record.size) return;
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    if (!isCurrent()) return;
+    loadingTask = pdfjs.getDocument({ data: bytes, isEvalSupported: false });
+    libraryPreviewTasks.add(loadingTask);
+    const pdf = await loadingTask.promise;
+    if (!isCurrent()) return;
+    const page = await pdf.getPage(1);
+    if (!isCurrent()) return;
+    const frame = canvas.parentElement;
+    const size = page.getViewport({ scale: 1 });
+    const scale = Math.max(0.01, Math.min(
+      Math.max(40, frame.clientWidth - 14) / size.width,
+      Math.max(50, frame.clientHeight - 12) / size.height,
+    ));
+    const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+    const viewport = page.getViewport({ scale: scale * pixelRatio });
+    canvas.width = Math.max(1, Math.ceil(viewport.width));
+    canvas.height = Math.max(1, Math.ceil(viewport.height));
+    canvas.style.width = `${Math.floor(viewport.width / pixelRatio)}px`;
+    canvas.style.height = `${Math.floor(viewport.height / pixelRatio)}px`;
+    const canvasContext = canvas.getContext("2d", { alpha: false });
+    if (!canvasContext) throw new Error("Canvas kullanılamıyor");
+    await page.render({ canvas, canvasContext, viewport }).promise;
+    if (!isCurrent()) return;
+    canvas.hidden = false;
+    placeholder.hidden = true;
+  } catch (error) {
+    if (isCurrent()) {
+      console.warn("Library preview failed:", error);
+      placeholder.querySelector(".message").textContent = "Önizleme yok";
+    }
+  } finally {
+    if (loadingTask) {
+      libraryPreviewTasks.delete(loadingTask);
+      try { await loadingTask.destroy(); } catch { /* Already cancelled or disposed. */ }
+    }
+  }
+}
+
+function startLibraryPreviews(previews, requestId) {
+  let next = 0;
+  async function worker() {
+    while (requestId === libraryRequestId && !ui.libraryPage.hidden && next < previews.length) {
+      const preview = previews[next++];
+      await renderLibraryPreview(preview, requestId);
+    }
+  }
+  for (let index = 0; index < Math.min(2, previews.length); index++) void worker();
 }
 
 function makeLibraryPdfRow(record) {
