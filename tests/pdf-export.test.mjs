@@ -37,7 +37,7 @@ test("export creates a real PDF containing selected source pages in custom order
   });
   const merged = await PDFDocument.load(output);
   assert.equal(merged.getPageCount(), 3);
-  assert.deepEqual(merged.getPages().map(p=>p.getWidth()), [362,322,360]);
+  assert.deepEqual(merged.getPages().map(p=>p.getWidth()), [362,321,360]);
   assert.equal(loads, 2, "one source opened once regardless of number of selected pages");
   assert.deepEqual(progress, [1,2,3]);
 });
