@@ -3374,8 +3374,46 @@ document.addEventListener("focusin", (event) => {
 });
 window.addEventListener("resize", () => closeViewMenu());
 ui.app.querySelector(".topbar").addEventListener("scroll", () => closeViewMenu(), { passive: true });
-ui.thumbPages.addEventListener("click", () => setThumbnailMode("pages"));
-ui.thumbBookmarks.addEventListener("click", () => setThumbnailMode("bookmarks"));
+ui.thumbPages.addEventListener("click", () => {
+  if (state.outlineOpen) setOutlineVisible(false);
+  setThumbnailMode("pages");
+});
+ui.thumbBookmarks.addEventListener("click", () => {
+  if (state.outlineOpen) setOutlineVisible(false);
+  setThumbnailMode("bookmarks");
+});
+ui.thumbOutline.addEventListener("click", () => {
+  if (!state.doc) return;
+  if (!state.outlineOpen && state.thumbnailMode === "bookmarks") setThumbnailMode("pages");
+  setOutlineVisible(!state.outlineOpen);
+});
+ui.searchToggle.addEventListener("click", () => setSearchVisible(ui.searchPanel.hidden));
+ui.searchClose.addEventListener("click", () => setSearchVisible(false));
+ui.searchPrev.addEventListener("click", () => selectSearchResult(state.searchIndex - 1));
+ui.searchNext.addEventListener("click", () => selectSearchResult(state.searchIndex + 1));
+ui.searchQuery.addEventListener("input", () => {
+  clearTimeout(state.searchTimer);
+  state.searchToken++;
+  state.searchTimer = setTimeout(() => { void runDocumentSearch(); }, 260);
+});
+ui.searchQuery.addEventListener("keydown", event => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    if (state.searchResults.length) selectSearchResult(state.searchIndex + 1);
+    else { clearTimeout(state.searchTimer); void runDocumentSearch(); }
+  }
+  if (event.key === "Escape") {
+    event.preventDefault();
+    setSearchVisible(false);
+  }
+});
+document.addEventListener("keydown", event => {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f"
+    && state.doc && !ui.libraryPage.hidden === false) {
+    event.preventDefault();
+    setSearchVisible(true);
+  }
+});
 
 ui.viewer.addEventListener("scroll", () => { scheduleScrollUpdate(); hideSelectionMenu(); }, { passive: true });
 ui.thumbList.addEventListener("scroll", hideSelectionMenu, { passive: true });
