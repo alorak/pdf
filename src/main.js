@@ -1640,6 +1640,7 @@ async function openPDF(file, { replaceWorkspace = false, persistFile = true } = 
     }
     // Restoring an existing PDF must not rewrite its bookmark metadata.
     workspaceFiles.set(workspaceId, file);
+    if (persistFile && replaceWorkspace) libraryPreviewCache.delete(workspaceId);
     renderWorkspaceSidebar();
     // Existing workspaces may contain both a base PDF and older linked-page
     // references. Preserve and display all pages in the same reader.
