@@ -143,13 +143,17 @@ export async function getAllStoredPdfs() {
   });
 }
 
-function crc32Update(crc, bytes) {
-  let c = crc;
-  for (const byte of bytes) {
-    c ^= byte;
-    for (let i = 0; i < 8; i++) c = (c >>> 1) ^ (c & 1 ? 0xEDB88320 : 0);
+const CRC_TABLE = Uint32Array.from({ length: 256 }, (_, index) => {
+  let value = index;
+  for (let bit = 0; bit < 8; bit++) {
+    value = (value >>> 1) ^ ((value & 1) ? 0xEDB88320 : 0);
   }
-  return c;
+  return value >>> 0;
+});
+function crc32Update(crc, bytes) {
+  let value = crc;
+  for (const byte of bytes) value = CRC_TABLE[(value ^ byte) & 255] ^ (value >>> 8);
+  return value >>> 0;
 }
 async function checksumBlob(blob) {
   let crc = 0xFFFFFFFF;
