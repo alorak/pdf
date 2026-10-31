@@ -100,6 +100,35 @@ export async function writeWorkspaceAndPdf(nextState, expectedRevision, { put = 
   });
 }
 
+/** A consistent read-only snapshot of metadata and every PDF Blob record. */
+export async function readWorkspaceBundle() {
+  const db = await openDatabase();
+  return transactionResult(db, [META, PDFS], "readonly", (tx, done) => {
+    let metadata = null;
+    let metadataReady = false;
+    let cursorDone = false;
+    const records = [];
+    const finish = () => {
+      if (metadataReady && cursorDone) {
+        done({
+          state: metadata
+            ? readWorkspaces(JSON.stringify(metadata.value)) : initialWorkspaces(),
+          revision: metadata?.revision ?? 0,
+          records,
+        });
+      }
+    };
+    const m = tx.objectStore(META).get(KEY);
+    m.onsuccess = () => { metadata = m.result; metadataReady = true; finish(); };
+    const c = tx.objectStore(PDFS).openCursor();
+    c.onsuccess = () => {
+      const cursor = c.result;
+      if (cursor) { records.push(cursor.value); cursor.continue(); }
+      else { cursorDone = true; finish(); }
+    };
+  });
+}
+
 /** Collect all owned and orphaned PDF records without reading their byte arrays. */
 export async function getAllStoredPdfs() {
   const db = await openDatabase();
