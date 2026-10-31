@@ -73,7 +73,7 @@ Test matrisi ve tekrar üretme: [stress/README.md](stress/README.md). [P2.3 tam 
 
 ### P2.4-C — Küçük resim sanallaştırma
 
-300 ve üzeri sayfada küçük resim listesi solda veya altta yalnızca görünür kayıtları oluşturur; uzaklaşan kayıtlar DOM'dan kaldırılır. Yer imi modu, sürükle-bırak ve sayfa numarası mantıksal sıralamayı korur. [Teknik sınırlar ve kabul ölçütleri](docs/p2-4c-thumbnails.md).
+300 ve üzeri sayfada küçük resimler solda/altta, ana PDF sayfaları da dikey/yatay akışta yalnızca görünür pencereyi DOM'a oluşturur. 300+ yer imi için seçili sayfa sırası korunur. 5.000 sayfalık tam kabul testi başarılıdır; kalan karmaşık drag/drop ve yoğun yer-imi senaryoları için [kanıtlar ve kapsam](docs/p2-4c-thumbnails.md) belgesine bakın.
 
 ## Çalıştırma
 

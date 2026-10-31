@@ -20,6 +20,31 @@ P2.4-A/B sonunda 5.000 sayfalık PDF ana görüntüleyicisinde 3 sayfa kabuğu t
 - Yalnızca yer imleri görünümünde 300 veya üzeri kayıt varsa ana sayfalar da seçili yer imi sırasına göre sanallaştırılır. 300 altı için sayfalar doğrudan oluşturulur.
 - Gerçek cihazda 100 MB+ görüntü ağırlıklı PDF dosyaları P2.5 kapsamındadır.
 
-## Kabul kaydı
+## Kabul kaydı — 31 Ekim 2026
 
-CI sonucu ve 100/1.000/5.000 sayfa metrikleri doğrulandıktan sonra doldurulacaktır. Sonucu doğrulamadan P2.4-C tamamlandı ilan edilmez.
+**Tam test:** [P2.4-C full acceptance #41220266903](https://github.com/alorak/pdf/actions/runs/41220266903) — **SUCCESS**, `P2_3_ACCEPTANCE_PASSED` kanıt bütünlüğü doğrulandı.
+
+- Commit: `6e10b970bd9cbf5134990ec566f960d8d2737a0f`
+- Ortam: Node v24.22.1, Chromium 141.0.7390.37, GitHub-hosted Linux CI, 1365×900.
+- Kanıt: `p2-4c-full-evidence-41220266903` artifact'ı (30 gün). Birim testleri, 1.900 bağlantılı sayfa, 100/1000/5000 sayfalı PDF.js, Chromium kapasite, yatay PDF ve thumbnail, metin arama ile SHA-256 doğrulamaları geçti.
+
+### 5.000 sayfa — ilk tam kabul karşılaştırması
+
+| Metrik | P2.4-B | P2.4-C |
+|---|---:|---:|
+| DOM node sayısı (kapasite testi) | 56.032 | **1.620** |
+| Main page shells | 3 | **3** |
+| Thumbnail entry (bağlı) | ~5.000 | **7** |
+| İlk gerçek sayfa (ms, Chromium browser profili) | 1.063,2 | **588,0** |
+| Son sayfa gerçek canvas (ms) | 140,7 | **59,6** |
+| Tam metin arama (ms) | 2.121,5 | **1.898,3** |
+| Arama sonrası heap (MiB) | 38,4 | 30,9 |
+
+Bunlar farklı runner koşularının **birer gözlemsel ölçümüdür**, p95 veya SLA değildir. Performans değişkenliğini belirlemek için 3–5 tekrarlı çalıştırma gerekir. RAM değerleri proses anına göre farklılaşabilir.
+
+### Kalan sınırlar
+
+- 300+ gerçek yer imi içeren bir PDF'de **bookmark-only ana sayfa görünümü** için mantıksal sıralı pencereleme kodu mevcut; ancak büyük kayıtlı yer imi yükünün otomatik Chromium E2E'si ayrıca yazılmalıdır. Küçük yer-imi ve boş durum senaryoları test edildi.
+- Uzun mesafeli drag-and-drop, otomatik scroll ve touch pointer-capture davranışının çok büyük bağlı sayfa derlemesinde ayrı uçtan uca doğrulanması yararlı olur.
+- Görüntü ağırlıklı büyük PDF fixture ve düşük bellekli mobil cihazlar P2.5 kapsamındadır.
+
