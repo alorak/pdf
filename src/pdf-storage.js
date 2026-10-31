@@ -70,3 +70,55 @@ export async function deleteWorkspacePdf(workspaceId) {
   if (!Number.isSafeInteger(workspaceId) || workspaceId < 1) return;
   await transaction("readwrite", (store) => store.delete(workspaceId));
 }
+
+/** Enumerate stored PDF metadata; the Blob is not read into an ArrayBuffer. */
+export async function listWorkspacePdfs() {
+  const db = await openDatabase();
+  return new Promise((resolve, reject) => {
+    const records = [];
+    const tx = db.transaction(STORE_NAME, "readonly");
+    const request = tx.objectStore(STORE_NAME).openCursor();
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor) return;
+      const item = cursor.value;
+      records.push({
+        workspaceId: item.workspaceId,
+        name: typeof item.name === "string" ? item.name : "",
+        size: item.blob?.size ?? 0,
+        lastModified: item.lastModified ?? 0,
+      });
+      cursor.continue();
+    };
+    tx.oncomplete = () => resolve(records);
+    tx.onerror = () => reject(tx.error || new Error("PDF listesi okunamadı"));
+    tx.onabort = () => reject(tx.error || new Error("PDF listesi iptal edildi"));
+  });
+}
+
+/** Prevent deletion when the underlying PDF was changed after the confirmation dialog opened. */
+export async function deleteWorkspacePdfIfMatches(workspaceId, expected) {
+  if (!Number.isSafeInteger(workspaceId) || workspaceId < 1 || !expected
+    || typeof expected.name !== "string" || !Number.isFinite(expected.size)) {
+    throw new Error("Geçersiz PDF kaydı");
+  }
+  const db = await openDatabase();
+  return new Promise((resolve, reject) => {
+    let removed = false;
+    const tx = db.transaction(STORE_NAME, "readwrite");
+    const store = tx.objectStore(STORE_NAME);
+    const request = store.get(workspaceId);
+    request.onsuccess = () => {
+      const item = request.result;
+      if (item && item.name === expected.name
+        && (item.blob?.size ?? 0) === expected.size
+        && (item.lastModified ?? 0) === expected.lastModified) {
+        store.delete(workspaceId);
+        removed = true;
+      }
+    };
+    tx.oncomplete = () => resolve(removed);
+    tx.onerror = () => reject(tx.error || new Error("PDF silinemedi"));
+    tx.onabort = () => reject(tx.error || new Error("PDF silme işlemi iptal edildi"));
+  });
+}
