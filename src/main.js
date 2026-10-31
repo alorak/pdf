@@ -13,7 +13,7 @@ import {
 import { saveWorkspacePdf, loadWorkspacePdf, deleteWorkspacePdf, listWorkspacePdfs, deleteWorkspacePdfIfMatches } from "./pdf-storage.js";
 import { classifyLibraryPdfs, measureLocalStorage, formatBytes, libraryWorkspaceSlots, libraryBookmarkSummary, paginateLibraryBookmarkPages } from "./library-utils.js";
 import { linkedPickerWindow, isOutsideDialogRect } from "./linked-picker-utils.js";
-import { openLinkedDocument, isLinkedOnlyWorkspace } from "./linked-document.js";
+import { openLinkedDocument, isLinkedOnlyWorkspace, workspaceDocumentName } from "./linked-document.js";
 import "./style.css";
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
@@ -267,6 +267,68 @@ async function restoreWorkspacePdf(workspaceId) {
   }
 }
 
+/** Reuse the normal page, thumbnail, zoom and annotation renderer for referenced pages. */
+async function openLinkedWorkspaceReader() {
+  const workspace = activeWorkspace(workspaces);
+  if (!isLinkedOnlyWorkspace(workspace)) return;
+  const workspaceId = workspace.id;
+  cancelAllWork();
+  state.fit = workspace.view?.fit || DEFAULT_WORKSPACE_VIEW.fit;
+  state.thumbnailMode = "pages";
+  ui.pages.classList.toggle("fit-height", state.fit === "height");
+  const generation = state.generation;
+  setLoading(true, "Seçilen PDF sayfaları açılıyor…");
+  let linkedDoc;
+  try {
+    linkedDoc = await openLinkedDocument({
+      references: workspace.linkedPages,
+      workspaces: workspaces.items,
+      loadFile: loadWorkspacePdf,
+      pdfjs,
+      isCancelled: () => generation !== state.generation || workspaces.activeId !== workspaceId,
+    });
+    if (generation !== state.generation || workspaces.activeId !== workspaceId) {
+      await linkedDoc.destroy();
+      return;
+    }
+    const first = await linkedDoc.getPage(1);
+    if (generation !== state.generation || workspaces.activeId !== workspaceId) {
+      await linkedDoc.destroy();
+      return;
+    }
+    const rect = first.getViewport({ scale: 1 });
+    state.loadingTask = linkedDoc;
+    state.doc = linkedDoc;
+    state.pageCount = linkedDoc.numPages;
+    state.dimensions = new Array(state.pageCount);
+    state.dimensions[0] = { width: rect.width, height: rect.height };
+    state.fileSize = 0;
+    ui.app.classList.add("has-document");
+    ui.empty.hidden = true;
+    ui.pages.hidden = false;
+    ui.fileLabel.textContent = `Sayfa derlemesi · ${linkedDoc.numPages} sayfa`;
+    ui.fileLabel.title = `W${workspaceId} · başka PDF'lerden eklenmiş sayfalar`;
+    ui.pdfInfoButton.disabled = true;
+    ui.status.textContent = `${linkedDoc.numPages} seçili sayfa · Dosyalar kaynak workspace'lerde`;
+    createPageElements();
+    updateSettingsView();
+    updateToolbar();
+    renderWorkspaceSidebar();
+    applyFit(state.fit === "custom" ? "width" : state.fit);
+    initializeObservers();
+    ui.viewer.scrollTop = 0;
+    ui.viewer.scrollLeft = 0;
+  } catch (error) {
+    if (linkedDoc && state.loadingTask !== linkedDoc) await linkedDoc.destroy();
+    if (generation !== state.generation) return;
+    console.warn("Linked page reader failed:", error);
+    cancelAllWork();
+    showToast(error?.message || "Kaynak PDF sayfaları açılamadı.");
+  } finally {
+    if (generation === state.generation) setLoading(false);
+  }
+}
+
 function askDeleteWorkspace(id) {
   const item = workspaces.items.find((entry) => entry.id === id);
   if (!item) return;
@@ -426,9 +488,10 @@ function refreshPageHighlights(index) {
   surface.querySelector(".page-highlight-layer")?.remove();
   state.highlightRegions.delete(index);
   const workspace = activeWorkspace(workspaces);
-  if (!state.doc || !workspace?.fileName) return;
+  const documentName = workspaceDocumentName(workspace);
+  if (!state.doc || !documentName) return;
   const notes = workspace.notes.filter((note) =>
-    note.kind !== "page" && note.fileName === workspace.fileName && note.page === index + 1);
+    note.kind !== "page" && note.fileName === documentName && note.page === index + 1);
   if (!notes.length) return;
   const layer = surface.querySelector(".textLayer");
   const highlights = document.createElement("div");
@@ -513,7 +576,7 @@ function selectedPdfText() {
   return {
     text,
     page: Number(pageElement.dataset.index) + 1,
-    fileName: activeWorkspace(workspaces).fileName,
+    fileName: workspaceDocumentName(activeWorkspace(workspaces)),
     rects: highlightRectsFromRange(range, surface?.querySelector(".textLayer"), surface),
   };
 }
@@ -535,7 +598,7 @@ function showSelectionMenu(mode, clientX, clientY) {
   ui.moveBookmarkNext.hidden = !bookmarkView;
   if (bookmarkView) {
     const workspace = activeWorkspace(workspaces);
-    const order = orderedBookmarkedPageNumbers(workspace, workspace.fileName, state.pageCount);
+    const order = orderedBookmarkedPageNumbers(workspace, workspaceDocumentName(workspace), state.pageCount);
     const at = order.indexOf(contextPageBookmark);
     ui.moveBookmarkPrevious.disabled = at <= 0;
     ui.moveBookmarkNext.disabled = at < 0 || at >= order.length - 1;
@@ -562,7 +625,7 @@ function openPageContextMenu(page, clientX, clientY) {
 function findPageBookmark(page) {
   const workspace = activeWorkspace(workspaces);
   return workspace.notes.find((note) =>
-    note.kind === "page" && note.fileName === workspace.fileName && note.page === page);
+    note.kind === "page" && note.fileName === workspaceDocumentName(workspace) && note.page === page);
 }
 
 function togglePageBookmark() {
@@ -578,7 +641,7 @@ function togglePageBookmark() {
   const current = workspaces;
   const next = savePageBookmark(current, {
     id: typeof globalThis.crypto?.randomUUID === "function" ? globalThis.crypto.randomUUID() : `page-${Date.now()}-${Math.random()}`,
-    page, fileName: activeWorkspace(workspaces).fileName, savedAt: Date.now(),
+    page, fileName: workspaceDocumentName(activeWorkspace(workspaces)), savedAt: Date.now(),
   });
   if (next === current) {
     showToast(`Bir workspace en fazla ${MAX_SAVED_TEXTS} yer imi saklayabilir.`);
@@ -590,7 +653,7 @@ function togglePageBookmark() {
 
 function removeBookmarkedPageFromWorkspace(page) {
   const workspace = activeWorkspace(workspaces);
-  const next = removePageBookmarks(workspaces, workspace.fileName, page);
+  const next = removePageBookmarks(workspaces, workspaceDocumentName(workspace), page);
   hideSelectionMenu();
   if (next === workspaces) return;
   updateWorkspaces(next);
@@ -603,7 +666,7 @@ function moveContextBookmark(direction) {
   hideSelectionMenu();
   if (!state.doc || !Number.isSafeInteger(page)) return;
   const workspace = activeWorkspace(workspaces);
-  updateWorkspaces(moveBookmarkedPage(workspaces, workspace.fileName, state.pageCount, page, direction));
+  updateWorkspaces(moveBookmarkedPage(workspaces, workspaceDocumentName(workspace), state.pageCount, page, direction));
 }
 
 async function copyText(value) {
@@ -794,7 +857,7 @@ function stepVisiblePage(direction) {
 
 function updateThumbnailFilter(resetScroll = false) {
   const workspace = activeWorkspace(workspaces);
-  const ordered = orderedBookmarkedPageNumbers(workspace, workspace?.fileName, state.doc ? state.pageCount : 0);
+  const ordered = orderedBookmarkedPageNumbers(workspace, workspaceDocumentName(workspace), state.doc ? state.pageCount : 0);
   const bookmarked = new Set(ordered);
   const onlyBookmarks = state.thumbnailMode === "bookmarks";
   ui.app.classList.toggle("bookmark-mode", onlyBookmarks);
