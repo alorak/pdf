@@ -52,7 +52,12 @@ for (const pages of pageCounts) {
     await page.locator("#pageInput").fill(String(pages));
     await page.locator("#pageInput").press("Enter");
     await expect(page.locator("#pageInput")).toHaveValue(String(pages));
-    await page.waitForTimeout(650);
+    // The page number can update before PDF.js has painted the target canvas.
+    // A navigation measurement is valid only after the requested page renders.
+    const targetCanvas = page.locator(`.page-shell[data-index="${pages - 1}"] .page-surface canvas`);
+    await expect.poll(() => targetCanvas.count(), { timeout: 120_000,
+      message: "The last requested page must paint a real canvas",
+    }).toBeGreaterThan(0);
     const lastPageJumpMs = round(performance.now() - jumpStart);
     const afterJump = await metrics(page);
 
@@ -75,7 +80,7 @@ for (const pages of pageCounts) {
       schema: 1, kind: "chromium-browser", measuredAt: new Date().toISOString(),
       commit: process.env.GITHUB_SHA || "local", runner: process.env.RUNNER_NAME || "local",
       node: process.version, browserVersion, pages, bytes: fixture.length,
-      sha256, firstPageMs, lastPageJumpMs, searchMs,
+      sha256, firstPageMs, lastPageJumpMs, lastPageCanvasRendered: true, searchMs,
       afterLoad, afterJump, afterSearch,
     };
     await mkdir("test-results/stress", { recursive: true });

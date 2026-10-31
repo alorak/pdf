@@ -6,6 +6,8 @@ export default defineConfig({
   ...base,
   testIgnore: [],
   testMatch: "**/*.stress.spec.mjs",
+  // Keep generated measurements in test-results/stress between independent suites.
+  outputDir: "test-results/playwright-capacity",
   timeout: 240_000,
   expect: { timeout: 60_000 },
   workers: 1,
