@@ -132,7 +132,7 @@ function renderWorkspaceSidebar() {
   ui.activeWorkspaceLabel.textContent = workspaceDisplayName(active);
   ui.workspaceCount.textContent = `${workspaces.items.length} / ${MAX_WORKSPACES}`;
   ui.createWorkspace.disabled = workspaces.items.length >= MAX_WORKSPACES;
-  ui.createWorkspace.title = ui.createWorkspace.disabled ? "En fazla 10 workspace oluşturulabilir" : "Yeni çalışma alanı";
+  ui.createWorkspace.title = ui.createWorkspace.disabled ? `En fazla ${MAX_WORKSPACES} workspace oluşturulabilir` : "Yeni çalışma alanı";
   updateThumbnailFilter();
   ui.workspaceList.replaceChildren();
   for (const item of workspaces.items) {
