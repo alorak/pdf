@@ -57,6 +57,8 @@ jobs:
       - name: Summarize search/navigation metrics
         if: always()
         run: npm run test:stress:report
+      - name: Verify all full-profile evidence and metrics are present
+        run: node scripts/verify-p2-3.mjs
       - name: Upload full acceptance evidence
         if: always()
         uses: actions/upload-artifact@v4

@@ -59,6 +59,8 @@ jobs:
       - name: Summarize search baseline
         if: always()
         run: npm run test:stress:report
+      - name: Verify stress evidence is complete
+        run: node scripts/verify-p2-3.mjs
       - name: Upload performance baselines and failures
         if: always()
         uses: actions/upload-artifact@v4
