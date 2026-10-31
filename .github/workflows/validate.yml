@@ -44,7 +44,7 @@ jobs:
         run: npx playwright test
       - name: Small-fixture stress baseline (100 pages and 20-workspace capacity)
         env:
-          P2_STRESS_PAGES: "100,1000"
+          P2_STRESS_PAGES: "100,1000,5000"
         run: npx playwright test --config playwright.stress.config.mjs
       - name: Summarize PR stress metrics
         if: always()
