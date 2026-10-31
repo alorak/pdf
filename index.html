@@ -16,6 +16,7 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
           </button>
           <span class="brand-title">pdf<span class="brand-dot">.</span></span>
+          <span id="libraryTitle" class="topbar-page-title" tabindex="-1" hidden>Library</span>
         </div>
         <div class="file-group">
           <span id="activeWorkspaceLabel" class="workspace-chip">W1</span>
@@ -128,13 +129,6 @@
 
       <section id="libraryPage" class="library-page" aria-labelledby="libraryTitle" hidden>
         <div class="library-container">
-          <div class="library-heading">
-            <h1 id="libraryTitle">Library</h1>
-            <div class="library-heading-actions">
-              <button id="refreshLibrary" class="secondary-button" type="button">Yenile</button>
-              <button id="libraryBack" class="secondary-button" type="button">← Okuyucuya dön</button>
-            </div>
-          </div>
           <div class="library-overview" aria-label="Depolama özeti">
             <div class="library-stat">
               <span>PDF dosyaları · IndexedDB</span>

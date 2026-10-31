@@ -24,7 +24,7 @@ const ui = {
   workspaceList: $("workspaceList"), workspaceCount: $("workspaceCount"),
   createWorkspace: $("createWorkspace"), openLibrary: $("openLibrary"),
   readerPage: document.querySelector("main.workspace"), libraryPage: $("libraryPage"),
-  libraryBack: $("libraryBack"), refreshLibrary: $("refreshLibrary"),
+  libraryTitle: $("libraryTitle"),
   libraryPdfSize: $("libraryPdfSize"), libraryPdfCount: $("libraryPdfCount"),
   libraryLocalSize: $("libraryLocalSize"), libraryLocalCount: $("libraryLocalCount"),
   libraryTotalSize: $("libraryTotalSize"), libraryOrphanCount: $("libraryOrphanCount"),
@@ -1499,6 +1499,7 @@ function closeLibrary() {
   cancelLibraryPreviews();
   ui.libraryPage.hidden = true;
   ui.readerPage.hidden = false;
+  ui.libraryTitle.hidden = true;
   ui.app.classList.remove("library-open");
   ui.openLibrary.setAttribute("aria-current", "false");
 }
@@ -1507,9 +1508,10 @@ function openLibraryPage() {
   closeSidebar();
   ui.readerPage.hidden = true;
   ui.libraryPage.hidden = false;
+  ui.libraryTitle.hidden = false;
   ui.app.classList.add("library-open");
   ui.openLibrary.setAttribute("aria-current", "page");
-  ui.libraryBack.focus();
+  ui.libraryTitle.focus({ preventScroll: true });
   void refreshLibrary();
 }
 
@@ -1714,7 +1716,6 @@ async function refreshLibrary() {
   ui.libraryList.setAttribute("aria-busy", "true");
   ui.libraryWorkspaceGrid.setAttribute("aria-busy", "true");
   ui.libraryList.textContent = "PDF kayıtları okunuyor…";
-  ui.refreshLibrary.disabled = true;
   let local;
   try { local = measureLocalStorage(window.localStorage); }
   catch { local = null; }
@@ -1758,7 +1759,6 @@ async function refreshLibrary() {
     if (requestId === libraryRequestId) {
       ui.libraryList.setAttribute("aria-busy", "false");
       ui.libraryWorkspaceGrid.setAttribute("aria-busy", "false");
-      ui.refreshLibrary.disabled = false;
     }
   }
 }
@@ -1849,8 +1849,6 @@ ui.closeSidebar.addEventListener("click", closeSidebar);
 ui.sidebarBackdrop.addEventListener("click", closeSidebar);
 ui.emptyOpen.addEventListener("click", openSidebar);
 ui.openLibrary.addEventListener("click", openLibraryPage);
-ui.libraryBack.addEventListener("click", closeLibrary);
-ui.refreshLibrary.addEventListener("click", () => { void refreshLibrary(); });
 ui.libraryPersist.addEventListener("click", async () => {
   ui.libraryPersist.disabled = true;
   try {
