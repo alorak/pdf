@@ -1,3 +1,4 @@
+import { installMapUpsertPolyfills } from "./pdfjs-compat.js";
 import * as pdfjs from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { clampPage, clampScale, chooseDeviceScale, fitScale, MIN_SCALE, MAX_SCALE } from "./viewer-math.js";
@@ -22,6 +23,8 @@ import { exportLinkedPages } from "./pdf-export.js";
 import { dependentPageLinks, groupDependentLinks, stalePageLinks } from "./workspace-dependencies.js";
 import { findTextMatches, searchableText, evictDistantPages, flattenOutline, MAX_SEARCH_RESULTS } from "./pdf-navigation.js";
 import "./style.css";
+
+installMapUpsertPolyfills();
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
