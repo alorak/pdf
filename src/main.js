@@ -1332,6 +1332,8 @@ function setOutlineVisible(visible) {
   ui.thumbList.hidden = state.outlineOpen;
   ui.outlineList.hidden = !state.outlineOpen;
   ui.thumbOutline.classList.toggle("active", state.outlineOpen);
+  ui.thumbPages.classList.toggle("active", !state.outlineOpen && state.thumbnailMode === "pages");
+  ui.thumbBookmarks.classList.toggle("active", !state.outlineOpen && state.thumbnailMode === "bookmarks");
   ui.thumbOutline.setAttribute("aria-pressed", String(state.outlineOpen));
   if (state.outlineOpen) void renderPdfOutline();
 }
@@ -3409,7 +3411,7 @@ ui.searchQuery.addEventListener("keydown", event => {
 });
 document.addEventListener("keydown", event => {
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f"
-    && state.doc && !ui.libraryPage.hidden === false) {
+    && state.doc && ui.libraryPage.hidden) {
     event.preventDefault();
     setSearchVisible(true);
   }
