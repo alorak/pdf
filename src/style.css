@@ -536,7 +536,8 @@ input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer
   height: clamp(105px, 10vw, 156px); background: #f2f5fa; border-radius: 7px;
   display: grid; place-items: center; overflow: hidden; position: relative;
 }
-.library-workspace-preview canvas {
+.library-workspace-preview canvas,
+.library-workspace-preview img {
   display: block; max-width: calc(100% - 14px); max-height: calc(100% - 12px);
   box-shadow: 0 1px 7px #1a294326; background: white; object-fit: contain;
 }
