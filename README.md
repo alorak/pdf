@@ -14,7 +14,9 @@ Tarayıcıda çalışan sade, hızlı ve gizliliğe odaklı bir PDF görüntüle
 - PDF metnini seçip sağ tıklayarak **Kopyala** veya **Workspace'e kaydet** işlemleri.
 - Seçilen metinler her workspace'e ayrı olarak localStorage'da kaydedilir; dosya adı ve sayfa bilgisiyle listelenir, tek tek kopyalanabilir/silinebilir.
 - **Open PDF** işlemi onay ister. Yeni PDF başarıyla açılınca yalnızca aktif workspace'in eski kayıtları silinir; diğer workspaceler ve görünüm tercihleri korunur.
-- Tercihler ve kaydedilen metinler localStorage'da tutulur. PDF dosyaları tarayıcı oturumu boyunca bellekte tutulur, kalıcı olarak kaydedilmez; sayfa yenilenince PDF yeniden seçilmelidir.
+- **Library**: Sol menüde “Yeni workspace” altında açılır. IndexedDB'de kayıtlı tüm PDF'leri, dosya boyutlarını, bağlı oldukları workspace'leri ve sahipsiz kalan PDF'leri listeler; yalnızca sahipsiz dosyaları onayla silmeye izin verir.
+- **Depolama görünürlüğü**: PDF toplam boyutu, tüm origin için localStorage UTF-16 boyut tahmini, PDF+localStorage toplamı, `navigator.storage.estimate()` ile tarayıcı origin kotası ve kullanımı; isteğe bağlı kalıcı depolama talebi.
+- Tercihler ve kaydedilen metinler localStorage'da tutulur. PDF'ler **IndexedDB'de kalıcı olarak** workspace kimliğiyle saklanır ve sayfa yenilendiğinde yeniden yüklenmeye çalışılır. Tarayıcı verilerini temizlemek veya depolama kotası nedeniyle silinmesi dosyaları kaybettirebilir.
 - PDF.js worker, görünür alan bazlı çizim, iptal edilebilir işler ve canvas bellek sınırı.
 
 ## Çalıştırma
@@ -62,3 +64,11 @@ Statik çıktı `dist/` klasöründedir. ES module ve worker güvenlik kısıtla
 İlk sürüm okuma performansına odaklanır; OCR, not ekleme, metin arama, metin seçimi ve PDF düzenleme içermez. Çok yüksek büyütmelerde tarayıcı belleğini korumak için çizim çözünürlüğü sınırlandırılır. Parolalı PDF'ler için parola girme ekranı henüz yoktur.
 
 PDF işleme motoru: [Mozilla PDF.js](https://github.com/mozilla/pdf.js) (Apache-2.0).
+
+## Tarayıcı depolaması
+
+PDF'ler (`pdf-viewer-workspace-files-v1` veritabanının `pdfs` object store'u) IndexedDB'de `workspaceId` anahtarıyla tutulur. Workspace metadata'sı `pdf-viewer-workspaces-v1` localStorage anahtarındadır. Library, dosya ID'sini **ve** adını mevcut workspace bilgileriyle eşleştirir. Silinmiş bir workspace'e ait veya mevcut workspace'in dosya adıyla uyuşmayan kayıtlar “sahipsiz” sayılır. Silme işleminde kayıt kimliği, ad, içerik boyutu ve son değiştirilme zamanı tekrar kontrol edilir.
+
+Library'deki yerel PDF toplamı içerik byte'larını toplar; localStorage tahmini tüm origin'deki anahtar ve değerlerin UTF-16 boyutuna dayanır. Tarayıcının bildirdiği kota ve tahmini kullanım IndexedDB, Cache API ve aynı origin'deki **diğer** uygulamaların depolamasını da kapsayabilir; bu nedenle bu sayıların toplamı birbirine eşit olmak zorunda değildir. Örneğin `https://alorak.github.io/pdf/`, `https://alorak.github.io/` ile aynı origin'dedir.
+
+IndexedDB için evrensel bir maksimum PDF dosya boyutu yoktur. Gerçek kota tarayıcıya, profile, işletim sistemine ve disk durumuna bağlıdır; yer dolduğunda `QuotaExceededError` oluşabilir. **Kalıcı depolama iste** tarayıcı desteklediğinde `navigator.storage.persist()` çağırır; kabul edilmesi, kullanıcının tarayıcı verilerini elle silmesine karşı garanti sağlamaz. İlgili genel bilgiler: [MDN Storage Quotas](https://developer.mozilla.org/en-US/docs/Web/API/Storage_API/Storage_quotas_and_eviction_criteria).
