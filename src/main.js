@@ -251,6 +251,7 @@ async function confirmDeleteWorkspace() {
     persistWorkspaces();
     if (wasActive) applyWorkspaceView();
     renderWorkspaceSidebar();
+    if (!ui.libraryPage.hidden) void refreshLibrary();
     ui.deleteWorkspaceDialog.close();
     pendingDeleteWorkspaceId = null;
     if (wasActive) void restoreWorkspacePdf(workspaces.activeId);
