@@ -417,7 +417,11 @@ async function openLinkedWorkspaceReader(baseFile = null) {
       : `Sayfa derlemesi · ${linkedDoc.numPages} sayfa`;
     ui.fileLabel.title = `W${workspaceId} · kaynak PDF'lerden seçilmiş sayfalar`;
     ui.pdfInfoButton.disabled = true;
-    ui.status.textContent = `${linkedDoc.numPages} sayfa · PDF'ler kaynak workspace'lerde`;
+    const missingCount = linkedDoc.missing?.length || 0;
+    ui.status.textContent = missingCount
+      ? `${linkedDoc.numPages} sayfa · ${missingCount} kaynak sayfa eksik; Library'den bağlantıları denetle`
+      : `${linkedDoc.numPages} sayfa · PDF'ler kaynak workspace'lerde`;
+    if (missingCount) showToast(`${missingCount} kaynak sayfa bulunamadı. Eksik sayfalar işaretlendi; Library > Kayıtları denetle ile yönetebilirsin.`);
     createPageElements();
     updateSettingsView();
     updateToolbar();
