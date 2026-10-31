@@ -24,7 +24,7 @@ export function stalePageLinks(state, pdfRecords) {
       const source = state.items.find(item => item.id === ref.sourceWorkspaceId);
       const record = byWorkspace.get(ref.sourceWorkspaceId);
       return !source || source.fileName !== ref.sourceFileName || !record ||
-        record.name !== ref.sourceFileName || record.size !== ref.sourceSize ||
+        record.name !== ref.sourceFileName || (record.size ?? record.blob?.size) !== ref.sourceSize ||
         record.lastModified !== ref.sourceLastModified;
     }).map(ref => ({ targetWorkspaceId: workspace.id, sourceWorkspaceId: ref.sourceWorkspaceId,
       sourceFileName: ref.sourceFileName, page: ref.page, referenceId: ref.id })));
