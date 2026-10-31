@@ -3168,6 +3168,104 @@ ui.manageBrokenLinks.addEventListener("click", () => {
   });
 });
 ui.closeBrokenLinks.addEventListener("click", () => ui.brokenLinksDialog.close());
+async function renderSourceRelations() {
+  const snapshot = await readWorkspaceBundle();
+  const stale = stalePageLinks(snapshot.state, snapshot.records);
+  const broken = new Set(stale.map(item => JSON.stringify([item.targetWorkspaceId, item.referenceId])));
+  const grouped = new Map();
+  for (const workspace of snapshot.state.items) {
+    for (const reference of workspace.linkedPages || []) {
+      const key = JSON.stringify([reference.sourceWorkspaceId, workspace.id, reference.sourceFileName,
+        reference.sourceSize, reference.sourceLastModified]);
+      if (!grouped.has(key)) grouped.set(key, {
+        sourceWorkspaceId: reference.sourceWorkspaceId, targetWorkspaceId: workspace.id,
+        name: reference.sourceFileName, pages: [], broken: 0,
+      });
+      const entry = grouped.get(key);
+      entry.pages.push(reference.page);
+      if (broken.has(JSON.stringify([workspace.id, reference.id]))) entry.broken++;
+    }
+  }
+  const container = document.createDocumentFragment();
+  if (!grouped.size) {
+    const empty = document.createElement("p");
+    empty.textContent = "Başka workspace'lerden kullanılan PDF sayfası bulunmuyor.";
+    container.append(empty);
+  }
+  for (const group of grouped.values()) {
+    const row = document.createElement("div");
+    row.className = "source-relation-row";
+    const info = document.createElement("div");
+    const heading = document.createElement("strong");
+    heading.textContent = `W${group.sourceWorkspaceId} → W${group.targetWorkspaceId} · ${group.pages.length} sayfa`;
+    const details = document.createElement("small");
+    const label = group.broken ? ` · ${group.broken} kaynak bağlantısı geçersiz` : " · kaynak geçerli";
+    details.textContent = `${group.name} · kaynak sayfalar: ${group.pages.slice(0, 16).join(", ")}${group.pages.length > 16 ? "…" : ""}${label}`;
+    info.append(heading, details);
+    const target = document.createElement("button");
+    target.type = "button";
+    target.className = "secondary-button";
+    target.textContent = `W${group.targetWorkspaceId} aç`;
+    target.addEventListener("click", () => {
+      ui.sourceRelationsDialog.close();
+      changeWorkspace(group.targetWorkspaceId);
+    });
+    row.append(info, target);
+    container.append(row);
+  }
+  ui.sourceRelationsList.replaceChildren(container);
+}
+ui.showSourceRelations.addEventListener("click", () => {
+  ui.sourceRelationsDialog.showModal();
+  ui.sourceRelationsList.textContent = "Kaynak ilişkileri kontrol ediliyor…";
+  void renderSourceRelations().catch(error => {
+    ui.sourceRelationsList.textContent = "Kaynaklar okunamadı: " + error.message;
+  });
+});
+ui.closeSourceRelations.addEventListener("click", () => ui.sourceRelationsDialog.close());
+
+ui.exportLinkedPdf.addEventListener("click", async () => {
+  const snapshot = activeWorkspace(workspaces);
+  if (!isLinkedOnlyWorkspace(snapshot) || !snapshot.linkedPages.length || linkedExportBusy) return;
+  linkedExportBusy = true;
+  ui.exportLinkedPdf.disabled = true;
+  ui.exportLinkedPdf.textContent = "PDF hazırlanıyor…";
+  const generation = state.generation;
+  const revision = workspaceRevision;
+  try {
+    await waitForWorkspaceSaves();
+    const latest = await readWorkspaceData();
+    if (latest.revision !== workspaceRevision) throw new Error("Workspace başka sekmede değişti. Önce sayfayı yenile.");
+    const bytes = await exportLinkedPages({
+      workspace: snapshot, workspaces: latest.state.items, loadFile: loadWorkspacePdf,
+      isCancelled: () => state.generation !== generation || workspaceRevision !== revision
+        || activeWorkspace(workspaces)?.id !== snapshot.id,
+      onProgress({ completed, total }) {
+        ui.exportLinkedPdf.textContent = `${completed}/${total} hazırlanıyor…`;
+        ui.status.textContent = `PDF dışa aktarılıyor: ${completed}/${total} sayfa`;
+      },
+    });
+    const blob = new Blob([bytes], { type: "application/pdf" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const safe = snapshot.name.replace(/[^\p{L}\p{N}._-]+/gu, "_").slice(0, 70) || `W${snapshot.id}`;
+    link.href = url;
+    link.download = `${safe}-sayfalar.pdf`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+    showToast(`${snapshot.linkedPages.length} sayfalık gerçek PDF hazır. Kaynak PDF'ler değiştirilmedi.`);
+  } catch (error) {
+    console.warn("Linked PDF export failed:", error);
+    showToast("PDF dışa aktarılamadı: " + (error?.message || error));
+  } finally {
+    linkedExportBusy = false;
+    ui.exportLinkedPdf.textContent = "PDF dışa aktar";
+    renderWorkspaceSidebar();
+  }
+});
+
 ui.integrityRefresh.addEventListener("click", () => { void refreshIntegrityReport(); });
 ui.backupExport.addEventListener("click", async () => {
   if (backupBusy) return;
