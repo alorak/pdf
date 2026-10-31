@@ -41,6 +41,14 @@ for (const name of expectedNames) {
     assert.ok(snap.thumbnailCanvases <= 100);
     assert.ok(Number.isFinite(snap.domNodes) && snap.domNodes > 0);
     if (snap.jsHeapMiB !== null) assert.ok(Number.isFinite(snap.jsHeapMiB) && snap.jsHeapMiB > 0);
+    if (snap.chromiumProcesses !== null && snap.chromiumProcesses !== undefined) {
+      assert.ok(snap.chromiumProcesses.processCount >= 1);
+      assert.ok(Number.isFinite(snap.chromiumProcesses.rssSumMiB) && snap.chromiumProcesses.rssSumMiB > 0);
+      if (snap.chromiumProcesses.pssSumMiB != null) {
+        assert.ok(Number.isFinite(snap.chromiumProcesses.pssSumMiB)
+          && snap.chromiumProcesses.pssSumMiB > 0);
+      }
+    }
     if (name.includes("mobile")) assert.ok(snap.clientWidth <= 390, "mobile viewport was not applied");
   }
   reports.push(report);
@@ -53,6 +61,7 @@ const summary = {
     scenario: r.scenario, sha256: r.manifest.sha256,
     bytes: r.manifest.bytes, pages: r.manifest.pages,
     loadMs: r.loadMs, afterSearchHeapMiB: r.afterSearch.jsHeapMiB,
+    chromiumPssMiB: r.afterSearch.chromiumProcesses?.pssSumMiB ?? null,
     afterSearchDomNodes: r.afterSearch.domNodes,
   })),
   evidenceComplete: true,

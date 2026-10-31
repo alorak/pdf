@@ -3,6 +3,7 @@ name: P2.5 temporary full raster acceptance
 
 on:
   pull_request:
+    # Final baseline also samples Chromium process PSS/RSS.
     branches: [main]
     paths:
       - .github/workflows/p2-5-acceptance.yml

@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { performance } from "node:perf_hooks";
-import { mkdir, writeFile, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, writeFile, mkdtemp, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { generateImagePdf, imageFixtureManifest } from "../scripts/p2-5-image-fixtures.mjs";
@@ -18,7 +18,47 @@ const settings = {
 const fixtureName = (kind, mobile) => `p2-5-${kind}-${mobile ? "mobile" : "desktop"}-${profile}`;
 const round = value => Math.round(value * 10) / 10;
 
-async function sample(page, cdp) {
+/**
+ * Optional Linux Chromium process PSS/RSS. Unlike Performance.JSHeapUsedSize
+ * this sees PDF.js worker / native image decode allocations. Aggregate PSS is
+ * preferred because summed RSS counts shared pages multiple times.
+ * CDP process info and /proc are observable only on a local Linux CI runner.
+ */
+async function chromiumMemory(browser) {
+  if (process.platform !== "linux") return null;
+  let session;
+  try {
+    session = await browser.newBrowserCDPSession();
+    const result = await session.send("SystemInfo.getProcessInfo");
+    let pssKiB = 0, rssKiB = 0, processes = 0, pssProcesses = 0;
+    for (const info of result.processInfo || []) {
+      if (!Number.isSafeInteger(info.id) || info.id <= 0) continue;
+      try {
+        const rollup = await readFile(`/proc/${info.id}/smaps_rollup`, "utf8");
+        const matched = /^Pss:\s+(\d+)\s+kB/m.exec(rollup);
+        if (matched) { pssKiB += Number(matched[1]); pssProcesses++; }
+      } catch { /* PSS visibility is optional on hosted runners. */ }
+      try {
+        const status = await readFile(`/proc/${info.id}/status`, "utf8");
+        const matched = /^VmRSS:\s+(\d+)\s+kB/m.exec(status);
+        if (matched) { rssKiB += Number(matched[1]); processes++; }
+      } catch { /* A short-lived child may have exited. */ }
+    }
+    if (!processes) return null;
+    return {
+      processCount: processes, rssSumMiB: round(rssKiB / 1024),
+      pssSumMiB: pssProcesses ? round(pssKiB / 1024) : null,
+      pssProcessCount: pssProcesses,
+      caveat: "CDP-visible Chromium processes; RSS sums duplicate shared memory",
+    };
+  } catch {
+    return null;
+  } finally {
+    await session?.detach().catch(() => {});
+  }
+}
+
+async function sample(page, cdp, browser) {
   const perf = await cdp.send("Performance.getMetrics");
   const values = Object.fromEntries(perf.metrics.map(x => [x.name, x.value]));
   const dom = await cdp.send("Memory.getDOMCounters");
@@ -31,6 +71,7 @@ async function sample(page, cdp) {
   }));
   return {
     jsHeapMiB: values.JSHeapUsedSize == null ? null : round(values.JSHeapUsedSize / 1048576),
+    chromiumProcesses: await chromiumMemory(browser),
     domNodes: dom.nodes, documents: dom.documents, ...view,
   };
 }
@@ -50,7 +91,6 @@ async function openFixture(page, fixture, filename) {
   const choose = page.waitForEvent("filechooser");
   await page.locator("#emptyOpenButton").click();
   const picker = await choose;
-  const time = performance.now();
   // Playwright rejects >50 MiB in-memory setFiles buffers. The large raster
   // fixture must be uploaded from a real temporary file, never from a buffer.
   // Keep it outside test-results so the 100 MiB source PDF is not archived.
@@ -58,6 +98,7 @@ async function openFixture(page, fixture, filename) {
   const path = join(directory, filename + ".pdf");
   try {
     await writeFile(path, fixture);
+    const time = performance.now();
     await picker.setFiles(path);
     await expect(page.locator("#confirmReplace")).toBeVisible();
     await page.locator("#confirmReplace").click();
@@ -84,13 +125,13 @@ async function runRasterScenario(page, browser, kind, options, { mobile = false 
   await expect(page.locator("#pageTotal")).toHaveText(String(options.pages), { timeout: 180_000 });
   await painted(page, 0);
   const loadMs = round(performance.now() - initial);
-  const snapshots = [{ page: 1, ...(await sample(page, cdp)) }];
+  const snapshots = [{ page: 1, ...(await sample(page, cdp, browser)) }];
   for (const target of [Math.ceil(options.pages / 2), options.pages, 1]) {
     await page.locator("#pageInput").fill(String(target));
     await page.locator("#pageInput").press("Enter");
     await expect(page.locator("#pageInput")).toHaveValue(String(target));
     await painted(page, target - 1);
-    snapshots.push({ page: target, ...(await sample(page, cdp)) });
+    snapshots.push({ page: target, ...(await sample(page, cdp, browser)) });
   }
   await page.locator("#searchToggle").click();
   if (kind === "mixed") {
@@ -105,13 +146,17 @@ async function runRasterScenario(page, browser, kind, options, { mobile = false 
     await expect(page.locator("#searchResults .search-result")).toHaveCount(0);
   }
   await page.locator("#searchClose").click();
-  const end = await sample(page, cdp);
+  const end = await sample(page, cdp, browser);
   expect(errors, "uncaught JS errors").toEqual([]);
   expect(rasterErrors, "pdf.js paint errors").toEqual([]);
   for (const snap of [...snapshots, end]) {
     expect(snap.pageCanvases).toBeLessThanOrEqual(16);
     expect(snap.thumbnailCanvases).toBeLessThanOrEqual(100);
     if (snap.jsHeapMiB !== null) expect(Number.isFinite(snap.jsHeapMiB)).toBe(true);
+    if (snap.chromiumProcesses) {
+      expect(snap.chromiumProcesses.processCount).toBeGreaterThan(0);
+      expect(snap.chromiumProcesses.rssSumMiB).toBeGreaterThan(0);
+    }
   }
   expect(manifest.bytes).toBeGreaterThan(options.pages * options.imageSize * options.imageSize);
   if (profile === "full" && !mobile) {
@@ -122,14 +167,15 @@ async function runRasterScenario(page, browser, kind, options, { mobile = false 
     runner: process.env.RUNNER_NAME || "local", commit: process.env.GITHUB_SHA || "local",
     browser: browser.version(), node: process.version, manifest, loadMs,
     snapshots, afterSearch: end, errors, rasterErrors,
-    memoryTest: "observational only; mobile viewport does not impose an OS RAM limit",
+    memoryTest: "main JS heap and optional Chromium process PSS/RSS; no physical RAM limit emulation",
   };
   await mkdir("test-results/stress", { recursive: true });
   await writeFile(`test-results/stress/${filename}.json`, JSON.stringify(report, null, 2));
   console.log("P2_5_RASTER_BASELINE " + JSON.stringify({
     scenario: filename, bytes: manifest.bytes, sha256: manifest.sha256,
     pages: options.pages, loadMs, domNodes: end.domNodes, heapMiB: end.jsHeapMiB,
-    canvasCount: end.pageCanvases, mobile,
+    canvasCount: end.pageCanvases, chromiumPssMiB: end.chromiumProcesses?.pssSumMiB ?? null,
+    chromiumRssMiB: end.chromiumProcesses?.rssSumMiB ?? null, mobile,
   }));
 }
 
