@@ -48,7 +48,7 @@ export async function openLinkedDocument({ references, workspaces, loadFile, pdf
     if (disposed || isCancelled()) throw new Error("PDF sayfaları açma işlemi iptal edildi.");
   };
   const openFile = async (file) => {
-    const bytes = new Uint8Array(await file.arrayBuffer());
+    const bytes = file instanceof Uint8Array ? file : new Uint8Array(await file.arrayBuffer());
     ensureCurrent();
     const task = pdfjs.getDocument({ data: bytes, isEvalSupported: false });
     tasks.push(task);
