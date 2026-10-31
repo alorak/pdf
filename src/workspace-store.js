@@ -33,7 +33,7 @@ function normalizeLinkedPages(value, workspaceId) {
       || !Number.isFinite(item.sourceSize) || item.sourceSize < 0
       || !Number.isFinite(item.sourceLastModified) || item.sourceLastModified < 0) continue;
     const sourceFileName = item.sourceFileName.slice(0, 255);
-    const id = `${sourceWorkspaceId}:${sourceSizeKey(item.sourceSize)}:${item.sourceLastModified}:${page}`;
+    const id = JSON.stringify([sourceWorkspaceId, sourceFileName, item.sourceSize, item.sourceLastModified, page]);
     if (seen.has(id)) continue;
     seen.add(id);
     entries.push({ id, sourceWorkspaceId, sourceFileName, sourceSize: item.sourceSize,
@@ -42,8 +42,6 @@ function normalizeLinkedPages(value, workspaceId) {
   }
   return entries;
 }
-
-function sourceSizeKey(size) { return String(size); }
 
 export function parseLinkedPageSelection(input, pageCount) {
   if (!Number.isSafeInteger(pageCount) || pageCount < 1) throw new Error("Kaynak PDF açılamıyor.");
