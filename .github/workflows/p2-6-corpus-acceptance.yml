@@ -1,4 +1,5 @@
-name: P2.6 one-off licensed real PDF corpus acceptance\n# Pinned SHA-256 and explicit WASM decoder acceptance
+name: P2.6 one-off licensed real PDF corpus acceptance
+# Pinned SHA-256 and explicit WASM decoder acceptance
 
 on:
   pull_request:
