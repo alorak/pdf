@@ -2046,6 +2046,16 @@ function currentLibraryBookmarkPreview(session, epoch) {
 function loadLibraryBookmarkDocument(session) {
   if (!session.documentPromise) {
     session.documentPromise = (async () => {
+      const workspace = workspaces.items.find(item => item.id === session.workspaceId);
+      if (isLinkedOnlyWorkspace(workspace)) {
+        const virtualDoc = await openLinkedDocument({
+          references: workspace.linkedPages, workspaces: workspaces.items,
+          loadFile: loadWorkspacePdf, pdfjs,
+          isCancelled: () => session.cancelled || libraryBookmarkPreviewSession !== session,
+        });
+        session.loadingTask = virtualDoc;
+        return virtualDoc;
+      }
       let file = workspaceFiles.get(session.workspaceId);
       if (!file || file.name !== session.fileName) file = await loadWorkspacePdf(session.workspaceId);
       if (session.cancelled || libraryBookmarkPreviewSession !== session) return null;
@@ -2130,7 +2140,7 @@ function openLibraryBookmarkModal(workspaceId) {
   libraryBookmarkWorkspaceId = workspaceId;
   libraryBookmarkPageIndex = 0;
   libraryBookmarkPreviewSession = {
-    workspaceId, fileName: workspace.fileName, cancelled: false,
+    workspaceId, fileName: workspaceDocumentName(workspace), cancelled: false,
     epoch: 0, documentPromise: null, loadingTask: null,
     renderTask: null, cache: new Map(),
   };
@@ -2207,7 +2217,7 @@ function renderLibraryBookmarkModal() {
 
 async function navigateToLibraryBookmark(workspaceId, fileName, page) {
   const workspace = workspaces.items.find((entry) => entry.id === workspaceId);
-  if (!workspace || !fileName || workspace.fileName !== fileName
+  if (!workspace || !fileName || workspaceDocumentName(workspace) !== fileName
     || !libraryBookmarkSummary(workspace).pages.some((item) => item.page === page)) {
     showToast("Yer imi artık mevcut değil. Library'yi yeniden açıp kontrol et.");
     return;
@@ -2215,7 +2225,7 @@ async function navigateToLibraryBookmark(workspaceId, fileName, page) {
   ui.libraryBookmarksDialog.close();
   closeLibrary();
   const alreadyLoaded = workspaces.activeId === workspaceId
-    && Boolean(state.doc) && ui.fileLabel.textContent === fileName;
+    && Boolean(state.doc) && workspaceDocumentName(activeWorkspace(workspaces)) === fileName;
   if (workspaces.activeId !== workspaceId) {
     cancelAllWork();
     workspaces = switchWorkspace(workspaces, workspaceId);
@@ -2226,7 +2236,7 @@ async function navigateToLibraryBookmark(workspaceId, fileName, page) {
   if (ui.workspaceSidebar.classList.contains("is-open")) closeSidebar();
   if (!alreadyLoaded) await restoreWorkspacePdf(workspaceId);
   if (workspaces.activeId !== workspaceId || !state.doc ||
-    activeWorkspace(workspaces)?.fileName !== fileName || page > state.pageCount) {
+    workspaceDocumentName(activeWorkspace(workspaces)) !== fileName || page > state.pageCount) {
     showToast("PDF veya istenen sayfa açılamadı. Dosyayı yeniden açman gerekebilir.");
     return;
   }
