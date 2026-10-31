@@ -8,7 +8,7 @@ import {
   removeSelectedText, removePageBookmarks, bookmarkedPageNumbers, orderedBookmarkedPageNumbers,
   reorderBookmarkedPage, moveBookmarkedPage, MAX_HIGHLIGHT_RECTS,
   DEFAULT_WORKSPACE_VIEW, setWorkspaceView, setWorkspaceLastPage,
-  MAX_LINKED_PAGES, addLinkedWorkspacePages, removeLinkedWorkspacePage,
+  MAX_LINKED_PAGES, addLinkedWorkspacePages, removeLinkedWorkspacePage, removeWorkspaceLinkedPage,
 } from "./workspace-store.js";
 import { saveWorkspacePdf, loadWorkspacePdf, deleteWorkspacePdf, listWorkspacePdfs, deleteWorkspacePdfIfMatches, replaceWorkspacePdfWithMetadata } from "./pdf-storage.js";
 import { samePdfContent, replacementWorkspaceState } from "./pdf-replacement.js";
@@ -66,6 +66,9 @@ const ui = {
   deleteWorkspaceDialog: $("deleteWorkspaceDialog"), deleteWorkspaceName: $("deleteWorkspaceName"),
   cancelDeleteWorkspace: $("cancelDeleteWorkspace"), cancelDeleteWorkspaceTop: $("cancelDeleteWorkspaceTop"),
   confirmDeleteWorkspace: $("confirmDeleteWorkspace"),
+  deleteWorkspaceDependents: $("deleteWorkspaceDependents"), replaceWorkspaceDependents: $("replaceWorkspaceDependents"),
+  manageBrokenLinks: $("manageBrokenLinks"), brokenLinksDialog: $("brokenLinksDialog"),
+  closeBrokenLinks: $("closeBrokenLinks"), brokenLinksList: $("brokenLinksList"),
   cancelReplace: $("cancelReplace"), cancelReplaceTop: $("cancelReplaceTop"),
   confirmReplace: $("confirmReplace"), selectionMenu: $("selectionMenu"),
   copySelection: $("copySelection"), saveSelection: $("saveSelection"), bookmarkPage: $("bookmarkPage"),
@@ -435,11 +438,22 @@ async function openLinkedWorkspaceReader(baseFile = null) {
   }
 }
 
+function dependencyWarning(workspaceId) {
+  const links = dependentPageLinks(workspaces, workspaceId);
+  if (!links.length) return "";
+  const groups = groupDependentLinks(links);
+  const detail = groups.map(group => `W${group.workspaceId} (${group.pages.length} sayfa)`).join(", ");
+  return `DİKKAT: Bu PDF ${groups.length} çalışma alanında ${links.length} sayfaya kaynaklık ediyor: ${detail}. Değiştirme/silme sonrasında kaynak bağlantıları geçersiz kalabilir. Bağlantılar ve yer imleri otomatik silinmez; Library > Kayıtları denetle üzerinden yönetebilirsin.`;
+}
+
 function askDeleteWorkspace(id) {
   const item = workspaces.items.find((entry) => entry.id === id);
   if (!item) return;
   pendingDeleteWorkspaceId = id;
   ui.deleteWorkspaceName.textContent = workspaceDisplayName(item);
+  const warning = dependencyWarning(id);
+  ui.deleteWorkspaceDependents.textContent = warning;
+  ui.deleteWorkspaceDependents.hidden = !warning;
   if (ui.workspaceSidebar.classList.contains("is-open")) closeSidebar();
   ui.deleteWorkspaceDialog.showModal();
 }
@@ -527,6 +541,9 @@ async function askToOpen(file = null, workspaceId = workspaces.activeId) {
       ? " çalışma alanına PDF kaydedildiğinde önceki yer imleri temizlenecek. Devam edilsin mi?"
       : " çalışma alanına seçilen PDF kaydedilsin mi?";
   ui.confirmReplace.textContent = hasPdf ? "Evet, PDF'yi değiştir" : "PDF'yi aç";
+  const warning = hasPdf ? dependencyWarning(workspaceId) : "";
+  ui.replaceWorkspaceDependents.textContent = warning;
+  ui.replaceWorkspaceDependents.hidden = !warning;
   ui.replaceDialog.showModal();
 }
 
