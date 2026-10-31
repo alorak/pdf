@@ -10,7 +10,8 @@ import {
   DEFAULT_WORKSPACE_VIEW, setWorkspaceView,
   MAX_LINKED_PAGES, addLinkedWorkspacePages, removeLinkedWorkspacePage,
 } from "./workspace-store.js";
-import { saveWorkspacePdf, loadWorkspacePdf, deleteWorkspacePdf, listWorkspacePdfs, deleteWorkspacePdfIfMatches } from "./pdf-storage.js";
+import { saveWorkspacePdf, loadWorkspacePdf, deleteWorkspacePdf, listWorkspacePdfs, deleteWorkspacePdfIfMatches, replaceWorkspacePdfWithMetadata } from "./pdf-storage.js";
+import { samePdfContent, replacementWorkspaceState, makePdfMetadataCommit } from "./pdf-replacement.js";
 import { classifyLibraryPdfs, measureLocalStorage, formatBytes, libraryWorkspaceSlots, libraryBookmarkSummary, paginateLibraryBookmarkPages } from "./library-utils.js";
 import { linkedPickerWindow, isOutsideDialogRect } from "./linked-picker-utils.js";
 import { openLinkedDocument, isLinkedOnlyWorkspace, workspaceDocumentName } from "./linked-document.js";
@@ -384,29 +385,55 @@ async function confirmDeleteWorkspace() {
   }
 }
 
-function askToOpen(file = null, workspaceId = workspaces.activeId) {
+async function askToOpen(file = null, workspaceId = workspaces.activeId) {
   const workspace = workspaces.items.find((item) => item.id === workspaceId);
   if (!workspace) return;
   if (isLinkedOnlyWorkspace(workspace)) {
-    showToast("Bu workspace sayfa derlemesi olarak oluşturuldu; yeni sayfalar ekleyebilirsin.");
+    showToast("Bu workspace yalnızca başka PDF'lerden sayfa kabul ediyor.");
     return;
   }
-  pickingWorkspaceId = null;
-  pendingDropFile = file;
-  pendingOpenWorkspaceId = workspaceId;
   hideSelectionMenu();
   if (ui.workspaceSidebar.classList.contains("is-open")) closeSidebar();
+  // Select the PDF first; only warn when the chosen file really differs.
+  if (!file) {
+    pickingWorkspaceId = workspaceId;
+    ui.input.click();
+    return;
+  }
+  if (!file.name.toLowerCase().endsWith(".pdf") && file.type !== "application/pdf") {
+    showToast("Lütfen bir PDF dosyası seç.");
+    return;
+  }
+  try {
+    if (workspace.fileName) {
+      const existing = await loadWorkspacePdf(workspaceId);
+      if (existing && await samePdfContent(existing, file)) {
+        showToast("Aynı PDF zaten kayıtlı. Yer imleri ve vurgular korundu.");
+        if (workspaces.activeId === workspaceId && !state.doc) void restoreWorkspacePdf(workspaceId);
+        return;
+      }
+    }
+  } catch (error) {
+    console.warn("PDF identity comparison failed:", error);
+    showToast("PDF karşılaştırılamadı; önceki kayıtlar korundu. Yeniden dene.");
+    return;
+  }
+  if (!workspaces.items.some(item => item.id === workspaceId) ||
+      workspaces.items.find(item => item.id === workspaceId)?.fileName !== workspace.fileName) {
+    showToast("Workspace değişti. PDF seçimini yeniden yap.");
+    return;
+  }
+  pendingDropFile = file;
+  pendingOpenWorkspaceId = workspaceId;
   ui.replaceWorkspaceName.textContent = workspaceDisplayName(workspace);
   const hasPdf = Boolean(workspace.fileName);
   ui.replaceTitle.textContent = hasPdf ? "Mevcut PDF değiştirilsin mi?" : "Bu workspace'e PDF açılsın mı?";
   ui.replaceMessage.textContent = hasPdf
-    ? ` çalışma alanında “${workspace.fileName}” adlı PDF zaten var. Yeni PDF başarıyla açıldığında bu PDF ve bu çalışma alanına ait yer imleri silinecek. Emin misiniz? Diğer workspace'ler korunacak.`
+    ? ` çalışma alanında “${workspace.fileName}” adlı PDF bulunuyor. Farklı PDF başarıyla kaydedilirse eski PDF, yer imleri ve metin vurguları silinecek. Devam edilsin mi? Diğer workspace'ler korunacak.`
     : workspace.notes.length
-      ? " çalışma alanına yeni PDF açıldığında bu alandaki kayıtlı yer imleri temizlenecek. Devam etmek istiyor musunuz?"
-      : " çalışma alanında henüz PDF yok. Burada bir PDF açmak istiyor musunuz?";
-  ui.confirmReplace.textContent = file
-    ? (hasPdf ? "Evet, PDF'yi değiştir" : "Evet, PDF'yi aç")
-    : (hasPdf ? "Evet, PDF seç" : "PDF seç");
+      ? " çalışma alanına PDF kaydedildiğinde önceki yer imleri temizlenecek. Devam edilsin mi?"
+      : " çalışma alanına seçilen PDF kaydedilsin mi?";
+  ui.confirmReplace.textContent = hasPdf ? "Evet, PDF'yi değiştir" : "PDF'yi aç";
   ui.replaceDialog.showModal();
 }
 
@@ -2719,18 +2746,14 @@ ui.confirmReplace.addEventListener("click", () => {
   pendingDropFile = null;
   pendingOpenWorkspaceId = null;
   ui.replaceDialog.close();
-  if (file) openPdfForWorkspace(file, workspaceId);
-  else if (workspaceId !== null) {
-    pickingWorkspaceId = workspaceId;
-    ui.input.click();
-  }
+  if (file && workspaceId !== null) openPdfForWorkspace(file, workspaceId);
 });
 ui.input.addEventListener("change", (event) => {
   const file = event.target.files?.[0];
   event.target.value = "";
   const workspaceId = pickingWorkspaceId;
   pickingWorkspaceId = null;
-  if (file && workspaceId !== null) openPdfForWorkspace(file, workspaceId);
+  if (file && workspaceId !== null) void askToOpen(file, workspaceId);
 });
 ui.viewer.addEventListener("contextmenu", (event) => {
   const shell = event.target instanceof Element ? event.target.closest(".page-shell") : null;
