@@ -64,12 +64,11 @@ export async function saveWorkspacePdf(workspaceId, file) {
  * PDF then remains unchanged. If IDB aborts after metadata was written, attempt
  * a compensating localStorage rollback before reporting the failure.
  */
-export async function replaceWorkspacePdfWithMetadata(workspaceId, file, metadata) {
+export function replaceWorkspacePdfInDatabase(db, workspaceId, file, metadata) {
   if (!Number.isSafeInteger(workspaceId) || workspaceId < 1 || !file ||
     typeof metadata?.commit !== "function" || typeof metadata.rollback !== "function") {
     throw new Error("Geçersiz PDF değiştirme işlemi");
   }
-  const db = await openDatabase();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, "readwrite");
     let metadataCommitted = false;
@@ -103,6 +102,11 @@ export async function replaceWorkspacePdfWithMetadata(workspaceId, file, metadat
     };
     tx.onerror = () => { primaryError ||= tx.error; };
   });
+}
+
+export async function replaceWorkspacePdfWithMetadata(workspaceId, file, metadata) {
+  const db = await openDatabase();
+  return replaceWorkspacePdfInDatabase(db, workspaceId, file, metadata);
 }
 
 export async function loadWorkspacePdf(workspaceId) {
