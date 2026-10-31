@@ -53,6 +53,17 @@ Tarayıcıda çalışan sade, hızlı ve gizliliğe odaklı bir PDF görüntüle
 - **PDF dışa aktar**: Sayfa workspace'inin üst çubuğunda **PDF dışa aktar** komutu seçilen sayfaları mevcut sıra ile **gerçek PDF** olarak birleştirir. `pdf-lib` ile orijinal PDF sayfa nesneleri kopyalandığından ekran görüntüsü/bitmap rasterization yapılmaz; kaynak sayfaların metin ve vektör içerikleri korunur. Kaynak workspace silinmiş, değişmiş veya belirtilen sayfa artık mevcut değilse işlem güvenli biçimde reddedilir. Kaynak PDF'ler ve çalışma alanı verileri değişmez. Çıktı yeni dosya olarak indirilir; yeni bir workspace oluşturulmaz. Kaynak PDF'lerin tüm üst düzey outline, form ve belge metadata özelliklerinin birebir taşınması garanti edilmez.
 - **Testler**: Reorder→bookmark/highlight/okuma konumu eşleşmeleri, source cache, PDF sayfa boyutları/sırası, eksik kaynak ve iptal senaryoları birim testlerinde kontrol edilir.
 
+### P2 Aşama 1–2: Regresyon ve stres altyapısı
+
+**Aşama 1 — Her PR'da:** 20 workspace/100 bağlantılı sayfa sınırları, yer imi ve vurguların doğru sayfaya bağlı kalması, kaynak PDF değişimlerinde yanlış yönlendirmeme, byte-doğru yedek geri yükleme ve bozuk yedeği reddetme testleri.
+Node testlerinde gerçek PDF.js ile deterministik 10 ve 100 sayfalık PDF'ler doğrulanır. Chromium E2E yedek alma, bozuk yedeği reddetme ve kayıtları geri yükleme senaryosunu kontrol eder.
+
+**Aşama 2 — Ölçümlü stres:** Her PR'da 100 sayfalık PDF ve 20 workspace/100 sayfa tarayıcı testi; manuel ve haftalık iş akışında ayrıca 1.000 ve 5.000 sayfalık PDF profilleri çalışır.
+Ayrı Playwright yapılandırması: playwright.stress.config.mjs; normal PR E2E bu ağır dosyaları çalıştırmaz. Açılış, sayfa atlama, JS heap, DOM node ve canvas sayısı JSON rapor olarak test-results/stress klasörüne yazılır.
+GitHub Summary raporu scripts/p2-stress-summary.mjs tarafından üretilir. 16 ana canvas / 100 thumbnail sınırı ve temel işlevsel doğruluk kontrol edilir; henüz ölçülmemiş açılış zamanı ve bellek eşikleri başarı olarak gösterilmez.
+
+Yerel stres: npm ci; npm install --no-save --package-lock=false @playwright/test@1.56.1; npx playwright install chromium; P2_STRESS_PAGES=100,1000 npx playwright test --config playwright.stress.config.mjs.
+Test PDF'leri tests/helpers/pdf-fixtures.mjs dosyasından dış veri indirmeden üretilir. Ölçümler sabit 1365×900 Chromium ortamında kıyaslanmalıdır. Resim ağırlıklı gerçek 100–500 MB PDF testi ayrı bir ileri aşamadır.
 ## Çalıştırma
 
 Node.js 22+ gerektirir (Node.js 24 önerilir).
