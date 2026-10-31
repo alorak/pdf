@@ -75,12 +75,47 @@ test("virtual PDF opens source pages in saved order, and cleans up once", async 
   await assert.rejects(doc.getPage(1));
 });
 
-test("missing or replaced source never redirects to an unrelated PDF", async () => {
-  const options = {
+test("missing or replaced source keeps a placeholder without redirecting to another PDF", async () => {
+  const doc = await openLinkedDocument({
     references: [{ ...reference, page: 1 }],
     workspaces: [{ id: 1, fileName: "source.pdf" }],
     loadFile: async () => ({ name: "replaced.pdf", size: 12, lastModified: 77 }),
-    pdfjs: { getDocument() { throw new Error("should not load"); } },
-  };
-  await assert.rejects(openLinkedDocument(options), /değişmiş|bulunamadı/);
+    pdfjs: { getDocument({ data }) {
+      const pdf = String.fromCharCode(...data);
+      assert.ok(pdf.startsWith("%PDF-1.4"));
+      assert.ok(pdf.includes("SOURCE PDF UNAVAILABLE"));
+      return { promise: Promise.resolve({ numPages: 1, async getPage() {
+        return { missingPlaceholder: true };
+      } }), async destroy() {} };
+    } },
+  });
+  assert.equal(doc.numPages, 1);
+  assert.equal(doc.missing.length, 1);
+  assert.deepEqual(await doc.getPage(1), { missingPlaceholder: true });
+  await doc.destroy();
+});
+
+test("mixed stale and current references to same workspace do not render wrong PDF pages", async () => {
+  const file = { name: "source.pdf", size: 12, lastModified: 77,
+    async arrayBuffer() { return Uint8Array.from([37, 80, 68, 70]).buffer; } };
+  const doc = await openLinkedDocument({
+    references: [
+      { ...reference, sourceLastModified: 60, page: 2 },
+      { ...reference, page: 4 },
+    ],
+    workspaces: [{ id: 1, fileName: "source.pdf" }],
+    loadFile: async () => file,
+    pdfjs: { getDocument({ data }) {
+      const isPlaceholder = data.length > 10;
+      return { promise: Promise.resolve({
+        numPages: isPlaceholder ? 1 : 5,
+        async getPage(page) { return { placeholder: isPlaceholder, page }; },
+      }), async destroy() {} };
+    } },
+  });
+  assert.equal(doc.numPages, 2);
+  assert.deepEqual(doc.missing.map(item => item.virtualPage), [1]);
+  assert.deepEqual(await doc.getPage(1), { placeholder: true, page: 1 });
+  assert.deepEqual(await doc.getPage(2), { placeholder: false, page: 4 });
+  await doc.destroy();
 });
