@@ -29,6 +29,7 @@ jobs:
       CI: "true"
       P2_STRESS_PROFILE: ${{ inputs.profile || 'full' }}
       P2_STRESS_PAGES: ${{ inputs.profile == 'quick' && '100,1000' || '100,1000,5000' }}
+      P2_IMAGE_PROFILE: ${{ inputs.profile == 'quick' && 'quick' || 'full' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -61,6 +62,8 @@ jobs:
         run: npm run test:stress:report
       - name: Verify stress evidence is complete
         run: node scripts/verify-p2-3.mjs
+      - name: Verify image-heavy PDF and mobile-view evidence
+        run: node scripts/verify-p2-5.mjs
       - name: Upload performance baselines and failures
         if: always()
         uses: actions/upload-artifact@v4

@@ -45,10 +45,14 @@ Fonksiyonel kapılar ilk günden zorunludur: doğru sayfa/metin, veri bütünlü
 ## Bilinen sınırlar
 
 - 20 workspace içinde birinin kaynak olduğu durumda en fazla 19 tüketici × 100 = **1900 bağlantılı sayfa** oluşturulabilir. 20×100=2000 bağlantı aynı anda beklenemez; kaynak için ayrı workspace gereklidir.
-- 5.000 sayfalık PDF'nin tüm sayfa kabukları DOM'da oluşturulur; gerçek DOM virtual scrolling P2'nin ileri performans geliştirmesidir. Bu benchmark bu olası darboğazı görünür kılmak için vardır.
+- P2.4-C sonrasında 300+ sayfada ana sayfa ve thumbnail DOM pencereleme aktiftir; 5.000 sayfalık belge her sayfayı DOM'da tutmaz. Görüntü ağırlıklı PDF iş yükleri P2.5'te ayrıca doğrulanır.
 - IndexedDB kota/yazım abort testleri halen mevcut fake-IDB birim testleriyle doğrulanır; fiziksel tarayıcı diski tükenmesi nightly CI üzerinde uygulanmaz.
 - `performance.memory` yalnızca Chromium'da desteklendiği için heap alanı diğer tarayıcılarda `n/a` olabilir.
 
 ## P2.3 kabulü
 
 31 Ekim 2026'da iki Playwright test grubu birlikte tam profilde geçti. Artifact bütünlüğü `node scripts/verify-p2-3.mjs` ile zorunlu doğrulanır; farklı test grupları kendi `outputDir` alanlarını temizler, `test-results/stress/` ölçümleri korunur. Kabul raporu: [docs/p2-3-acceptance.md](../docs/p2-3-acceptance.md).
+
+## P2.5 — Raster/mobil PDF dayanıklılığı
+
+`P2_IMAGE_PROFILE=smoke|quick|full`, `e2e/p2-5-raster.stress.spec.mjs` ile taranmış PDF (OCR yok), karma raster+vektör+metin ve mobil viewport koşularını seçer. Fixture'lar `scripts/p2-5-image-fixtures.mjs` tarafından üretilir; binary PDF'ler commit/artifact'a eklenmez. Nightly `p2-stress.yml` quick/full çalıştırır; `node scripts/verify-p2-5.mjs` raporların eksiksizliğini ve raster/sayfa/bellek ölçümlerini doğrular. Detay: [P2.5 kabul dokümanı](../docs/p2-5-raster-memory.md).
