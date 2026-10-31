@@ -680,6 +680,26 @@ input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer
 @media (max-width: 950px) { .linked-pages-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 620px) { .linked-pages-list { grid-template-columns: 1fr; } .linked-pages-header { align-items: stretch; flex-direction: column; } .linked-pages-content { padding: 12px 10px 40px; } .linked-pages-header p { font-size: 10px; } }
 
+/* P1.3: explicitly draggable linked PDF pages and dependency provenance. */
+.app-shell.linked-reorder-mode .thumb-entry { cursor: grab; }
+.app-shell.linked-reorder-mode .thumb-entry.dragging { opacity: .55; }
+.app-shell.linked-reorder-mode .thumb-entry.drag-over { outline: 2px solid #4b78ea; outline-offset: 2px; }
+.app-shell.linked-reorder-mode .thumb-drag-handle {
+  opacity: 1; pointer-events: auto; border-color: #b4c7ef;
+  background: #f4f7ff; color: #3461bc;
+}
+.source-relations-dialog { width: min(750px, calc(100vw - 28px)); }
+.source-relations-dialog > p { margin-top: 0; color: #71829d; font-size: 12px; line-height: 1.6; }
+.source-relation-row { display: flex; gap: 12px; align-items: center; justify-content: space-between;
+  border: 1px solid #e4eaf3; border-radius: 10px; padding: 11px;
+  background: #f9fbff; }
+.source-relation-row > div { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.source-relation-row strong { font-size: 12px; color: #334967; }
+.source-relation-row small { font-size: 11px; color: #74849f; overflow-wrap: anywhere; }
+.source-relation-row button { flex: 0 0 auto; font-size: 11px; padding: 7px 9px; }
+.linked-export { white-space: nowrap; }
+@media (max-width: 540px) { .source-relation-row { align-items: stretch; flex-direction: column; } }
+
 /* Source PDF dependency warnings and invalid-reference recovery. */
 .source-dependency-warning { margin: 10px 0 0; padding: 10px 12px; border-radius: 8px;
   border: 1px solid #edc9ad; background: #fff7ed; color: #945522;
