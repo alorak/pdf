@@ -1,5 +1,6 @@
 export const WORKSPACE_STORAGE_KEY = "pdf-viewer-workspaces-v1";
 export const MAX_WORKSPACES = 20;
+export const MAX_LINKED_PAGES = 100;
 export const MAX_SAVED_TEXTS = 100;
 export const MAX_TEXT_LENGTH = 10000;
 export const MAX_HIGHLIGHT_RECTS = 240;
@@ -19,7 +20,53 @@ function normalizeWorkspaceView(value) {
   };
 }
 
-function cleanHighlightRects(rects) {
+function normalizeLinkedPages(value, workspaceId) {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set();
+  const entries = [];
+  for (const item of value.slice(0, MAX_LINKED_PAGES * 2)) {
+    const sourceWorkspaceId = item?.sourceWorkspaceId;
+    const page = item?.page;
+    if (!Number.isSafeInteger(sourceWorkspaceId) || sourceWorkspaceId < 1 || sourceWorkspaceId === workspaceId
+      || !Number.isSafeInteger(page) || page < 1
+      || typeof item.sourceFileName !== "string" || !item.sourceFileName.trim()
+      || !Number.isFinite(item.sourceSize) || item.sourceSize < 0
+      || !Number.isFinite(item.sourceLastModified) || item.sourceLastModified < 0) continue;
+    const sourceFileName = item.sourceFileName.slice(0, 255);
+    const id = JSON.stringify([sourceWorkspaceId, sourceFileName, item.sourceSize, item.sourceLastModified, page]);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    entries.push({ id, sourceWorkspaceId, sourceFileName, sourceSize: item.sourceSize,
+      sourceLastModified: item.sourceLastModified, page });
+    if (entries.length === MAX_LINKED_PAGES) break;
+  }
+  return entries;
+}
+
+export function parseLinkedPageSelection(input, pageCount) {
+  if (!Number.isSafeInteger(pageCount) || pageCount < 1) throw new Error("Kaynak PDF açılamıyor.");
+  const raw = String(input || "").trim();
+  if (!raw || raw.length > 300) throw new Error("Sayfaları 1,3-5 şeklinde gir.");
+  const segments = raw.split(",").map((part) => part.trim());
+  if (segments.length > MAX_LINKED_PAGES) throw new Error("Çok fazla sayfa seçildi.");
+  const pages = new Set();
+  for (const part of segments) {
+    const match = /^(\d+)(?:\s*-\s*(\d+))?$/.exec(part);
+    if (!match) throw new Error("Sayfa biçimi geçersiz. Örnek: 1,3-5");
+    const from = Number(match[1]);
+    const to = match[2] ? Number(match[2]) : from;
+    if (!Number.isSafeInteger(from) || from < 1 || !Number.isSafeInteger(to)
+      || to < from || to > pageCount) throw new Error(`Sayfa aralığı 1-${pageCount} olmalı.`);
+    if (to - from + 1 > MAX_LINKED_PAGES) throw new Error("Bir seferde en fazla 100 sayfa seçebilirsin.");
+    for (let page = from; page <= to; page++) {
+      pages.add(page);
+      if (pages.size > MAX_LINKED_PAGES) throw new Error("Bir workspace en fazla 100 bağlantılı sayfa tutabilir.");
+    }
+  }
+  return [...pages];
+}
+
+export function cleanHighlightRects(rects) {
   if (!Array.isArray(rects)) return [];
   return rects.slice(0, MAX_HIGHLIGHT_RECTS)
     .filter((rect) => Array.isArray(rect) && rect.length === 4
@@ -33,7 +80,7 @@ export function initialWorkspaces() {
   return {
     activeId: 1,
     nextId: 2,
-    items: [{ id: 1, name: "Workspace 1", fileName: "", notes: [], bookmarkOrder: [], view: { ...DEFAULT_WORKSPACE_VIEW } }],
+    items: [{ id: 1, name: "Workspace 1", fileName: "", notes: [], bookmarkOrder: [], linkedPages: [], view: { ...DEFAULT_WORKSPACE_VIEW } }],
   };
 }
 
@@ -64,6 +111,7 @@ export function readWorkspaces(serialized) {
         name: typeof item.name === "string" && item.name.trim() ? item.name.slice(0, 60) : `Workspace ${item.id}`,
         fileName: typeof item.fileName === "string" ? item.fileName.slice(0, 255) : "",
         notes,
+        linkedPages: normalizeLinkedPages(item.linkedPages, item.id),
         view: normalizeWorkspaceView(item.view),
         bookmarkOrder: Array.isArray(item.bookmarkOrder)
           ? [...new Set(item.bookmarkOrder.filter((page) => Number.isSafeInteger(page) && page > 0))].slice(0, MAX_SAVED_TEXTS)
@@ -93,8 +141,35 @@ export function addWorkspace(state) {
     ...state,
     activeId: id,
     nextId: id + 1,
-    items: [...state.items, { id, name: `Workspace ${id}`, fileName: "", notes: [], bookmarkOrder: [], view: { ...DEFAULT_WORKSPACE_VIEW } }],
+    items: [...state.items, { id, name: `Workspace ${id}`, fileName: "", notes: [], bookmarkOrder: [], linkedPages: [], view: { ...DEFAULT_WORKSPACE_VIEW } }],
   };
+}
+
+export function addLinkedWorkspacePages(state, source) {
+  const target = activeWorkspace(state);
+  const origin = state.items.find((item) => item.id === source?.sourceWorkspaceId);
+  if (!target || !origin || origin.id === target.id || !origin.fileName
+    || origin.fileName !== source.sourceFileName) return state;
+  const pages = Array.isArray(source.pages) ? source.pages : [];
+  const incoming = normalizeLinkedPages(pages.map((page) => ({
+    ...source, page,
+  })), target.id);
+  if (!incoming.length) return state;
+  const current = target.linkedPages || [];
+  const existing = new Set(current.map((ref) => ref.id));
+  const unique = incoming.filter((ref) => !existing.has(ref.id));
+  // Never silently import a partial page selection when the cap is exceeded.
+  if (!unique.length || current.length + unique.length > MAX_LINKED_PAGES) return state;
+  return replaceActive(state, (workspace) => ({ ...workspace, linkedPages: [...current, ...unique] }));
+}
+
+export function removeLinkedWorkspacePage(state, referenceId) {
+  const workspace = activeWorkspace(state);
+  const current = workspace?.linkedPages || [];
+  if (!current.some((ref) => ref.id === referenceId)) return state;
+  return replaceActive(state, (item) => ({
+    ...item, linkedPages: current.filter((ref) => ref.id !== referenceId),
+  }));
 }
 
 export function switchWorkspace(state, id) {
@@ -126,7 +201,7 @@ export function clearActiveWorkspace(state) {
 export function removeWorkspace(state, id) {
   if (!state.items.some((item) => item.id === id)) return state;
   if (state.items.length === 1) {
-    return { ...state, items: [{ ...state.items[0], fileName: "", notes: [], bookmarkOrder: [], view: { ...DEFAULT_WORKSPACE_VIEW } }] };
+    return { ...state, items: [{ ...state.items[0], fileName: "", notes: [], bookmarkOrder: [], linkedPages: [], view: { ...DEFAULT_WORKSPACE_VIEW } }] };
   }
   const items = state.items.filter((item) => item.id !== id);
   return {

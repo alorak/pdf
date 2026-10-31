@@ -17,10 +17,14 @@
           </button>
           <span class="brand-title">pdf<span class="brand-dot">.</span></span>
           <span id="libraryTitle" class="topbar-page-title" tabindex="-1" hidden>Library</span>
+          <span id="linkedPagesTitle" class="topbar-page-title" tabindex="-1" hidden>Derleme</span>
         </div>
         <div class="file-group">
           <span id="activeWorkspaceLabel" class="workspace-chip">W1</span>
           <div class="file-label" id="fileLabel" title="Henüz dosya açılmadı">PDF açılmadı</div>
+          <button id="linkedPagesToggle" class="linked-pages-toggle" type="button" aria-controls="linkedPagesPage" aria-expanded="false" title="Bu workspace'e eklenen diğer PDF sayfaları">
+            Derleme <span id="linkedPagesCount">0</span>
+          </button>
           <button id="pdfInfoButton" class="icon-button file-info-button" type="button" aria-label="PDF bilgileri" title="PDF bilgileri" disabled>
             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.2h.01" stroke-linecap="round"/></svg>
           </button>
@@ -127,6 +131,21 @@
         </section>
       </main>
 
+      <section id="linkedPagesPage" class="linked-pages-page" aria-labelledby="linkedPagesTitle" hidden>
+        <div class="linked-pages-content">
+          <div class="linked-pages-header">
+            <div><h2>Eklenen sayfalar <span id="linkedPagesHeadingCount">0</span></h2>
+              <p>Diğer workspace PDF'lerinden seçilmiş sayfalar. Kaynak PDF'ler cihazında kalır.</p>
+            </div>
+            <div class="linked-pages-actions">
+              <button id="addLinkedPages" class="primary-button" type="button">+ Sayfa ekle</button>
+              <button id="closeLinkedPages" class="secondary-button" type="button">Okuyucuya dön</button>
+            </div>
+          </div>
+          <div id="linkedPagesList" class="linked-pages-list" aria-live="polite"></div>
+        </div>
+      </section>
+
       <section id="libraryPage" class="library-page" aria-labelledby="libraryTitle" hidden>
         <div class="library-container">
           <div class="library-overview" aria-label="Depolama özeti">
@@ -195,6 +214,22 @@
       <div class="replace-actions">
         <button id="cancelDeleteWorkspace" class="secondary-button" type="button">İptal</button>
         <button id="confirmDeleteWorkspace" class="danger-button" type="button">Evet, sil</button>
+      </div>
+    </dialog>
+
+    <dialog id="addLinkedPagesDialog" class="settings-dialog linked-pages-dialog" aria-labelledby="addLinkedPagesTitle">
+      <div class="dialog-top"><div>
+        <span class="eyebrow">DİĞER WORKSPACE'LERDEN</span>
+        <h2 id="addLinkedPagesTitle">PDF sayfaları ekle</h2>
+      </div><button id="closeAddLinkedPages" class="icon-button" type="button" aria-label="Kapat">✕</button></div>
+      <label for="linkedSourceWorkspace">Kaynak workspace</label>
+      <select id="linkedSourceWorkspace" aria-label="Kaynak workspace"></select>
+      <label for="linkedPageNumbers">Eklenecek sayfalar</label>
+      <input id="linkedPageNumbers" type="text" inputmode="text" maxlength="300" autocomplete="off" placeholder="Örnek: 1,3-5,9" />
+      <p id="linkedPagesMessage" class="linked-pages-message">Bir PDF ve sayfa numaraları seç. Aynı sayfalar tekrar eklenmez.</p>
+      <div class="replace-actions">
+        <button id="cancelAddLinkedPages" class="secondary-button" type="button">Vazgeç</button>
+        <button id="confirmAddLinkedPages" class="primary-button" type="button">Sayfaları ekle</button>
       </div>
     </dialog>
 

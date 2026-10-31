@@ -8,6 +8,7 @@ import {
   removeSelectedText, removePageBookmarks, bookmarkedPageNumbers, orderedBookmarkedPageNumbers,
   reorderBookmarkedPage, moveBookmarkedPage, MAX_HIGHLIGHT_RECTS,
   DEFAULT_WORKSPACE_VIEW, setWorkspaceView,
+  MAX_LINKED_PAGES, parseLinkedPageSelection, addLinkedWorkspacePages, removeLinkedWorkspacePage,
 } from "./workspace-store.js";
 import { saveWorkspacePdf, loadWorkspacePdf, deleteWorkspacePdf, listWorkspacePdfs, deleteWorkspacePdfIfMatches } from "./pdf-storage.js";
 import { classifyLibraryPdfs, measureLocalStorage, formatBytes, libraryWorkspaceSlots, libraryBookmarkSummary, paginateLibraryBookmarkPages } from "./library-utils.js";
@@ -25,6 +26,14 @@ const ui = {
   createWorkspace: $("createWorkspace"), openLibrary: $("openLibrary"),
   readerPage: document.querySelector("main.workspace"), libraryPage: $("libraryPage"),
   libraryTitle: $("libraryTitle"),
+  linkedPagesTitle: $("linkedPagesTitle"), linkedPagesToggle: $("linkedPagesToggle"),
+  linkedPagesCount: $("linkedPagesCount"), linkedPagesHeadingCount: $("linkedPagesHeadingCount"),
+  linkedPagesPage: $("linkedPagesPage"), linkedPagesList: $("linkedPagesList"),
+  addLinkedPages: $("addLinkedPages"), closeLinkedPages: $("closeLinkedPages"),
+  addLinkedPagesDialog: $("addLinkedPagesDialog"), closeAddLinkedPages: $("closeAddLinkedPages"),
+  cancelAddLinkedPages: $("cancelAddLinkedPages"), confirmAddLinkedPages: $("confirmAddLinkedPages"),
+  linkedSourceWorkspace: $("linkedSourceWorkspace"), linkedPageNumbers: $("linkedPageNumbers"),
+  linkedPagesMessage: $("linkedPagesMessage"),
   libraryPdfSize: $("libraryPdfSize"), libraryPdfCount: $("libraryPdfCount"),
   libraryLocalSize: $("libraryLocalSize"), libraryLocalCount: $("libraryLocalCount"),
   libraryTotalSize: $("libraryTotalSize"), libraryOrphanCount: $("libraryOrphanCount"),
@@ -95,6 +104,8 @@ let pendingLibraryDeletion = null;
 let libraryBookmarkWorkspaceId = null;
 let libraryBookmarkPageIndex = 0;
 let libraryRequestId = 0;
+let linkedPagesEpoch = 0;
+const linkedPageTasks = new Set();
 const libraryPreviewTasks = new Set();
 const libraryPreviewCache = new Map(); // Small in-memory first-page thumbnails, not PDF files.
 let pendingDropFile = null;
@@ -140,6 +151,7 @@ function workspaceDisplayName(item) {
 function renderWorkspaceSidebar() {
   const active = activeWorkspace(workspaces);
   ui.activeWorkspaceLabel.textContent = workspaceDisplayName(active);
+  ui.linkedPagesCount.textContent = String(active?.linkedPages?.length || 0);
   ui.workspaceCount.textContent = `${workspaces.items.length} / ${MAX_WORKSPACES}`;
   ui.createWorkspace.disabled = workspaces.items.length >= MAX_WORKSPACES;
   ui.createWorkspace.title = ui.createWorkspace.disabled ? `En fazla ${MAX_WORKSPACES} workspace oluşturulabilir` : "Yeni çalışma alanı";
@@ -158,7 +170,7 @@ function renderWorkspaceSidebar() {
     const title = document.createElement("strong");
     title.textContent = workspaceDisplayName(item);
     const caption = document.createElement("small");
-    caption.textContent = `${item.notes.length} kayıt · ${item.fileName || "PDF açılmadı"}`;
+    caption.textContent = `${item.notes.length} kayıt · ${item.linkedPages?.length || 0} ek sayfa · ${item.fileName || "PDF açılmadı"}`;
     metadata.append(title, caption);
     button.append(number, metadata);
     button.addEventListener("click", () => changeWorkspace(item.id));
@@ -204,6 +216,7 @@ function closeSidebar() {
 }
 
 function changeWorkspace(id) {
+  closeLinkedPages();
   closeLibrary();
   if (id === workspaces.activeId) { closeSidebar(); return; }
   cancelAllWork();
@@ -266,6 +279,7 @@ async function confirmDeleteWorkspace() {
     renderWorkspaceSidebar();
     ui.deleteWorkspaceDialog.close();
     pendingDeleteWorkspaceId = null;
+    if (!ui.linkedPagesPage.hidden) void refreshLinkedPages();
     if (wasActive) void restoreWorkspacePdf(workspaces.activeId);
     showToast("Workspace PDF'si ve yer imleri silindi.");
   } catch (error) {
@@ -302,6 +316,7 @@ function askToOpen(file = null, workspaceId = workspaces.activeId) {
 
 function openPdfForWorkspace(file, workspaceId) {
   if (!file || !workspaces.items.some((item) => item.id === workspaceId)) return;
+  closeLinkedPages();
   closeLibrary();
   if (!file.name.toLowerCase().endsWith(".pdf") && file.type !== "application/pdf") {
     showToast("Lütfen bir PDF dosyası seç.");
@@ -1498,6 +1513,281 @@ function stepZoom(direction) {
 }
 
 
+function cancelLinkedPageRenders() {
+  linkedPagesEpoch++;
+  for (const task of linkedPageTasks) void task.destroy().catch(() => {});
+  linkedPageTasks.clear();
+}
+
+function closeLinkedPages() {
+  if (ui.linkedPagesPage.hidden) return;
+  cancelLinkedPageRenders();
+  ui.linkedPagesPage.hidden = true;
+  ui.linkedPagesTitle.hidden = true;
+  ui.readerPage.hidden = false;
+  ui.app.classList.remove("linked-pages-open");
+  ui.linkedPagesToggle.setAttribute("aria-expanded", "false");
+  if (state.doc && state.fit !== "custom") requestAnimationFrame(() => applyFit(state.fit));
+}
+
+function openLinkedPages() {
+  closeLibrary();
+  closeSidebarIfOpenForLinkedPages();
+  ui.readerPage.hidden = true;
+  ui.linkedPagesPage.hidden = false;
+  ui.linkedPagesTitle.hidden = false;
+  ui.app.classList.add("linked-pages-open");
+  ui.linkedPagesToggle.setAttribute("aria-expanded", "true");
+  ui.linkedPagesTitle.focus({ preventScroll: true });
+  void refreshLinkedPages();
+}
+
+function closeSidebarIfOpenForLinkedPages() {
+  if (ui.workspaceSidebar.classList.contains("is-open")) closeSidebar();
+}
+
+function makeLinkedPageCard(reference, index) {
+  const card = document.createElement("article");
+  card.className = "linked-page-card";
+  const header = document.createElement("div");
+  header.className = "linked-page-card-header";
+  const name = document.createElement("strong");
+  name.textContent = `Sayfa ${index + 1} · W${reference.sourceWorkspaceId} / ${reference.page}`;
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.className = "linked-page-remove";
+  remove.textContent = "Sil";
+  remove.title = "Bağlantıyı kaldır (kaynak PDF silinmez)";
+  remove.setAttribute("aria-label", `W${reference.sourceWorkspaceId} sayfa ${reference.page} bağlantısını kaldır`);
+  remove.addEventListener("click", () => {
+    const next = removeLinkedWorkspacePage(workspaces, reference.id);
+    if (next === workspaces) return;
+    workspaces = next;
+    persistWorkspaces();
+    renderWorkspaceSidebar();
+    void refreshLinkedPages();
+    showToast("Sayfa bağlantısı kaldırıldı. Kaynak PDF korundu.");
+  });
+  header.append(name, remove);
+  const paper = document.createElement("div");
+  paper.className = "linked-page-paper";
+  const placeholder = document.createElement("p");
+  placeholder.className = "linked-page-loading";
+  placeholder.textContent = "Sayfa hazırlanıyor…";
+  paper.append(placeholder);
+  const footer = document.createElement("div");
+  footer.className = "linked-page-card-footer";
+  const filename = document.createElement("span");
+  filename.textContent = reference.sourceFileName;
+  filename.title = reference.sourceFileName;
+  const open = document.createElement("button");
+  open.type = "button";
+  open.className = "secondary-button";
+  open.textContent = "Kaynakta aç";
+  open.addEventListener("click", () => { void openLinkedSourcePage(reference); });
+  footer.append(filename, open);
+  card.append(header, paper, footer);
+  return { reference, paper, placeholder, open, card };
+}
+
+async function refreshLinkedPages() {
+  cancelLinkedPageRenders();
+  const token = linkedPagesEpoch;
+  const target = activeWorkspace(workspaces);
+  const references = target?.linkedPages || [];
+  ui.linkedPagesHeadingCount.textContent = String(references.length);
+  ui.linkedPagesCount.textContent = String(references.length);
+  ui.linkedPagesList.replaceChildren();
+  if (!references.length) {
+    const empty = document.createElement("div");
+    empty.className = "linked-pages-empty";
+    empty.textContent = "Bu workspace'e henüz başka PDF'lerden sayfa eklenmedi. “+ Sayfa ekle” ile başlayabilirsin.";
+    ui.linkedPagesList.append(empty);
+    return;
+  }
+  const entries = references.map(makeLinkedPageCard);
+  ui.linkedPagesList.append(...entries.map((entry) => entry.card));
+  const documents = new Map();
+  const ownedTasks = new Set();
+  const current = () => token === linkedPagesEpoch && !ui.linkedPagesPage.hidden && workspaces.activeId === target.id;
+  try {
+    for (const entry of entries) {
+      if (!current()) break;
+      const ref = entry.reference;
+      const source = workspaces.items.find((item) => item.id === ref.sourceWorkspaceId);
+      if (!source || source.fileName !== ref.sourceFileName) {
+        entry.placeholder.textContent = "Kaynak workspace veya PDF değişmiş/silinmiş.";
+        entry.open.disabled = true;
+        continue;
+      }
+      let doc = documents.get(ref.sourceWorkspaceId);
+      if (!doc) {
+        let file = workspaceFiles.get(ref.sourceWorkspaceId);
+        if (!file || file.name !== ref.sourceFileName || file.size !== ref.sourceSize
+          || file.lastModified !== ref.sourceLastModified) {
+          file = await loadWorkspacePdf(ref.sourceWorkspaceId);
+        }
+        if (!current()) break;
+        if (!file || file.name !== ref.sourceFileName || file.size !== ref.sourceSize
+          || file.lastModified !== ref.sourceLastModified) {
+          entry.placeholder.textContent = "Kaynak PDF bulunamadı veya değiştirilmiş.";
+          entry.open.disabled = true;
+          continue;
+        }
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        if (!current()) break;
+        const task = pdfjs.getDocument({ data: bytes, isEvalSupported: false });
+        linkedPageTasks.add(task);
+        ownedTasks.add(task);
+        doc = await task.promise;
+        if (!current()) break;
+        documents.set(ref.sourceWorkspaceId, doc);
+      }
+      if (ref.page > doc.numPages) {
+        entry.placeholder.textContent = "Kaynak PDF'de bu sayfa yok.";
+        entry.open.disabled = true;
+        continue;
+      }
+      try {
+        const page = await doc.getPage(ref.page);
+        if (!current()) break;
+        const bounds = page.getViewport({ scale: 1 });
+        const width = Math.max(200, Math.min(410, entry.paper.clientWidth - 16));
+        const height = Math.max(240, entry.paper.clientHeight - 16);
+        const scale = Math.min(width / bounds.width, height / bounds.height);
+        const ratio = Math.min(window.devicePixelRatio || 1, 1.5);
+        const viewport = page.getViewport({ scale: scale * ratio });
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.ceil(viewport.width);
+        canvas.height = Math.ceil(viewport.height);
+        canvas.style.width = `${Math.round(viewport.width / ratio)}px`;
+        canvas.style.height = `${Math.round(viewport.height / ratio)}px`;
+        const context = canvas.getContext("2d", { alpha: false });
+        if (!context) throw new Error("Canvas kullanılamıyor");
+        await page.render({ canvas, canvasContext: context, viewport }).promise;
+        if (!current()) break;
+        entry.paper.replaceChildren(canvas);
+      } catch (error) {
+        if (current()) {
+          console.warn("Linked page render failed:", error);
+          entry.placeholder.textContent = "Sayfa görüntülenemedi.";
+        }
+      }
+    }
+  } catch (error) {
+    if (current()) {
+      console.warn("Linked page collection failed:", error);
+      for (const entry of entries) {
+        if (entry.paper.contains(entry.placeholder)) entry.placeholder.textContent = "Kaynak PDF okunamadı.";
+      }
+    }
+  } finally {
+    for (const task of ownedTasks) {
+      linkedPageTasks.delete(task);
+      try { await task.destroy(); } catch { /* Task may already be cancelled. */ }
+    }
+  }
+}
+
+function openAddLinkedPagesDialog() {
+  const target = activeWorkspace(workspaces);
+  ui.linkedSourceWorkspace.replaceChildren();
+  for (const item of workspaces.items) {
+    if (item.id === target.id || !item.fileName) continue;
+    const option = document.createElement("option");
+    option.value = String(item.id);
+    option.textContent = `W${item.id} · ${item.fileName}`;
+    ui.linkedSourceWorkspace.append(option);
+  }
+  ui.linkedPageNumbers.value = "";
+  ui.linkedPagesMessage.textContent = ui.linkedSourceWorkspace.options.length
+    ? "Sayfa numaralarını 1,3-5 şeklinde gir. Dosya kopyalanmaz."
+    : "Önce başka bir workspace'e PDF açmalısın.";
+  ui.confirmAddLinkedPages.disabled = !ui.linkedSourceWorkspace.options.length;
+  ui.addLinkedPagesDialog.showModal();
+  (ui.linkedSourceWorkspace.options.length ? ui.linkedPageNumbers : ui.closeAddLinkedPages).focus();
+}
+
+async function confirmAddLinkedPages() {
+  const sourceWorkspaceId = Number(ui.linkedSourceWorkspace.value);
+  const targetId = workspaces.activeId;
+  const source = workspaces.items.find((item) => item.id === sourceWorkspaceId);
+  if (!source || sourceWorkspaceId === targetId || !source.fileName) return;
+  ui.confirmAddLinkedPages.disabled = true;
+  ui.linkedPagesMessage.textContent = "PDF ve sayfa numaraları doğrulanıyor…";
+  let task;
+  try {
+    const file = await loadWorkspacePdf(sourceWorkspaceId);
+    if (!file || file.name !== source.fileName) throw new Error("Kaynak PDF IndexedDB'de bulunamadı.");
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    task = pdfjs.getDocument({ data: bytes, isEvalSupported: false });
+    const documentPdf = await task.promise;
+    const pages = parseLinkedPageSelection(ui.linkedPageNumbers.value, documentPdf.numPages);
+    if (!ui.addLinkedPagesDialog.open || workspaces.activeId !== targetId
+      || workspaces.items.find((item) => item.id === sourceWorkspaceId)?.fileName !== file.name) return;
+    const next = addLinkedWorkspacePages(workspaces, {
+      sourceWorkspaceId, sourceFileName: file.name, sourceSize: file.size,
+      sourceLastModified: file.lastModified, pages,
+    });
+    if (next === workspaces) throw new Error("Bu sayfalar zaten eklendi veya workspace sınırına ulaşıldı.");
+    const added = activeWorkspace(next).linkedPages.length - activeWorkspace(workspaces).linkedPages.length;
+    workspaces = next;
+    persistWorkspaces();
+    renderWorkspaceSidebar();
+    ui.addLinkedPagesDialog.close();
+    void refreshLinkedPages();
+    showToast(`${added} sayfa eklendi. Kaynak PDF kopyalanmadı.`);
+  } catch (error) {
+    ui.linkedPagesMessage.textContent = error?.message || "Sayfalar eklenemedi.";
+  } finally {
+    if (task) try { await task.destroy(); } catch { /* Already released */ }
+    ui.confirmAddLinkedPages.disabled = false;
+  }
+}
+
+async function openLinkedSourcePage(ref) {
+  const targetAtClick = workspaces.activeId;
+  const source = workspaces.items.find((item) => item.id === ref.sourceWorkspaceId);
+  if (!source || source.fileName !== ref.sourceFileName) {
+    showToast("Kaynak workspace veya PDF artık mevcut değil.");
+    return;
+  }
+  try {
+    let file = workspaceFiles.get(source.id);
+    if (!file || file.name !== ref.sourceFileName || file.size !== ref.sourceSize
+      || file.lastModified !== ref.sourceLastModified) {
+      file = await loadWorkspacePdf(source.id);
+    }
+    if (workspaces.activeId !== targetAtClick || ui.linkedPagesPage.hidden) return;
+    if (!file || file.name !== ref.sourceFileName || file.size !== ref.sourceSize
+      || file.lastModified !== ref.sourceLastModified
+      || workspaces.items.find((item) => item.id === source.id)?.fileName !== ref.sourceFileName) {
+      showToast("Kaynak PDF değişmiş veya silinmiş; yanlış belge açılmadı.");
+      return;
+    }
+    workspaceFiles.set(source.id, file);
+    closeLinkedPages();
+    cancelAllWork();
+    workspaces = switchWorkspace(workspaces, source.id);
+    persistWorkspaces();
+    applyWorkspaceView();
+    renderWorkspaceSidebar();
+    await restoreWorkspacePdf(source.id);
+    if (workspaces.activeId !== source.id || !state.doc || ref.page > state.pageCount) {
+      showToast("Kaynak PDF'nin istenen sayfası açılamadı.");
+      return;
+    }
+    setThumbnailMode("pages");
+    const generation = state.generation;
+    requestAnimationFrame(() => {
+      if (generation === state.generation && state.doc) goToPage(ref.page, false);
+    });
+  } catch (error) {
+    console.warn("Linked source navigation failed:", error);
+    showToast("Kaynak PDF okunamadı. Tarayıcı depolamasını kontrol et.");
+  }
+}
+
 function cancelLibraryPreviews() {
   for (const task of libraryPreviewTasks) void task.destroy().catch(() => {});
   libraryPreviewTasks.clear();
@@ -1515,6 +1805,7 @@ function closeLibrary() {
 }
 
 function openLibraryPage() {
+  closeLinkedPages();
   closeSidebar();
   ui.readerPage.hidden = true;
   ui.libraryPage.hidden = false;
@@ -1664,10 +1955,12 @@ function buildLibraryWorkspaceCards(records) {
     placeholder.className = "library-workspace-placeholder";
     const symbol = document.createElement("span");
     symbol.className = "symbol";
-    symbol.textContent = record ? "PDF" : workspace?.fileName ? "!" : "+";
+    const linkedCount = workspace?.linkedPages?.length || 0;
+    symbol.textContent = record ? "PDF" : linkedCount ? "↗" : workspace?.fileName ? "!" : "+";
     const message = document.createElement("span");
     message.className = "message";
     message.textContent = record ? "Önizleme…" :
+      linkedCount ? `${linkedCount} ek sayfa` :
       workspace?.fileName ? "PDF kaydı bulunamadı" : workspace ? "PDF ekle" : "Yeni workspace";
     placeholder.append(symbol, message);
     preview.append(placeholder);
@@ -1698,11 +1991,12 @@ function buildLibraryWorkspaceCards(records) {
     workspaceName.textContent = `W${slot.id}`;
     const size = document.createElement("small");
     size.textContent = record ? formatBytes(record.size) :
-      workspace ? `${workspace.notes.length} kayıt` : "Oluşturulmadı";
+      workspace ? (linkedCount ? `${linkedCount} ek sayfa` : `${workspace.notes.length} kayıt`) : "Oluşturulmadı";
     title.append(workspaceName, size);
     const filename = document.createElement("span");
     filename.className = "library-workspace-file";
-    filename.textContent = record?.name || workspace?.fileName || (workspace ? "Boş workspace" : "Oluşturmak için tıkla");
+    filename.textContent = record?.name || workspace?.fileName
+      || (workspace ? (linkedCount ? "Bağlantılı PDF sayfaları" : "Boş workspace") : "Oluşturmak için tıkla");
     filename.title = filename.textContent;
     footer.append(title, filename);
     select.append(preview, footer);
@@ -1711,7 +2005,10 @@ function buildLibraryWorkspaceCards(records) {
         createWorkspaceFromLibrary();
       } else {
         changeWorkspace(workspace.id);
-        if (!workspace.fileName) askToOpen(null, workspace.id);
+        if (!workspace.fileName) {
+          if (workspace.linkedPages?.length) openLinkedPages();
+          else askToOpen(null, workspace.id);
+        }
       }
     });
     card.append(select);
@@ -1971,6 +2268,15 @@ ui.closeSidebar.addEventListener("click", closeSidebar);
 ui.sidebarBackdrop.addEventListener("click", closeSidebar);
 ui.emptyOpen.addEventListener("click", openSidebar);
 ui.openLibrary.addEventListener("click", openLibraryPage);
+ui.linkedPagesToggle.addEventListener("click", () => {
+  if (ui.linkedPagesPage.hidden) openLinkedPages();
+  else closeLinkedPages();
+});
+ui.closeLinkedPages.addEventListener("click", closeLinkedPages);
+ui.addLinkedPages.addEventListener("click", openAddLinkedPagesDialog);
+ui.closeAddLinkedPages.addEventListener("click", () => ui.addLinkedPagesDialog.close());
+ui.cancelAddLinkedPages.addEventListener("click", () => ui.addLinkedPagesDialog.close());
+ui.confirmAddLinkedPages.addEventListener("click", () => { void confirmAddLinkedPages(); });
 ui.closeLibraryBookmarks.addEventListener("click", () => ui.libraryBookmarksDialog.close());
 ui.libraryBookmarksDialog.addEventListener("close", () => { libraryBookmarkWorkspaceId = null; });
 ui.libraryBookmarkPrev.addEventListener("click", () => {
@@ -2007,6 +2313,7 @@ window.addEventListener("storage", (event) => {
   if (event.key === WORKSPACE_STORAGE_KEY && !ui.libraryPage.hidden) void refreshLibrary();
 });
 ui.createWorkspace.addEventListener("click", () => {
+  closeLinkedPages();
   const next = addWorkspace(workspaces);
   if (next === workspaces) return;
   cancelAllWork();
@@ -2335,7 +2642,7 @@ document.addEventListener("keydown", (event) => {
     hideSelectionMenu();
     if (ui.workspaceSidebar.classList.contains("is-open")) closeSidebar();
   }
-  if (!ui.libraryPage.hidden || !state.doc || document.querySelector("dialog[open]") || event.altKey || event.shiftKey || modifier || event.defaultPrevented) return;
+  if (!ui.libraryPage.hidden || !ui.linkedPagesPage.hidden || !state.doc || document.querySelector("dialog[open]") || event.altKey || event.shiftKey || modifier || event.defaultPrevented) return;
   const active = document.activeElement;
   if (["INPUT", "TEXTAREA", "SELECT"].includes(active?.tagName) || active?.isContentEditable) return;
   // The arrow keys move by whole pages in either flow direction; wheel/touch/mouse handle panning.
