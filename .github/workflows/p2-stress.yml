@@ -1,0 +1,50 @@
+name: P2 capacity and performance baseline
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "15 2 * * 0"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: p2-stress-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  p2-stress:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CI: "true"
+      P2_STRESS_PAGES: "100,1000,5000"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install pinned app dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Install pinned Playwright runner
+        run: npm install --no-save --package-lock=false @playwright/test@1.56.1
+      - name: Install Chromium and OS libraries
+        run: npx playwright install --with-deps chromium
+      - name: Build production site
+        run: npm run build
+      - name: Run large-PDF / workspace stress tests
+        run: npx playwright test --config playwright.stress.config.mjs
+      - name: Collect measured baseline summary
+        if: always()
+        run: node scripts/p2-stress-summary.mjs
+      - name: Upload performance baseline and failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-capacity-baseline-${{ github.run_number }}
+          path: |
+            test-results/
+            playwright-report/
+          if-no-files-found: warn
+          retention-days: 30
