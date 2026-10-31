@@ -1692,7 +1692,9 @@ function makeLibraryPdfRow(record) {
 
 async function refreshLibrary() {
   const requestId = ++libraryRequestId;
+  cancelLibraryPreviews();
   ui.libraryList.setAttribute("aria-busy", "true");
+  ui.libraryWorkspaceGrid.setAttribute("aria-busy", "true");
   ui.libraryList.textContent = "PDF kayıtları okunuyor…";
   ui.refreshLibrary.disabled = true;
   let local;
@@ -1704,34 +1706,40 @@ async function refreshLibrary() {
   try {
     const records = await listWorkspacePdfs();
     if (requestId !== libraryRequestId) return;
-    const sorted = classifyLibraryPdfs(records, workspaces.items)
-      .sort((a, b) => Number(b.orphan) - Number(a.orphan) || a.name.localeCompare(b.name, "tr"));
-    const pdfBytes = sorted.reduce((total, record) => total + record.size, 0);
-    const orphans = sorted.filter((record) => record.orphan);
+    const classified = classifyLibraryPdfs(records, workspaces.items);
+    const pdfBytes = classified.reduce((total, record) => total + record.size, 0);
+    const orphans = classified.filter((record) => record.orphan)
+      .sort((a, b) => a.name.localeCompare(b.name, "tr"));
+    const orphanBytes = orphans.reduce((total, record) => total + record.size, 0);
     ui.libraryPdfSize.textContent = formatBytes(pdfBytes);
-    ui.libraryPdfCount.textContent = `${sorted.length} PDF`;
+    ui.libraryPdfCount.textContent = `${classified.length} PDF`;
     ui.libraryTotalSize.textContent = local ? formatBytes(pdfBytes + local.bytes) : "—";
-    ui.libraryOrphanCount.textContent = `${orphans.length} sahipsiz PDF · ${formatBytes(orphans.reduce((total, record) => total + record.size, 0))}`;
+    ui.libraryOrphanCount.textContent = `${orphans.length} · ${formatBytes(orphanBytes)}`;
+
+    const previews = buildLibraryWorkspaceCards(classified);
     ui.libraryList.replaceChildren();
-    if (!sorted.length) {
+    if (!orphans.length) {
       const empty = document.createElement("p");
       empty.className = "library-empty";
-      empty.textContent = "Henüz bu tarayıcıda kaydedilmiş PDF bulunmuyor.";
+      empty.textContent = "Workspace'e bağlı olmayan PDF bulunmuyor.";
       ui.libraryList.append(empty);
     } else {
-      sorted.forEach((record) => ui.libraryList.append(makeLibraryPdfRow(record)));
+      orphans.forEach((record) => ui.libraryList.append(makeLibraryPdfRow(record)));
     }
+    startLibraryPreviews(previews, requestId);
   } catch (error) {
     if (requestId !== libraryRequestId) return;
     console.warn("Library load failed:", error);
+    buildLibraryWorkspaceCards([]);
     ui.libraryPdfSize.textContent = "Kullanılamıyor";
     ui.libraryPdfCount.textContent = "PDF kayıtları okunamadı";
     ui.libraryTotalSize.textContent = "—";
-    ui.libraryOrphanCount.textContent = "IndexedDB erişimi başarısız";
-    ui.libraryList.textContent = "PDF kütüphanesi okunamadı. Tarayıcı depolama izinlerini kontrol edip yeniden dene.";
+    ui.libraryOrphanCount.textContent = "—";
+    ui.libraryList.textContent = "Sahipsiz PDF'ler okunamadı. Tarayıcı depolama izinlerini kontrol edip yeniden dene.";
   } finally {
     if (requestId === libraryRequestId) {
       ui.libraryList.setAttribute("aria-busy", "false");
+      ui.libraryWorkspaceGrid.setAttribute("aria-busy", "false");
       ui.refreshLibrary.disabled = false;
     }
   }
@@ -1754,15 +1762,16 @@ async function updateLibraryQuota(requestId) {
       ui.libraryQuotaProgress.value = 0;
     } else {
       const percent = Math.min(100, 100 * usage / quota);
-      ui.libraryQuotaText.textContent = `${formatBytes(usage)} / ${formatBytes(quota)} (%${percent.toLocaleString("tr-TR", { maximumFractionDigits: 1 })})`;
+      ui.libraryQuotaText.textContent = `${formatBytes(usage)} / ${formatBytes(quota)}`;
       ui.libraryQuotaProgress.value = percent;
+      ui.libraryQuotaProgress.title = `Kota kullanımı: %${percent.toLocaleString("tr-TR", { maximumFractionDigits: 1 })}`;
     }
     const persisted = typeof navigator.storage.persisted === "function"
       ? await navigator.storage.persisted() : null;
     if (requestId !== libraryRequestId) return;
     ui.libraryPersistenceStatus.textContent = persisted === true
-      ? "Kalıcı depolama etkin: otomatik temizlenme riski azaltıldı."
-      : "Standart depolama: tarayıcı alan gerektiğinde verileri temizleyebilir.";
+      ? "Kalıcı depolama açık"
+      : "Standart depolama";
     ui.libraryPersist.hidden = persisted === true || typeof navigator.storage.persist !== "function";
   } catch (error) {
     if (requestId !== libraryRequestId) return;
