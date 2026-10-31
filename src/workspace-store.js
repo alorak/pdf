@@ -195,6 +195,30 @@ export function removeLinkedWorkspacePage(state, referenceId) {
   });
 }
 
+/** Reorder page-only workspace sources without changing the note-to-page association. */
+export function reorderLinkedWorkspacePage(state, sourcePage, targetPage, after = false) {
+  const item = activeWorkspace(state);
+  if (!item || item.fileName || item.mode !== "pages") return state;
+  const length = item.linkedPages?.length || 0;
+  if (![sourcePage, targetPage].every(n => Number.isSafeInteger(n) && n >= 1 && n <= length)
+      || sourcePage === targetPage) return state;
+  const indexes = Array.from({ length }, (_, i) => i + 1);
+  indexes.splice(sourcePage - 1, 1);
+  const targetAt = indexes.indexOf(targetPage);
+  indexes.splice(targetAt + (after ? 1 : 0), 0, sourcePage);
+  if (indexes.every((value, i) => value === i + 1)) return state;
+  const oldToNew = new Map(indexes.map((oldPage, index) => [oldPage, index + 1]));
+  const remap = page => oldToNew.get(page) || page;
+  return replaceActive(state, workspace => ({
+    ...workspace,
+    linkedPages: indexes.map(page => workspace.linkedPages[page - 1]),
+    notes: workspace.notes.map(note => note.fileName === "@workspace-linked-pages"
+      && Number.isSafeInteger(note.page) ? { ...note, page: remap(note.page) } : note),
+    bookmarkOrder: workspace.bookmarkOrder.map(remap),
+    lastPage: remap(workspace.lastPage || 1),
+  }));
+}
+
 /** Remove a stale reference in any workspace, without switching the active reader. */
 export function removeWorkspaceLinkedPage(state, workspaceId, referenceId) {
   if (!state.items.some(item => item.id === workspaceId)) return state;
