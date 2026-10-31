@@ -34,6 +34,31 @@ for (const pages of pageCounts) {
     });
     await page.locator("#confirmReplace").click();
     await expect(page.locator("#pageTotal")).toHaveText(String(pages), { timeout: 180_000 });
+    const browserConsoleErrors = [];
+    page.on("console", message => { if (message.type() === "error") browserConsoleErrors.push(message.text()); });
+    await page.waitForTimeout(1300);
+    const renderDiagnostic = await page.evaluate(() => {
+      const reader = document.querySelector("#viewer");
+      const shell = document.querySelector(".page-shell");
+      const surface = document.querySelector(".page-surface");
+      const thumb = document.querySelector(".thumb-preview");
+      const rect = node => {
+        if (!node) return null;
+        const r = node.getBoundingClientRect();
+        return { top: r.top, width: r.width, height: r.height };
+      };
+      return {
+        reader: rect(reader), shell: rect(shell), surface: rect(surface), thumb: rect(thumb),
+        pageShells: document.querySelectorAll(".page-shell").length,
+        canvases: document.querySelectorAll("canvas").length,
+        pageCanvases: document.querySelectorAll(".page-surface canvas").length,
+        thumbCanvases: document.querySelectorAll(".thumb-preview canvas").length,
+        viewerScrollHeight: reader?.scrollHeight,
+        viewerClientHeight: reader?.clientHeight,
+        body: document.body.className,
+      };
+    });
+    console.log("P2_RENDER_DIAGNOSTIC " + JSON.stringify({ pages, renderDiagnostic, browserConsoleErrors }));
     // Page totals alone can succeed before canvas drawing. A visual baseline
     // must wait for an actual rendered PDF page.
     await expect(page.locator(".page-surface canvas").first()).toBeVisible({ timeout: 45_000 });
