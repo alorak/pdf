@@ -2636,7 +2636,7 @@ ui.menu.addEventListener("click", () => {
 });
 ui.closeSidebar.addEventListener("click", closeSidebar);
 ui.sidebarBackdrop.addEventListener("click", closeSidebar);
-ui.emptyOpen.addEventListener("click", openSidebar);
+ui.emptyOpen.addEventListener("click", () => askToOpen());
 ui.openLibrary.addEventListener("click", openLibraryPage);
 ui.emptyAddPages.addEventListener("click", openAddLinkedPagesDialog);
 ui.addPagesToolbar.addEventListener("click", openAddLinkedPagesDialog);
