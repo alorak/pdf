@@ -13,4 +13,14 @@ for (const extension of [".css", ".js"]) {
     if (!existsSync(`dist/${asset}`)) throw new Error(`Referenced Pages asset not found: ${asset}`);
   }
 }
-console.log("GitHub Pages output contains the CSS and JS referenced by its /pdf/ HTML.");
+for (const directory of ["pdfjs-wasm", "pdfjs-standard-fonts", "pdfjs-cmaps", "pdfjs-iccs"]) {
+  if (!existsSync("dist/" + directory)) {
+    throw new Error("PDF.js resource directory missing from Pages bundle: " + directory);
+  }
+}
+for (const name of ["openjpeg.wasm", "jbig2.wasm"]) {
+  if (!existsSync("dist/pdfjs-wasm/" + name)) {
+    throw new Error("PDF.js decoder missing from Pages bundle: " + name);
+  }
+}
+console.log("GitHub Pages output includes CSS/JS, decoders, fonts, CMaps and ICC resources.");

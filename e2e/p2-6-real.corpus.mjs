@@ -17,14 +17,24 @@ for (const item of cases) {
     const bytes = await readFile(path);
     expect(createHash("sha256").update(bytes).digest("hex")).toBe(item.sha256);
     const errors = [];
+    const renderErrors = [];
     page.on("pageerror", e => errors.push(e.message));
-    page.on("console", m => {
+    page.on("console", async m => {
       if (/PDF page render failed|PDF thumbnail render failed|Unable to decode image|failed to initialize/i.test(m.text())) {
         errors.push(m.text().slice(0, 240));
+        for (const handle of m.args().slice(1)) {
+          try {
+            const info = await handle.evaluate(value => ({
+              name: value?.name ?? null, message: value?.message ?? null,
+              stack: typeof value?.stack === "string" ? value.stack.slice(0, 450) : null,
+            }));
+            if (info.message) renderErrors.push(info);
+          } catch { /* Console argument was released. */ }
+        }
       }
     });
     page.on("response", response => {
-      if (response.url().includes("/pdfjs-wasm/") && response.status() >= 400) {
+      if (response.url().includes("/pdfjs-") && response.status() >= 400) {
         errors.push("decoder request failed: HTTP " + response.status());
       }
     });
@@ -77,7 +87,7 @@ for (const item of cases) {
           };
         }, { targetPage: pageNo, checkRaster: item.minImagePages > 0 });
         console.log("P2_6_RENDER_DIAGNOSTIC " + JSON.stringify({ id: item.id, ...diag,
-          consoleErrors: errors.slice(0, 6) }));
+          consoleErrors: errors.slice(0, 6), renderErrors: renderErrors.slice(0, 6) }));
         throw error;
       }
       const sample = await page.evaluate(() => ({
