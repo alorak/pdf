@@ -80,7 +80,7 @@ export function initialWorkspaces() {
   return {
     activeId: 1,
     nextId: 2,
-    items: [{ id: 1, name: "Workspace 1", fileName: "", notes: [], bookmarkOrder: [], linkedPages: [], view: { ...DEFAULT_WORKSPACE_VIEW } }],
+    items: [{ id: 1, name: "Workspace 1", mode: "empty", fileName: "", notes: [], bookmarkOrder: [], linkedPages: [], view: { ...DEFAULT_WORKSPACE_VIEW } }],
   };
 }
 
@@ -112,6 +112,8 @@ export function readWorkspaces(serialized) {
         fileName: typeof item.fileName === "string" ? item.fileName.slice(0, 255) : "",
         notes,
         linkedPages: normalizeLinkedPages(item.linkedPages, item.id),
+        mode: item.mode === "pages" || item.mode === "pdf" ? item.mode
+          : item.fileName ? "pdf" : item.linkedPages?.length ? "pages" : "empty",
         view: normalizeWorkspaceView(item.view),
         bookmarkOrder: Array.isArray(item.bookmarkOrder)
           ? [...new Set(item.bookmarkOrder.filter((page) => Number.isSafeInteger(page) && page > 0))].slice(0, MAX_SAVED_TEXTS)
@@ -141,14 +143,16 @@ export function addWorkspace(state) {
     ...state,
     activeId: id,
     nextId: id + 1,
-    items: [...state.items, { id, name: `Workspace ${id}`, fileName: "", notes: [], bookmarkOrder: [], linkedPages: [], view: { ...DEFAULT_WORKSPACE_VIEW } }],
+    items: [...state.items, { id, name: `Workspace ${id}`, mode: "empty", fileName: "", notes: [], bookmarkOrder: [], linkedPages: [], view: { ...DEFAULT_WORKSPACE_VIEW } }],
   };
 }
 
 export function addLinkedWorkspacePages(state, source) {
   const target = activeWorkspace(state);
   const origin = state.items.find((item) => item.id === source?.sourceWorkspaceId);
-  if (!target || !origin || origin.id === target.id || !origin.fileName
+  // A workspace is either a PDF reader or a referenced-page reader.
+  // Legacy mixed data remains readable, but cannot add further references.
+  if (!target || target.fileName || target.mode === "pdf" || !origin || origin.id === target.id || !origin.fileName
     || origin.fileName !== source.sourceFileName) return state;
   const pages = Array.isArray(source.pages) ? source.pages : [];
   const incoming = normalizeLinkedPages(pages.map((page) => ({
@@ -160,16 +164,31 @@ export function addLinkedWorkspacePages(state, source) {
   const unique = incoming.filter((ref) => !existing.has(ref.id));
   // Never silently import a partial page selection when the cap is exceeded.
   if (!unique.length || current.length + unique.length > MAX_LINKED_PAGES) return state;
-  return replaceActive(state, (workspace) => ({ ...workspace, linkedPages: [...current, ...unique] }));
+  return replaceActive(state, (workspace) => ({
+    ...workspace, mode: "pages", linkedPages: [...current, ...unique],
+  }));
 }
 
 export function removeLinkedWorkspacePage(state, referenceId) {
   const workspace = activeWorkspace(state);
   const current = workspace?.linkedPages || [];
-  if (!current.some((ref) => ref.id === referenceId)) return state;
-  return replaceActive(state, (item) => ({
-    ...item, linkedPages: current.filter((ref) => ref.id !== referenceId),
-  }));
+  const removedIndex = current.findIndex((ref) => ref.id === referenceId);
+  if (removedIndex < 0) return state;
+  const removedPage = removedIndex + 1;
+  return replaceActive(state, (item) => {
+    const remaining = current.filter((ref) => ref.id !== referenceId);
+    if (item.fileName) return { ...item, linkedPages: remaining };
+    // The virtual PDF's page numbers are contiguous. Keep annotations attached
+    // to the correct surviving page rather than silently shifting targets.
+    const notes = item.notes
+      .filter((note) => !(note.fileName === "@workspace-linked-pages" && note.page === removedPage))
+      .map((note) => note.fileName === "@workspace-linked-pages" && note.page > removedPage
+        ? { ...note, page: note.page - 1 } : note);
+    const bookmarkOrder = (item.bookmarkOrder || [])
+      .filter((page) => page !== removedPage)
+      .map((page) => page > removedPage ? page - 1 : page);
+    return { ...item, linkedPages: remaining, notes, bookmarkOrder };
+  });
 }
 
 export function switchWorkspace(state, id) {
@@ -188,20 +207,25 @@ export function setWorkspaceView(state, view) {
 }
 
 export function setWorkspaceFile(state, fileName) {
+  const current = activeWorkspace(state);
+  if (current && (current.mode === "pages" || (current.mode !== "pdf" && !current.fileName && current.linkedPages?.length))
+    && String(fileName || "")) return state;
   return replaceActive(state, (item) => {
     const nextFile = String(fileName).slice(0, 255);
-    return { ...item, fileName: nextFile, bookmarkOrder: nextFile === item.fileName ? item.bookmarkOrder : [] };
+    return { ...item, mode: nextFile ? "pdf" : "empty",
+      fileName: nextFile, bookmarkOrder: nextFile === item.fileName ? item.bookmarkOrder : [] };
   });
 }
 
 export function clearActiveWorkspace(state) {
-  return replaceActive(state, (item) => ({ ...item, notes: [], fileName: "", bookmarkOrder: [] }));
+  return replaceActive(state, (item) => ({ ...item, notes: [], fileName: "",
+    mode: item.mode === "pages" ? "pages" : item.mode === "pdf" ? "pdf" : "empty", bookmarkOrder: [] }));
 }
 
 export function removeWorkspace(state, id) {
   if (!state.items.some((item) => item.id === id)) return state;
   if (state.items.length === 1) {
-    return { ...state, items: [{ ...state.items[0], fileName: "", notes: [], bookmarkOrder: [], linkedPages: [], view: { ...DEFAULT_WORKSPACE_VIEW } }] };
+    return { ...state, items: [{ ...state.items[0], fileName: "", mode: "empty", notes: [], bookmarkOrder: [], linkedPages: [], view: { ...DEFAULT_WORKSPACE_VIEW } }] };
   }
   const items = state.items.filter((item) => item.id !== id);
   return {

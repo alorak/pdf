@@ -212,6 +212,17 @@ input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer
   opacity: 1; pointer-events: auto;
 }
 .thumb-remove:hover { background: #ffe9ee; color: #a7233b; }
+.thumb-unlink {
+  position: absolute; z-index: 3; top: 4px; right: 4px; width: 25px; height: 25px;
+  display: grid; place-items: center; border: 1px solid #f2c6ce; border-radius: 7px;
+  background: #fff; color: #b94357; font-size: 16px;
+  opacity: 0; pointer-events: none; box-shadow: 0 2px 8px #1f34521a;
+}
+.thumb-entry:hover .thumb-unlink, .thumb-entry:focus-within .thumb-unlink {
+  opacity: 1; pointer-events: auto;
+}
+.thumb-unlink:hover { background: #ffeaf0; }
+
 .thumb-drag-handle {
   position: absolute; z-index: 3; bottom: 4px; right: 4px; width: 24px; height: 24px;
   display: grid; place-items: center; border: 1px solid #ccdaf8; border-radius: 7px;
@@ -225,6 +236,7 @@ input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer
 .thumb-entry.dragging { opacity: .42; }
 .thumb-entry.drag-over { outline: 2px dashed #416ae5; outline-offset: 1px; background: #edf2ff; }
 .app-shell.bookmark-mode .thumb-entry { cursor: grab; }
+.app-shell.bookmark-mode .thumb-unlink { display: none; }
 .thumb-item:hover { background: #f0f4fc; }
 .thumb-item.active { background: #eaf0ff; color: #315bdf; }
 .thumb-item.bookmarked .thumb-preview::after {
@@ -365,6 +377,15 @@ input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer
   display: flex; align-items: center; gap: 20px; box-shadow: 0 7px 17px #345ce62b;
 }
 .empty-open:hover { background: #244acc; }
+.empty-actions { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 25px; flex-wrap: wrap; }
+.empty-actions .empty-open { margin: 0; }
+.empty-add-pages {
+  border: 1px solid #bfcef3; border-radius: 11px; background: #fff;
+  color: #315bd3; font-size: 13px; font-weight: 800; padding: 14px 22px;
+  box-shadow: 0 5px 18px #345ce615;
+}
+.empty-add-pages:hover { background: #edf2ff; border-color: #84a3ef; }
+
 .empty-open span { font-size: 18px; }
 .drop-hint { font-size: 11px; color: #a1acbd; }
 .loading-indicator {
