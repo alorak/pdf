@@ -41,6 +41,24 @@ test(`P2.4-C thumbnail window: ${pages} pages, vertical/bottom strips, deep clic
   await page.locator('.thumb-item[data-index="0"]').click();
   await expect(page.locator("#pageInput")).toHaveValue("1");
 
+  // Horizontal main page flow must also window the 1000/5000 logical pages.
+  await page.locator("#directionButton").click();
+  await page.locator('[data-orientation="horizontal"]').click();
+  await expect(page.locator("#pages")).toHaveClass(/virtual-pages/);
+  expect(await page.locator(".page-shell").count()).toBeLessThanOrEqual(80);
+  const horizontalScroll = await page.locator("#viewer").evaluate(el => ({
+    width: el.scrollWidth, viewport: el.clientWidth,
+  }));
+  expect(horizontalScroll.width).toBeGreaterThan(horizontalScroll.viewport * 5);
+  await page.locator("#pageInput").fill(String(pages));
+  await page.locator("#pageInput").press("Enter");
+  await expect.poll(() => page.locator(`.page-shell[data-index="${pages - 1}"] canvas`).count(),
+    { timeout: 30000 }).toBeGreaterThan(0);
+  expect(await page.locator(".page-shell").count()).toBeLessThanOrEqual(80);
+  await page.locator("#directionButton").click();
+  await page.locator('[data-orientation="vertical"]').click();
+  await expect(page.locator("#pages")).toHaveClass(/virtual-pages/);
+
   // Bookmark-only mode must stay usable and show an empty state with no bookmarks.
   await page.locator("#thumbBookmarks").click();
   await expect(page.locator("#thumbList")).not.toHaveClass(/virtual-thumbnails/);

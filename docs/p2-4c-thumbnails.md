@@ -16,8 +16,8 @@ P2.4-A/B sonunda 5.000 sayfalık PDF ana görüntüleyicisinde 3 sayfa kabuğu t
 
 ## Sınırlar
 
-- P2.4-C'nin bu parçası **thumbnail listesi** üzerine odaklanır; büyük PDF'de yatay ana sayfa akışının DOM sanallaştırması ayrı güvenlik/doğruluk testi gerektirir.
-- Kısa/sınırlı bookmark-only görünümde ana sayfa kabukları tamamıyla oluşturulabilir; 300+ bookmark içeren ana sayfa modunun ayrı pencerelemesi gerekebilir.
+- P2.4-C, **yatay ve dikey ana PDF akışı** için mantıksal sayfa ofsetleri ve pencereleme uygular. Yatay modun tam sayfa sayısı, kaydırma genişliği ve son sayfa gerçek canvas kabulü test edilir.
+- Yalnızca yer imleri görünümünde 300 veya üzeri kayıt varsa ana sayfalar da seçili yer imi sırasına göre sanallaştırılır. 300 altı için sayfalar doğrudan oluşturulur.
 - Gerçek cihazda 100 MB+ görüntü ağırlıklı PDF dosyaları P2.5 kapsamındadır.
 
 ## Kabul kaydı

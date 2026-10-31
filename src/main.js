@@ -122,7 +122,7 @@ const state = {
   searchToken: 0, searchResults: [], searchIndex: -1, searchTimer: 0,
   programmaticScrollUntil: 0,
   searchCache: createPdfTextCache(),
-  virtualOffsets: null, virtualRange: null,
+  virtualOffsets: null, virtualRange: null, virtualPageOrder: [],
   dimensions: [], shells: [], thumbs: [], thumbEntries: [],
   visible: new Set(), pending: new Set(), rendered: new Map(),
   renderTasks: new Map(), textLayers: new Map(), highlightRegions: new Map(), activeRenders: 0, observer: null,
@@ -1019,15 +1019,16 @@ function setPageSize(index) {
 function usingVirtualPages() {
   // Bookmark-only view and horizontal mode retain existing ordering/scroll semantics.
   return state.pageCount >= VIRTUAL_PAGE_THRESHOLD
-    && state.orientation === "vertical" && state.thumbnailMode === "pages";
+    && state.virtualPageOrder.length >= VIRTUAL_PAGE_THRESHOLD;
 }
 
 function updateVirtualOffsets() {
   if (!usingVirtualPages()) { state.virtualOffsets = null; return; }
-  const fallback = getDimensions(0).height;
+  const axis = state.orientation === "vertical" ? "height" : "width";
+  const fallback = getDimensions(0)[axis];
   state.virtualOffsets = pageOffsets(
-    Array.from({ length: state.pageCount }, (_, index) => state.dimensions[index]?.height || fallback),
-    state.scale, state.fit === "height" ? 0 : 40);
+    state.virtualPageOrder.map(page => state.dimensions[page - 1]?.[axis] || fallback),
+    state.scale, state.orientation === "vertical" && state.fit === "height" ? 0 : 40);
 }
 
 function unmountVirtualPage(index) {
@@ -1049,10 +1050,12 @@ function mountVirtualPages(focusIndex = null) {
   if (!usingVirtualPages()) return;
   if (!state.virtualOffsets) updateVirtualOffsets();
   const offsets = state.virtualOffsets;
-  const padding = parseFloat(getComputedStyle(ui.pages).paddingTop) || 0;
-  const viewStart = Math.max(0, (focusIndex === null
-    ? ui.viewer.scrollTop - padding : offsets[focusIndex]));
-  const range = pageWindow(offsets, viewStart, ui.viewer.clientHeight, 1300);
+  const horizontal = state.orientation === "horizontal";
+  const padding = parseFloat(getComputedStyle(ui.pages)[horizontal ? "paddingLeft" : "paddingTop"]) || 0;
+  const scroll = horizontal ? ui.viewer.scrollLeft : ui.viewer.scrollTop;
+  const viewport = horizontal ? ui.viewer.clientWidth : ui.viewer.clientHeight;
+  const viewStart = Math.max(0, focusIndex === null ? scroll - padding : offsets[focusIndex]);
+  const range = pageWindow(offsets, viewStart, viewport, 1300);
   const old = state.virtualRange;
   if (old?.start === range.start && old?.end === range.end) return;
   // When switching from an unwindowed layout, also release all former shells.
@@ -1062,32 +1065,38 @@ function mountVirtualPages(focusIndex = null) {
     }
   } else {
     for (let index = old.start; index < old.end; index++) {
-      if (index < range.start || index >= range.end) unmountVirtualPage(index);
+      if (index < range.start || index >= range.end) {
+        unmountVirtualPage(state.virtualPageOrder[index] - 1);
+      }
     }
   }
-  const spacers = pageSpacerHeights(offsets, range.start, range.end, state.fit === "height" ? 0 : 40);
+  const spacers = pageSpacerHeights(offsets, range.start, range.end,
+    state.orientation === "vertical" && state.fit === "height" ? 0 : 40);
   const elements = [];
   if (range.start) {
     const top = document.createElement("div");
     top.className = "virtual-page-spacer";
-    top.style.height = spacers.before + "px";
+    top.style[horizontal ? "width" : "height"] = spacers.before + "px";
     top.setAttribute("aria-hidden", "true");
     elements.push(top);
   }
   for (let index = range.start; index < range.end; index++) {
-    if (!state.shells[index]) state.shells[index] = makePageShell(index);
-    elements.push(state.shells[index]);
+    const physicalIndex = state.virtualPageOrder[index] - 1;
+    if (!state.shells[physicalIndex]) state.shells[physicalIndex] = makePageShell(physicalIndex);
+    elements.push(state.shells[physicalIndex]);
   }
   if (range.end < state.pageCount) {
     const bottom = document.createElement("div");
     bottom.className = "virtual-page-spacer";
-    bottom.style.height = spacers.after + "px";
+    bottom.style[horizontal ? "width" : "height"] = spacers.after + "px";
     bottom.setAttribute("aria-hidden", "true");
     elements.push(bottom);
   }
   ui.pages.replaceChildren(...elements, ui.bookmarkPagesEmpty);
   state.virtualRange = { start: range.start, end: range.end };
-  for (let index = range.start; index < range.end; index++) state.observer?.observe(state.shells[index]);
+  for (let index = range.start; index < range.end; index++) {
+    state.observer?.observe(state.shells[state.virtualPageOrder[index] - 1]);
+  }
 }
 
 function visiblePageNumbers() {
@@ -1161,10 +1170,15 @@ function updateThumbnailFilter(resetScroll = false) {
     for (const index of state.thumbMounted) if (!visiblePages.includes(index + 1)) releaseThumbnailEntry(index);
     for (const index of state.thumbMounted) state.thumbObserver?.observe(state.thumbs[index]);
   }
+  for (const index of state.thumbMounted) updateThumbnailEntry(index);
   ui.thumbEmpty.hidden = !onlyBookmarks || ordered.length > 0 || !state.doc;
   ui.bookmarkPagesEmpty.hidden = !onlyBookmarks || ordered.length > 0 || !state.doc;
   ui.pages.classList.toggle("bookmarks-empty", onlyBookmarks && visiblePages.length === 0 && Boolean(state.doc));
 
+  const viewOrderChanged = visiblePages.length !== state.virtualPageOrder.length
+    || visiblePages.some((page, index) => page !== state.virtualPageOrder[index]);
+  if (viewOrderChanged) { state.virtualRange = null; state.virtualOffsets = null; }
+  state.virtualPageOrder = visiblePages;
   const pageVirtual = usingVirtualPages();
   ui.pages.classList.toggle("virtual-pages", pageVirtual);
   if (pageVirtual) {
@@ -1335,9 +1349,13 @@ function goToPage(page, smooth = true) {
   if (state.fit !== "custom") applyFit(state.fit);
   if (usingVirtualPages() && !state.shells[index]?.isConnected) {
     if (!state.virtualOffsets) updateVirtualOffsets();
-    const padding = parseFloat(getComputedStyle(ui.pages).paddingTop) || 0;
-    ui.viewer.scrollTop = padding + state.virtualOffsets[index];
-    mountVirtualPages(index);
+    const ordinal = state.virtualPageOrder.indexOf(index + 1);
+    if (ordinal < 0) return;
+    const horizontal = state.orientation === "horizontal";
+    const padding = parseFloat(getComputedStyle(ui.pages)[horizontal ? "paddingLeft" : "paddingTop"]) || 0;
+    if (horizontal) ui.viewer.scrollLeft = padding + state.virtualOffsets[ordinal];
+    else ui.viewer.scrollTop = padding + state.virtualOffsets[ordinal];
+    mountVirtualPages(ordinal);
     smooth = false; // Long virtual jumps cannot animate through unmounted pages.
   }
   state.shells[index]?.scrollIntoView({
@@ -1395,9 +1413,14 @@ function setScale(scale, fit = "custom") {
     for (let i = 0; i < state.shells.length; i++) setPageSize(i);
     updateVirtualOffsets();
     if (usingVirtualPages() && anchor && state.virtualOffsets) {
-      const padding = parseFloat(getComputedStyle(ui.pages).paddingTop) || 0;
-      ui.viewer.scrollTop = padding + state.virtualOffsets[anchor.index];
-      mountVirtualPages(anchor.index);
+      const ordinal = state.virtualPageOrder.indexOf(anchor.index + 1);
+      const horizontal = state.orientation === "horizontal";
+      const padding = parseFloat(getComputedStyle(ui.pages)[horizontal ? "paddingLeft" : "paddingTop"]) || 0;
+      if (ordinal >= 0) {
+        if (horizontal) ui.viewer.scrollLeft = padding + state.virtualOffsets[ordinal];
+        else ui.viewer.scrollTop = padding + state.virtualOffsets[ordinal];
+        mountVirtualPages(ordinal);
+      }
     } else if (usingVirtualPages()) {
       mountVirtualPages();
     }
@@ -1419,6 +1442,8 @@ function applyFit(mode) {
 function updateOrientation(direction) {
   if (!["vertical", "horizontal"].includes(direction) || direction === state.orientation) return;
   state.orientation = direction;
+  state.virtualOffsets = null;
+  state.virtualRange = null;
   updateSettingsView();
   persistWorkspaceView();
   if (state.doc) {
@@ -1661,6 +1686,7 @@ function cancelAllWork() {
   state.programmaticScrollUntil = 0;
   state.virtualOffsets = null;
   state.virtualRange = null;
+  state.virtualPageOrder = [];
   ui.searchQuery.value = "";
   state.outlineGeneration++;
   state.outlineOpen = false;
@@ -1963,6 +1989,8 @@ function createPageElements() {
   // A new document must never reuse the previous virtual range after clearing DOM.
   state.virtualRange = null;
   state.virtualOffsets = null;
+  state.virtualPageOrder = state.thumbnailMode === "pages"
+    ? Array.from({ length: state.pageCount }, (_, i) => i + 1) : [];
   const pageFragment = document.createDocumentFragment();
   state.shells = new Array(state.pageCount);
   state.thumbMounted.clear();
@@ -1970,7 +1998,7 @@ function createPageElements() {
   state.thumbs = new Array(state.pageCount);
   state.thumbEntries = new Array(state.pageCount);
   for (let index = 0; index < state.pageCount; index++) {
-    if (!usingVirtualPages()) {
+    if (state.pageCount < VIRTUAL_PAGE_THRESHOLD) {
       const shell = makePageShell(index);
       state.shells[index] = shell;
       pageFragment.append(shell);
