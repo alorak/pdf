@@ -1,4 +1,5 @@
 import { MAX_WORKSPACES } from "./workspace-store.js";
+import { workspaceDocumentName } from "./linked-document.js";
 
 /**
  * IndexedDB records are keyed by workspace ID rather than by file name.
@@ -61,11 +62,12 @@ export function libraryWorkspaceSlots(state, max = MAX_WORKSPACES) {
  * as one destination in the five-pages-per-view dialog.
  */
 export function libraryBookmarkSummary(workspace) {
-  if (!workspace?.fileName) return { count: 0, pages: [] };
+  const documentName = workspaceDocumentName(workspace);
+  if (!documentName) return { count: 0, pages: [] };
   const byPage = new Map();
   let count = 0;
   for (const note of workspace.notes || []) {
-    if (note?.fileName !== workspace.fileName
+    if (note?.fileName !== documentName
       || !Number.isSafeInteger(note.page) || note.page < 1) continue;
     count++;
     if (!byPage.has(note.page)) {
