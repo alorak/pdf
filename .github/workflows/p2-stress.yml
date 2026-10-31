@@ -1,4 +1,4 @@
-name: P2 PDF stress and baseline
+name: P2 capacity and performance baseline
 
 on:
   schedule:
@@ -22,44 +22,50 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  benchmark:
-    name: Deterministic PDF / workspace stress
+  p2-stress:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 75
     env:
-      P2_STRESS_PROFILE: ${{ inputs.profile || 'full' }}
       CI: "true"
+      P2_STRESS_PROFILE: ${{ inputs.profile || 'full' }}
+      P2_STRESS_PAGES: ${{ inputs.profile == 'quick' && '100,1000' || '100,1000,5000' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "24"
+          node-version: '24'
           cache: npm
-      - name: Install exact application dependencies
+      - name: Install pinned app dependencies
         run: npm ci --no-audit --no-fund
-      - name: Run maximum-workspace and model stress tests
+      - name: Run model and 1,900-linked-page stress
         shell: bash
         run: |
           mkdir -p test-results/stress
           set -o pipefail
           npm run test:stress:model 2>&1 | tee test-results/stress/model.log
-      - name: Install Chromium runner without editing lockfile
+      - name: Install pinned Playwright runner
         run: npm install --no-save --package-lock=false @playwright/test@1.56.1
-      - name: Install browser dependencies
+      - name: Install Chromium and OS libraries
         run: npx playwright install --with-deps chromium
-      - name: Benchmark real PDF reader in Chromium
+      - name: Build production site
+        run: npm run build
+      - name: Run large-PDF capacity and workspace Chromium tests
+        run: npm run test:stress:capacity
+      - name: Run large-PDF search/navigation Chromium baselines
         run: npm run test:stress:browser
-      - name: Create reproducible Markdown baseline
+      - name: Summarize capacity baseline
+        if: always()
+        run: node scripts/p2-stress-summary.mjs
+      - name: Summarize search baseline
         if: always()
         run: npm run test:stress:report
-      - name: Upload baseline, fixtures diagnostics and failure reports
+      - name: Upload performance baselines and failures
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: p2-baseline-${{ github.run_id }}
+          name: p2-capacity-baseline-${{ github.run_number }}
           path: |
-            test-results/stress/
-            test-results/**/*.png
-            test-results/**/*.webm
+            test-results/
+            playwright-report/
           if-no-files-found: warn
           retention-days: 30

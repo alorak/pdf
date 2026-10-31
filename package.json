@@ -9,7 +9,8 @@
     "preview": "vite preview --host 0.0.0.0",
     "test": "node --test",
     "test:stress:model": "node --test stress/*.stress.mjs",
-    "test:stress:browser": "playwright test --config=playwright.stress.config.mjs",
+    "test:stress:capacity": "playwright test --config=playwright.stress.config.mjs",
+    "test:stress:browser": "playwright test --config=playwright.perf.config.mjs",
     "test:stress:report": "node stress/report.mjs",
     "fixture:generate": "node scripts/generate-stress-pdf.mjs"
   },

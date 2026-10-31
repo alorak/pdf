@@ -2,6 +2,7 @@ import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./e2e",
+  testIgnore: "**/*.stress.spec.mjs",
   timeout: 45_000,
   expect: { timeout: 15_000 },
   use: {

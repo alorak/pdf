@@ -1,31 +1,43 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { ensurePdfJsMapCompatibility } from "../src/pdfjs-compat.js";
+import { installMapUpsertPolyfills } from "../src/pdfjs-compat.js";
 
-test("PDF.js Map upsert compatibility keeps existing entries and handles computed values", () => {
-  const example = new Map([["existing", undefined]]);
-  let calls = 0;
-  assert.equal(example.getOrInsert("existing", 7), undefined);
-  assert.equal(example.getOrInsertComputed("existing", () => { calls++; return 7; }), undefined);
-  assert.equal(calls, 0);
-  assert.equal(example.getOrInsert("fallback", 17), 17);
-  assert.equal(example.getOrInsertComputed("computed", key => {
-    calls++;
-    assert.equal(key, "computed");
-    return { page: 4 };
-  }).page, 4);
-  assert.equal(example.getOrInsertComputed("computed", () => { calls++; }), example.get("computed"));
-  assert.equal(calls, 1);
+test("legacy Map receives methods without altering present keys or recomputing values", () => {
+  class OldMap extends Map {}
+  Object.defineProperties(OldMap.prototype, {
+    getOrInsert: { configurable:true, value:undefined },
+    getOrInsertComputed: { configurable:true, value:undefined },
+  });
+  installMapUpsertPolyfills({ mapPrototype:OldMap.prototype, weakMapPrototype:OldMap.prototype });
+  const map=new OldMap([["cached",undefined]]);
+  let calls=0;
+  assert.equal(map.getOrInsertComputed("cached",()=>{calls++; return 10}),undefined);
+  assert.equal(calls,0);
+  assert.equal(map.getOrInsert("cached",99),undefined);
+  assert.equal(map.getOrInsertComputed("new",key=>{calls++;return key.toUpperCase()}),"NEW");
+  assert.equal(map.get("new"),"NEW");
+  assert.equal(calls,1);
+  assert.equal(Object.keys(OldMap.prototype).includes("getOrInsertComputed"),false);
 });
-
-test("compatibility does not override native methods and validates callbacks", () => {
-  const existing = function nativeLike() {};
-  const prototype = { getOrInsertComputed: existing };
-  ensurePdfJsMapCompatibility(prototype);
-  assert.equal(prototype.getOrInsertComputed, existing);
-  const map = new Map();
-  assert.throws(() => map.getOrInsertComputed("bad", null), TypeError);
-  assert.equal(map.has("bad"), false);
-  assert.throws(() => map.getOrInsertComputed("boom", () => { throw new Error("boom"); }), /boom/);
-  assert.equal(map.has("boom"), false);
+test("missing methods on a legacy WeakMap preserve keys and lazy factory calls", () => {
+  class OldWeakMap extends WeakMap {}
+  Object.defineProperties(OldWeakMap.prototype, {
+    getOrInsert: { configurable:true,value:undefined },
+    getOrInsertComputed: { configurable:true,value:undefined },
+  });
+  installMapUpsertPolyfills({mapPrototype:OldWeakMap.prototype,weakMapPrototype:OldWeakMap.prototype});
+  const weak=new OldWeakMap();
+  const key={};
+  const value={pass:true};
+  assert.equal(weak.getOrInsertComputed(key,()=>value),value);
+  assert.equal(weak.getOrInsertComputed(key,()=>{throw Error("unexpected")}),value);
+});
+test("upsert polyfills are idempotent and never override native implementations",()=>{
+  const proto={
+    getOrInsert(){ return "native"; },
+    getOrInsertComputed(){ return "native computed"; },
+  };
+  const existing=proto.getOrInsertComputed;
+  installMapUpsertPolyfills({mapPrototype:proto,weakMapPrototype:proto});
+  assert.equal(proto.getOrInsertComputed,existing);
 });

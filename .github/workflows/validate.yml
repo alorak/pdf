@@ -27,7 +27,7 @@ jobs:
 
   browser-e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -42,19 +42,28 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: PDF reader Chromium E2E
         run: npx playwright test
-      - name: P2 fast 100-page browser smoke baseline
+      - name: P2 capacity and 20-workspace smoke (100 pages)
+        env:
+          P2_STRESS_PAGES: "100"
+        run: npm run test:stress:capacity
+      - name: P2 search/navigation smoke (100 pages)
         env:
           P2_STRESS_PROFILE: smoke
         run: npm run test:stress:browser
-      - name: Generate P2 smoke performance report
+      - name: Summarize capacity baseline
+        if: always()
+        run: node scripts/p2-stress-summary.mjs
+      - name: Summarize search baseline
         if: always()
         run: npm run test:stress:report
-      - name: Upload P2 smoke benchmark baseline
+      - name: Upload P2 smoke benchmarks
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: p2-smoke-baseline
-          path: test-results/stress/
+          name: p2-pr-baselines
+          path: |
+            test-results/stress/
+            test-results/p2-summary.md
           if-no-files-found: ignore
       - name: Upload browser failure artifacts
         if: failure()
