@@ -1,0 +1,65 @@
+name: P2 PDF stress and baseline
+
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: "Quick: 100/1000 pages; Full: 100/1000/5000 pages"
+        required: true
+        type: choice
+        default: full
+        options:
+          - quick
+          - full
+
+permissions:
+  contents: read
+
+concurrency:
+  group: p2-stress-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  benchmark:
+    name: Deterministic PDF / workspace stress
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      P2_STRESS_PROFILE: ${{ inputs.profile || 'full' }}
+      CI: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - name: Install exact application dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Run maximum-workspace and model stress tests
+        shell: bash
+        run: |
+          mkdir -p test-results/stress
+          set -o pipefail
+          npm run test:stress:model 2>&1 | tee test-results/stress/model.log
+      - name: Install Chromium runner without editing lockfile
+        run: npm install --no-save --package-lock=false @playwright/test@1.56.1
+      - name: Install browser dependencies
+        run: npx playwright install --with-deps chromium
+      - name: Benchmark real PDF reader in Chromium
+        run: npm run test:stress:browser
+      - name: Create reproducible Markdown baseline
+        if: always()
+        run: npm run test:stress:report
+      - name: Upload baseline, fixtures diagnostics and failure reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-baseline-${{ github.run_id }}
+          path: |
+            test-results/stress/
+            test-results/**/*.png
+            test-results/**/*.webm
+          if-no-files-found: warn
+          retention-days: 30
