@@ -198,6 +198,23 @@
       </div>
     </dialog>
 
+    <dialog id="libraryBookmarksDialog" class="settings-dialog library-bookmarks-dialog" aria-labelledby="libraryBookmarksTitle">
+      <div class="dialog-top">
+        <div>
+          <span id="libraryBookmarksEyebrow" class="eyebrow">WORKSPACE YER İMLERİ</span>
+          <h2 id="libraryBookmarksTitle">Yer imleri</h2>
+        </div>
+        <button id="closeLibraryBookmarks" class="icon-button" type="button" aria-label="Yer imlerini kapat">✕</button>
+      </div>
+      <p id="libraryBookmarksSummary" class="library-bookmarks-summary"></p>
+      <div id="libraryBookmarkPages" class="library-bookmark-pages" aria-live="polite"></div>
+      <div class="library-bookmark-pagination">
+        <button id="libraryBookmarkPrev" class="secondary-button" type="button">← Önceki</button>
+        <span id="libraryBookmarkPaginationLabel" aria-live="polite">1 / 1</span>
+        <button id="libraryBookmarkNext" class="secondary-button" type="button">Sonraki →</button>
+      </div>
+    </dialog>
+
     <dialog id="deleteLibraryPdfDialog" class="settings-dialog replace-dialog" aria-labelledby="deleteLibraryPdfTitle">
       <div class="dialog-top">
         <div><span class="eyebrow">SAHİPSİZ PDF SİL</span><h2 id="deleteLibraryPdfTitle">PDF kalıcı olarak silinsin mi?</h2></div>
