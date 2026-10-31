@@ -7,8 +7,8 @@ import {
   setWorkspaceFile, clearActiveWorkspace, removeWorkspace, saveSelectedText, savePageBookmark,
   removeSelectedText, removePageBookmarks, bookmarkedPageNumbers, orderedBookmarkedPageNumbers,
   reorderBookmarkedPage, moveBookmarkedPage, MAX_HIGHLIGHT_RECTS,
-  DEFAULT_WORKSPACE_VIEW, setWorkspaceView,
-  MAX_LINKED_PAGES, addLinkedWorkspacePages, removeLinkedWorkspacePage,
+  DEFAULT_WORKSPACE_VIEW, setWorkspaceView, setWorkspaceLastPage,
+  MAX_LINKED_PAGES, addLinkedWorkspacePages, removeLinkedWorkspacePage, removeWorkspaceLinkedPage,
 } from "./workspace-store.js";
 import { saveWorkspacePdf, loadWorkspacePdf, deleteWorkspacePdf, listWorkspacePdfs, deleteWorkspacePdfIfMatches, replaceWorkspacePdfWithMetadata } from "./pdf-storage.js";
 import { samePdfContent, replacementWorkspaceState } from "./pdf-replacement.js";
@@ -18,6 +18,7 @@ import { initializeWorkspaceData, readWorkspaceData, saveWorkspaceData, writeWor
 import { classifyLibraryPdfs, measureLocalStorage, formatBytes, libraryWorkspaceSlots, libraryBookmarkSummary, paginateLibraryBookmarkPages } from "./library-utils.js";
 import { linkedPickerWindow, isOutsideDialogRect } from "./linked-picker-utils.js";
 import { openLinkedDocument, isLinkedOnlyWorkspace, workspaceDocumentName } from "./linked-document.js";
+import { dependentPageLinks, groupDependentLinks, stalePageLinks } from "./workspace-dependencies.js";
 import "./style.css";
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
@@ -65,6 +66,9 @@ const ui = {
   deleteWorkspaceDialog: $("deleteWorkspaceDialog"), deleteWorkspaceName: $("deleteWorkspaceName"),
   cancelDeleteWorkspace: $("cancelDeleteWorkspace"), cancelDeleteWorkspaceTop: $("cancelDeleteWorkspaceTop"),
   confirmDeleteWorkspace: $("confirmDeleteWorkspace"),
+  deleteWorkspaceDependents: $("deleteWorkspaceDependents"), replaceWorkspaceDependents: $("replaceWorkspaceDependents"),
+  manageBrokenLinks: $("manageBrokenLinks"), brokenLinksDialog: $("brokenLinksDialog"),
+  closeBrokenLinks: $("closeBrokenLinks"), brokenLinksList: $("brokenLinksList"),
   cancelReplace: $("cancelReplace"), cancelReplaceTop: $("cancelReplaceTop"),
   confirmReplace: $("confirmReplace"), selectionMenu: $("selectionMenu"),
   copySelection: $("copySelection"), saveSelection: $("saveSelection"), bookmarkPage: $("bookmarkPage"),
@@ -115,6 +119,7 @@ let pendingSaves = Promise.resolve();
 const workspaceBroadcast = typeof BroadcastChannel !== "undefined"
   ? new BroadcastChannel("pdf-workspace-database-v2") : null;
 let staleExternalRevision = false;
+let lastPageSaveTimer = 0;
 const workspaceFiles = new Map(); // Active files are cached in memory; persistent copies live in IndexedDB.
 let pendingDeleteWorkspaceId = null;
 let pendingLibraryDeletion = null;
@@ -319,6 +324,11 @@ function closeSidebar() {
 }
 
 function changeWorkspace(id) {
+  if (lastPageSaveTimer) {
+    clearTimeout(lastPageSaveTimer);
+    lastPageSaveTimer = 0;
+    void persistWorkspaces().catch(() => {});
+  }
   closeLibrary();
   if (id === workspaces.activeId) { closeSidebar(); return; }
   cancelAllWork();
@@ -407,7 +417,11 @@ async function openLinkedWorkspaceReader(baseFile = null) {
       : `Sayfa derlemesi · ${linkedDoc.numPages} sayfa`;
     ui.fileLabel.title = `W${workspaceId} · kaynak PDF'lerden seçilmiş sayfalar`;
     ui.pdfInfoButton.disabled = true;
-    ui.status.textContent = `${linkedDoc.numPages} sayfa · PDF'ler kaynak workspace'lerde`;
+    const missingCount = linkedDoc.missing?.length || 0;
+    ui.status.textContent = missingCount
+      ? `${linkedDoc.numPages} sayfa · ${missingCount} kaynak sayfa eksik; Library'den bağlantıları denetle`
+      : `${linkedDoc.numPages} sayfa · PDF'ler kaynak workspace'lerde`;
+    if (missingCount) showToast(`${missingCount} kaynak sayfa bulunamadı. Eksik sayfalar işaretlendi; Library > Kayıtları denetle ile yönetebilirsin.`);
     createPageElements();
     updateSettingsView();
     updateToolbar();
@@ -416,6 +430,7 @@ async function openLinkedWorkspaceReader(baseFile = null) {
     initializeObservers();
     ui.viewer.scrollTop = 0;
     ui.viewer.scrollLeft = 0;
+    restoreReadingPosition(workspaceId, generation);
   } catch (error) {
     if (linkedDoc && state.loadingTask !== linkedDoc) await linkedDoc.destroy();
     if (generation !== state.generation) return;
@@ -427,11 +442,22 @@ async function openLinkedWorkspaceReader(baseFile = null) {
   }
 }
 
+function dependencyWarning(workspaceId) {
+  const links = dependentPageLinks(workspaces, workspaceId);
+  if (!links.length) return "";
+  const groups = groupDependentLinks(links);
+  const detail = groups.map(group => `W${group.workspaceId} (${group.pages.length} sayfa)`).join(", ");
+  return `DİKKAT: Bu PDF ${groups.length} çalışma alanında ${links.length} sayfaya kaynaklık ediyor: ${detail}. Değiştirme/silme sonrasında kaynak bağlantıları geçersiz kalabilir. Bağlantılar ve yer imleri otomatik silinmez; Library > Kayıtları denetle üzerinden yönetebilirsin.`;
+}
+
 function askDeleteWorkspace(id) {
   const item = workspaces.items.find((entry) => entry.id === id);
   if (!item) return;
   pendingDeleteWorkspaceId = id;
   ui.deleteWorkspaceName.textContent = workspaceDisplayName(item);
+  const warning = dependencyWarning(id);
+  ui.deleteWorkspaceDependents.textContent = warning;
+  ui.deleteWorkspaceDependents.hidden = !warning;
   if (ui.workspaceSidebar.classList.contains("is-open")) closeSidebar();
   ui.deleteWorkspaceDialog.showModal();
 }
@@ -519,6 +545,9 @@ async function askToOpen(file = null, workspaceId = workspaces.activeId) {
       ? " çalışma alanına PDF kaydedildiğinde önceki yer imleri temizlenecek. Devam edilsin mi?"
       : " çalışma alanına seçilen PDF kaydedilsin mi?";
   ui.confirmReplace.textContent = hasPdf ? "Evet, PDF'yi değiştir" : "PDF'yi aç";
+  const warning = hasPdf ? dependencyWarning(workspaceId) : "";
+  ui.replaceWorkspaceDependents.textContent = warning;
+  ui.replaceWorkspaceDependents.hidden = !warning;
   ui.replaceDialog.showModal();
 }
 
@@ -1120,6 +1149,31 @@ function updateToolbar() {
   }
 }
 
+function scheduleLastPageSave(page) {
+  if (!persistenceReady || persistenceFailed || staleExternalRevision) return;
+  const next = setWorkspaceLastPage(workspaces, page);
+  if (next === workspaces) return;
+  workspaces = next;
+  clearTimeout(lastPageSaveTimer);
+  lastPageSaveTimer = setTimeout(() => {
+    lastPageSaveTimer = 0;
+    void persistWorkspaces().catch(() => {});
+  }, 700);
+}
+
+function restoreReadingPosition(workspaceId, generation) {
+  const workspace = activeWorkspace(workspaces);
+  if (workspace?.id !== workspaceId) return;
+  const desired = Math.max(1, Math.min(state.pageCount, workspace.lastPage || 1));
+  requestAnimationFrame(() => {
+    if (generation !== state.generation || workspaces.activeId !== workspaceId || !state.doc) return;
+    // Thumbnail filtering is not persisted per workspace. Always restore a
+    // physical page in the full-page view before applying the reading position.
+    if (state.thumbnailMode !== "pages") setThumbnailMode("pages");
+    if (desired !== 1) goToPage(desired, false);
+  });
+}
+
 function setCurrentPage(index, scrollThumbnail = true) {
   if (!state.doc) return;
   const page = clampPage(index + 1, state.pageCount);
@@ -1134,6 +1188,7 @@ function setCurrentPage(index, scrollThumbnail = true) {
     if (scrollThumbnail && state.thumbsVisible && thumb.isConnected) thumb.scrollIntoView({ block: "nearest", inline: "nearest" });
   }
   updateToolbar();
+  scheduleLastPageSave(page);
 }
 
 function goToPage(page, smooth = true) {
@@ -1730,6 +1785,7 @@ async function openPDF(file, { replaceWorkspace = false, persistFile = true } = 
     initializeObservers();
     ui.viewer.scrollTop = 0;
     ui.viewer.scrollLeft = 0;
+    restoreReadingPosition(workspaceId, generation);
     setLoading(false);
     ui.viewer.focus({ preventScroll: true });
   } catch (error) {
@@ -2385,7 +2441,7 @@ function renderLibraryBookmarkModal() {
     }
     button.append(frame, details);
     button.addEventListener("click", () => {
-      void navigateToLibraryBookmark(workspace.id, workspace.fileName, group.page);
+      void navigateToLibraryBookmark(workspace.id, workspaceDocumentName(workspace), group.page);
     });
     fragment.append(button);
   }
@@ -2812,13 +2868,78 @@ async function refreshIntegrityReport() {
     bits.push(`${report.orphan.length} sahipsiz kayıt`);
     bits.push(`${report.brokenLinks.length} bozuk sayfa bağlantısı`);
     ui.integrityStatus.textContent = "Depolama denetimi: " + bits.join(" · ");
+    ui.manageBrokenLinks.hidden = report.brokenLinks.length === 0;
     if (report.missing.length || report.brokenLinks.length) {
       ui.integrityStatus.textContent += " · Kaynaklar silinmiş/değişmiş olabilir; yer imleri silinmedi.";
     }
   } catch (error) {
+    ui.manageBrokenLinks.hidden = true;
     ui.integrityStatus.textContent = "Denetim yapılamadı: " + (error?.message || error);
   }
 }
+
+async function renderBrokenLinks() {
+  await waitForWorkspaceSaves();
+  const broken = stalePageLinks(workspaces, await listWorkspacePdfs());
+  ui.brokenLinksList.replaceChildren();
+  ui.manageBrokenLinks.hidden = broken.length === 0;
+  if (!broken.length) {
+    const empty = document.createElement("p");
+    empty.textContent = "Geçersiz kaynak bağlantısı kalmadı.";
+    ui.brokenLinksList.append(empty);
+    return;
+  }
+  for (const link of broken) {
+    const row = document.createElement("div");
+    row.className = "broken-link-row";
+    const detail = document.createElement("span");
+    detail.textContent = `W${link.targetWorkspaceId} ← W${link.sourceWorkspaceId}, sayfa ${link.page} · ${link.sourceFileName}`;
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "secondary-button";
+    remove.textContent = "Bağlantıyı kaldır";
+    remove.addEventListener("click", async () => {
+      if (!window.confirm(
+        `W${link.targetWorkspaceId} içindeki W${link.sourceWorkspaceId} sayfa ${link.page} bağlantısı kaldırılsın mı?\n` +
+        "Bu derleme sayfasına bağlı yer imleri ve metin vurguları da kaldırılacak. Kaynak PDF'ye dokunulmaz."
+      )) return;
+      remove.disabled = true;
+      try {
+        await waitForWorkspaceSaves();
+        // Recheck actual storage: never delete a link whose source was repaired.
+        if (!stalePageLinks(workspaces, await listWorkspacePdfs())
+          .some(item => item.targetWorkspaceId === link.targetWorkspaceId && item.referenceId === link.referenceId)) {
+          showToast("Bağlantı artık geçerli veya başka sekmede değişti; silinmedi.");
+          return;
+        }
+        const next = removeWorkspaceLinkedPage(workspaces, link.targetWorkspaceId, link.referenceId);
+        if (next !== workspaces) {
+          workspaces = next;
+          await persistWorkspaces();
+          renderWorkspaceSidebar();
+          if (workspaces.activeId === link.targetWorkspaceId) {
+            cancelAllWork();
+            await restoreWorkspacePdf(workspaces.activeId);
+          }
+        }
+        await renderBrokenLinks();
+        void refreshIntegrityReport();
+      } catch (error) {
+        console.error("Broken link removal failed:", error);
+        showToast("Bağlantı kaldırılamadı: " + error.message);
+      } finally { remove.disabled = false; }
+    });
+    row.append(detail, remove);
+    ui.brokenLinksList.append(row);
+  }
+}
+ui.manageBrokenLinks.addEventListener("click", () => {
+  ui.brokenLinksDialog.showModal();
+  void renderBrokenLinks().catch(error => {
+    ui.brokenLinksList.textContent = "Bağlantılar listelenemedi: " + error.message;
+  });
+});
+ui.closeBrokenLinks.addEventListener("click", () => ui.brokenLinksDialog.close());
 ui.integrityRefresh.addEventListener("click", () => { void refreshIntegrityReport(); });
 ui.backupExport.addEventListener("click", async () => {
   if (backupBusy) return;

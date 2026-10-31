@@ -80,7 +80,7 @@ export function initialWorkspaces() {
   return {
     activeId: 1,
     nextId: 2,
-    items: [{ id: 1, name: "Workspace 1", mode: "empty", fileName: "", notes: [], bookmarkOrder: [], linkedPages: [], view: { ...DEFAULT_WORKSPACE_VIEW } }],
+    items: [{ id: 1, name: "Workspace 1", mode: "empty", fileName: "", notes: [], bookmarkOrder: [], linkedPages: [], lastPage: 1, view: { ...DEFAULT_WORKSPACE_VIEW } }],
   };
 }
 
@@ -112,6 +112,8 @@ export function readWorkspaces(serialized) {
         fileName: typeof item.fileName === "string" ? item.fileName.slice(0, 255) : "",
         notes,
         linkedPages: normalizeLinkedPages(item.linkedPages, item.id),
+        lastPage: Number.isSafeInteger(item.lastPage) && item.lastPage >= 1
+          ? Math.min(item.lastPage, 10000000) : 1,
         mode: item.mode === "pages" || item.mode === "pdf" ? item.mode
           : item.fileName ? "pdf" : item.linkedPages?.length ? "pages" : "empty",
         view: normalizeWorkspaceView(item.view),
@@ -143,7 +145,7 @@ export function addWorkspace(state) {
     ...state,
     activeId: id,
     nextId: id + 1,
-    items: [...state.items, { id, name: `Workspace ${id}`, mode: "empty", fileName: "", notes: [], bookmarkOrder: [], linkedPages: [], view: { ...DEFAULT_WORKSPACE_VIEW } }],
+    items: [...state.items, { id, name: `Workspace ${id}`, mode: "empty", fileName: "", notes: [], bookmarkOrder: [], linkedPages: [], lastPage: 1, view: { ...DEFAULT_WORKSPACE_VIEW } }],
   };
 }
 
@@ -187,8 +189,19 @@ export function removeLinkedWorkspacePage(state, referenceId) {
     const bookmarkOrder = (item.bookmarkOrder || [])
       .filter((page) => page !== removedPage)
       .map((page) => page > removedPage ? page - 1 : page);
-    return { ...item, linkedPages: remaining, notes, bookmarkOrder };
+    return { ...item, linkedPages: remaining, notes, bookmarkOrder,
+      lastPage: Math.max(1, item.lastPage > removedPage ? item.lastPage - 1
+        : Math.min(item.lastPage || 1, remaining.length || 1)) };
   });
+}
+
+/** Remove a stale reference in any workspace, without switching the active reader. */
+export function removeWorkspaceLinkedPage(state, workspaceId, referenceId) {
+  if (!state.items.some(item => item.id === workspaceId)) return state;
+  const previousActiveId = state.activeId;
+  const updated = removeLinkedWorkspacePage({ ...state, activeId: workspaceId }, referenceId);
+  if (updated.items === state.items) return state;
+  return { ...updated, activeId: previousActiveId };
 }
 
 export function switchWorkspace(state, id) {
@@ -202,6 +215,13 @@ function replaceActive(state, transform) {
   };
 }
 
+export function setWorkspaceLastPage(state, page) {
+  if (!Number.isSafeInteger(page) || page < 1) return state;
+  const workspace = activeWorkspace(state);
+  if (!workspace || workspace.lastPage === page) return state;
+  return replaceActive(state, item => ({ ...item, lastPage: Math.min(page, 10000000) }));
+}
+
 export function setWorkspaceView(state, view) {
   return replaceActive(state, (item) => ({ ...item, view: normalizeWorkspaceView(view) }));
 }
@@ -213,19 +233,20 @@ export function setWorkspaceFile(state, fileName) {
   return replaceActive(state, (item) => {
     const nextFile = String(fileName).slice(0, 255);
     return { ...item, mode: nextFile ? "pdf" : "empty",
-      fileName: nextFile, bookmarkOrder: nextFile === item.fileName ? item.bookmarkOrder : [] };
+      fileName: nextFile, lastPage: nextFile === item.fileName ? item.lastPage : 1,
+      bookmarkOrder: nextFile === item.fileName ? item.bookmarkOrder : [] };
   });
 }
 
 export function clearActiveWorkspace(state) {
   return replaceActive(state, (item) => ({ ...item, notes: [], fileName: "",
-    mode: item.mode === "pages" ? "pages" : item.mode === "pdf" ? "pdf" : "empty", bookmarkOrder: [] }));
+    mode: item.mode === "pages" ? "pages" : item.mode === "pdf" ? "pdf" : "empty", lastPage: 1, bookmarkOrder: [] }));
 }
 
 export function removeWorkspace(state, id) {
   if (!state.items.some((item) => item.id === id)) return state;
   if (state.items.length === 1) {
-    return { ...state, items: [{ ...state.items[0], fileName: "", mode: "empty", notes: [], bookmarkOrder: [], linkedPages: [], view: { ...DEFAULT_WORKSPACE_VIEW } }] };
+    return { ...state, items: [{ ...state.items[0], fileName: "", mode: "empty", notes: [], bookmarkOrder: [], linkedPages: [], lastPage: 1, view: { ...DEFAULT_WORKSPACE_VIEW } }] };
   }
   const items = state.items.filter((item) => item.id !== id);
   return {
@@ -275,7 +296,9 @@ export function orderedBookmarkedPageNumbers(workspace, fileName, pageCount) {
 
 export function reorderBookmarkedPage(state, fileName, pageCount, sourcePage, targetPage, after = false) {
   const workspace = activeWorkspace(state);
-  if (!workspace || workspace.fileName !== fileName) return state;
+  if (!workspace || !fileName || (workspace.fileName !== fileName
+    && !(fileName === "@workspace-linked-pages" && !workspace.fileName &&
+      (workspace.mode === "pages" || workspace.linkedPages?.length)))) return state;
   const current = orderedBookmarkedPageNumbers(workspace, fileName, pageCount);
   if (sourcePage === targetPage || !current.includes(sourcePage) || !current.includes(targetPage)) return state;
   const next = current.filter((page) => page !== sourcePage);

@@ -31,6 +31,14 @@ Tarayıcıda çalışan sade, hızlı ve gizliliğe odaklı bir PDF görüntüle
 - Geri yükleme, varsayılan olarak mevcut verilerle birleştirme yapmaz: tüm workspace'ler, yer imleri ve PDF'ler onaydan sonra yedekteki hâlleriyle **değiştirilir**. Önce mevcut kayıtlarınızı dışa aktarın.
 - Tarayıcı profilinin silinmesi, cihaz arızası veya kaynak belgelerin kaybolmasına karşı en güvenli önlem, yedeği başka bir konumda tutmaktır.
 
+### P1.1 — Yer imleri, okuma konumu ve kaynak PDF bağımlılıkları
+
+- **Library → yer imine git**: PDF yerine başka PDF'lerden sayfalar içeren çalışma alanlarındaki yer imleri de doğru sanal belge kimliğiyle açılır. Yer imleri bu çalışma alanlarında sıralanabilir.
+- **Son okunan sayfa**: Her workspace'in `lastPage` alanı IndexedDB workspace metadata'sında kaydedilir. Sayfa değişimi kısa gecikmeyle yazılır; workspace yeniden açıldığında son sayfaya dönülür. PDF içeriği değişirse konum 1'e sıfırlanır. Sayfa bağlantısı kaldırılırsa konum kalan sayfalara kaydırılır.
+- **Kaynak bağımlılık uyarıları**: Başka çalışma alanlarında sayfaları kullanılan PDF değiştirilirken veya workspace silinirken etkilenecek workspace'ler ve sayfa sayıları açıkça gösterilir. Bağımlı sayfalar/yer imleri sessizce silinmez.
+- **Eksik PDF sayfaları**: Kaynak PDF kaybolmuş, değiştirilmiş ya da ilgili sayfa bulunamıyorsa o sanal sayfa yerinde açıklamalı bir PDF uyarı sayfası görünür. Sağlam sayfalar kullanılabilir; sıra ve mevcut yer imi sayfa numaraları kaymaz.
+- **Kayıtları denetle → Bozuk bağlantıları yönet**: Geçersiz sayfa referansları listelenir. Her bağlantı ayrı onayla kaldırılabilir. Kaynak PDF silinmez; kaldırılan derleme sayfasına ait yer imleri kaldırılır, sonraki sayfaların yer imi/okuma konumları düzeltilir. Kaynak geri gelmişse silme reddedilir.
+
 ## Çalıştırma
 
 Node.js 22+ gerektirir (Node.js 24 önerilir).
