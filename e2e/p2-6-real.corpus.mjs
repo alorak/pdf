@@ -44,7 +44,27 @@ for (const item of cases) {
     const chooser = await chooserWait;
     await chooser.setFiles(path);
     await page.locator("#confirmReplace").click();
-    await expect(page.locator("#pageTotal")).not.toHaveText("0", { timeout: 180_000 });
+    try {
+      await expect(page.locator("#pageTotal")).not.toHaveText("0", { timeout: 35_000 });
+    } catch (error) {
+      const diagnostic = await page.evaluate(() => ({
+        pageTotal: document.querySelector("#pageTotal")?.textContent,
+        fileLabel: document.querySelector("#fileLabel")?.textContent?.slice(0, 100),
+        status: document.querySelector("#statusText")?.textContent?.slice(0, 160),
+        viewerText: document.querySelector("#statusText")?.textContent?.slice(0, 160),
+        toastText: document.querySelector("#toast")?.textContent?.slice(0, 160),
+        toastHidden: document.querySelector("#toast")?.hidden,
+        pageShells: document.querySelectorAll(".page-shell").length,
+        pageCanvases: document.querySelectorAll(".page-surface canvas").length,
+        emptyVisible: !document.querySelector("#empty")?.hidden,
+        loading: document.querySelector("#app")?.className?.slice(0, 140),
+      }));
+      console.log("P2_6_OPEN_DIAGNOSTIC " + JSON.stringify({
+        id: item.id, ...diagnostic, errors: errors.slice(0, 8),
+        renderErrors: renderErrors.slice(0, 5),
+      }));
+      throw error;
+    }
     const pages = Number(await page.locator("#pageTotal").textContent());
     expect(Number.isSafeInteger(pages) && pages >= 1).toBe(true);
     const metrics = [];

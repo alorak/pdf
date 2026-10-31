@@ -56,5 +56,6 @@ function pdfjsResources() {
 export default defineConfig({
   base: "/pdf/",
   plugins: [pdfjsResources()],
+  worker: { format: "es" },
   build: { target: "es2022" },
 });

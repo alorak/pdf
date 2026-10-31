@@ -1,5 +1,5 @@
 name: P2.6 one-off licensed real PDF corpus acceptance
-# Include PDF.js decoder, ICC, built-in font and CMap asset fixes
+# Diagnose worker bootstrap loading with 35s timeout and source-preserving metrics
 # Pinned SHA-256 and explicit WASM decoder acceptance
 
 on:
