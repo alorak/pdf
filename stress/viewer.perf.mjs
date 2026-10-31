@@ -4,7 +4,8 @@ import { appendFile, mkdir } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { generatePdfFixture } from "../scripts/pdf-fixtures.mjs";
 
-const pageCounts = process.env.P2_STRESS_PROFILE === "quick" ? [100, 1000] : [100, 1000, 5000];
+const pageCounts = process.env.P2_STRESS_PROFILE === "smoke" ? [100]
+  : process.env.P2_STRESS_PROFILE === "quick" ? [100, 1000] : [100, 1000, 5000];
 const round = value => Number(value.toFixed(1));
 const metrics = async page => page.evaluate(() => ({
   jsHeapMb: typeof performance.memory?.usedJSHeapSize === "number"
