@@ -1569,6 +1569,12 @@ async function openPDF(file, { replaceWorkspace = false, persistFile = true } = 
     workspaceFiles.set(workspaceId, file);
     persistWorkspaces();
     renderWorkspaceSidebar();
+    // Existing workspaces may contain both a base PDF and older linked-page
+    // references. Preserve and display all pages in the same reader.
+    if (activeWorkspace(workspaces)?.linkedPages?.length) {
+      await openLinkedWorkspaceReader(file);
+      return;
+    }
     state.dimensions = new Array(state.pageCount);
     state.dimensions[0] = { width: rect.width, height: rect.height };
     ui.app.classList.add("has-document");
@@ -3034,6 +3040,7 @@ let dragDepth = 0;
 window.addEventListener("dragenter", (event) => {
   if (![...event.dataTransfer?.types || []].includes("Files")) return;
   event.preventDefault();
+  if (isLinkedOnlyWorkspace(activeWorkspace(workspaces))) return;
   dragDepth++;
   ui.dropOverlay.hidden = false;
 });
@@ -3049,6 +3056,10 @@ window.addEventListener("drop", (event) => {
   event.preventDefault();
   dragDepth = 0;
   ui.dropOverlay.hidden = true;
+  if (isLinkedOnlyWorkspace(activeWorkspace(workspaces))) {
+    showToast("Bu workspace'e PDF eklenemez. Sayfa ekle seçeneğini kullan.");
+    return;
+  }
   const file = [...event.dataTransfer?.files || []].find((candidate) => candidate.name.toLowerCase().endsWith(".pdf") || candidate.type === "application/pdf");
   if (file) askToOpen(file);
   else showToast("Lütfen PDF dosyası bırak.");
