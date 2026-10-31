@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { initialWorkspaces, savePageBookmark, setWorkspaceFile } from "../src/workspace-store.js";
 import {
   initializeWorkspaceData, readWorkspaceData, saveWorkspaceData,
-  writeWorkspaceAndPdf, getAllStoredPdfs, restoreWorkspaceBackup,
+  writeWorkspaceAndPdf, getAllStoredPdfs, readWorkspaceBundle, restoreWorkspaceBackup,
 } from "../src/workspace-data.js";
 
 /** Small IDB transaction simulator that commits all staged stores together. */
@@ -164,4 +164,12 @@ test("full backup restore replaces PDFs and metadata in one transaction", async 
   assert.deepEqual((await getAllStoredPdfs()).map(x => x.workspaceId), [5]);
   const latest = await readWorkspaceData();
   assert.equal(latest.revision, rev);
+});
+
+test("consistent snapshot returns metadata and PDF records from one readonly transaction", async () => {
+  const bundle = await readWorkspaceBundle();
+  const latest = await readWorkspaceData();
+  assert.equal(bundle.revision, latest.revision);
+  assert.deepEqual(bundle.state, latest.state);
+  assert.deepEqual(bundle.records.map(record => record.workspaceId), [5]);
 });
