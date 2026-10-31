@@ -32,8 +32,10 @@ const ui = {
   addLinkedPages: $("addLinkedPages"), closeLinkedPages: $("closeLinkedPages"),
   addLinkedPagesDialog: $("addLinkedPagesDialog"), closeAddLinkedPages: $("closeAddLinkedPages"),
   cancelAddLinkedPages: $("cancelAddLinkedPages"), confirmAddLinkedPages: $("confirmAddLinkedPages"),
-  linkedSourceWorkspace: $("linkedSourceWorkspace"), linkedPageNumbers: $("linkedPageNumbers"),
-  linkedPagesMessage: $("linkedPagesMessage"),
+  linkedSourceGrid: $("linkedSourceGrid"), linkedSourceCount: $("linkedSourceCount"),
+  linkedPagePickerGrid: $("linkedPagePickerGrid"), linkedSelectionCount: $("linkedSelectionCount"),
+  linkedPickerPrev: $("linkedPickerPrev"), linkedPickerNext: $("linkedPickerNext"),
+  linkedPickerPageLabel: $("linkedPickerPageLabel"), linkedPagesMessage: $("linkedPagesMessage"),
   libraryPdfSize: $("libraryPdfSize"), libraryPdfCount: $("libraryPdfCount"),
   libraryLocalSize: $("libraryLocalSize"), libraryLocalCount: $("libraryLocalCount"),
   libraryTotalSize: $("libraryTotalSize"), libraryOrphanCount: $("libraryOrphanCount"),
@@ -107,6 +109,8 @@ let libraryBookmarkPreviewSession = null;
 let libraryRequestId = 0;
 let linkedPagesEpoch = 0;
 const linkedPageTasks = new Set();
+let linkedPickerSession = null;
+const LINKED_PICKER_PAGE_SIZE = 12;
 const libraryPreviewTasks = new Set();
 const libraryPreviewCache = new Map(); // Small in-memory first-page thumbnails, not PDF files.
 let pendingDropFile = null;
@@ -1687,6 +1691,171 @@ async function refreshLinkedPages() {
       linkedPageTasks.delete(task);
       try { await task.destroy(); } catch { /* Task may already be cancelled. */ }
     }
+  }
+}
+
+function linkedPickerActive(session, epoch = null) {
+  return linkedPickerSession === session && !session.closed
+    && ui.addLinkedPagesDialog.open && workspaces.activeId === session.targetId
+    && (epoch === null || session.renderEpoch === epoch);
+}
+
+function releaseLinkedPickerSource(session) {
+  session.sourceEpoch++;
+  session.renderEpoch++;
+  try { session.renderTask?.cancel(); } catch { /* Render already settled */ }
+  session.renderTask = null;
+  if (session.task) void session.task.destroy().catch(() => {});
+  session.task = null;
+  session.doc = null;
+  session.file = null;
+  session.sourceId = null;
+  session.total = 0;
+  session.index = 0;
+  session.selected.clear();
+  session.pageCache.clear();
+}
+
+function disposeLinkedPicker() {
+  const session = linkedPickerSession;
+  linkedPickerSession = null;
+  if (!session) return;
+  session.closed = true;
+  releaseLinkedPickerSource(session);
+  for (const task of session.covers) void task.destroy().catch(() => {});
+  session.covers.clear();
+}
+
+function linkedPickerMessage(message) { ui.linkedPagesMessage.textContent = message; }
+
+function updateLinkedPickerSelection(session) {
+  if (!linkedPickerActive(session)) return;
+  const count = session.selected.size;
+  ui.linkedSelectionCount.textContent = count + " sayfa seçili";
+  ui.confirmAddLinkedPages.textContent = "Sayfaları ekle (" + count + ")";
+  ui.confirmAddLinkedPages.disabled = session.saving || !session.doc || count === 0;
+}
+
+function linkedPickerPaper(message) {
+  const paper = document.createElement("span");
+  paper.className = "linked-picker-paper";
+  const placeholder = document.createElement("span");
+  placeholder.className = "linked-picker-placeholder";
+  placeholder.textContent = message;
+  paper.append(placeholder);
+  return { paper, placeholder };
+}
+
+async function renderLinkedPickerCover(session, item) {
+  if (!linkedPickerActive(session)) return;
+  let task;
+  try {
+    const source = item.workspace;
+    const file = await loadWorkspacePdf(source.id);
+    if (!linkedPickerActive(session)) return;
+    if (!file || file.name !== source.fileName) throw new Error("PDF bulunamadı");
+    const cached = libraryPreviewCache.get(source.id);
+    if (cached && cached.name === file.name && cached.size === file.size
+      && cached.lastModified === file.lastModified) {
+      const img = document.createElement("img");
+      img.src = cached.src;
+      img.alt = "";
+      img.setAttribute("aria-hidden", "true");
+      item.paper.replaceChildren(img);
+      return;
+    }
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    if (!linkedPickerActive(session)) return;
+    task = pdfjs.getDocument({ data: bytes, isEvalSupported: false });
+    session.covers.add(task);
+    const pdf = await task.promise;
+    if (!linkedPickerActive(session)) return;
+    const page = await pdf.getPage(1);
+    if (!linkedPickerActive(session)) return;
+    const base = page.getViewport({ scale: 1 });
+    const scale = Math.max(.01, Math.min(
+      Math.max(1, item.paper.clientWidth - 8) / base.width,
+      Math.max(1, item.paper.clientHeight - 8) / base.height
+    ));
+    const viewport = page.getViewport({ scale: scale * Math.min(window.devicePixelRatio || 1, 2) });
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.ceil(viewport.width));
+    canvas.height = Math.max(1, Math.ceil(viewport.height));
+    const context = canvas.getContext("2d", { alpha: false });
+    if (!context) throw new Error("Canvas kullanılamıyor");
+    await page.render({ canvas, canvasContext: context, viewport }).promise;
+    if (!linkedPickerActive(session)) return;
+    item.paper.replaceChildren(canvas);
+    try {
+      libraryPreviewCache.set(source.id, {
+        name: file.name, size: file.size, lastModified: file.lastModified,
+        src: canvas.toDataURL("image/webp", .8),
+      });
+    } catch { /* Cover stays visible. */ }
+    page.cleanup();
+  } catch (error) {
+    if (linkedPickerActive(session)) {
+      item.paper.textContent = "Önizleme yok";
+      console.warn("Linked PDF cover unavailable:", error);
+    }
+  } finally {
+    if (task) {
+      session.covers.delete(task);
+      try { await task.destroy(); } catch { /* Already closed */ }
+    }
+  }
+}
+
+async function renderLinkedPickerCovers(session, entries) {
+  let next = 0;
+  async function worker() {
+    while (linkedPickerActive(session) && next < entries.length) {
+      await renderLinkedPickerCover(session, entries[next++]);
+    }
+  }
+  await Promise.all([worker(), worker()]);
+}
+
+async function chooseLinkedPickerSource(session, sourceId) {
+  if (!linkedPickerActive(session) || session.saving) return;
+  const source = workspaces.items.find(item =>
+    item.id === sourceId && item.id !== session.targetId && item.fileName);
+  if (!source) return;
+  releaseLinkedPickerSource(session);
+  session.sourceId = sourceId;
+  const epoch = session.sourceEpoch;
+  for (const entry of session.sources) {
+    entry.button.setAttribute("aria-pressed", String(entry.workspace.id === sourceId));
+  }
+  const pending = document.createElement("p");
+  pending.className = "linked-picker-empty";
+  pending.textContent = "W" + sourceId + " PDF'si açılıyor…";
+  ui.linkedPagePickerGrid.replaceChildren(pending);
+  ui.linkedPickerPrev.disabled = true;
+  ui.linkedPickerNext.disabled = true;
+  ui.linkedPickerPageLabel.textContent = "—";
+  linkedPickerMessage("PDF sayfaları hazırlanıyor…");
+  updateLinkedPickerSelection(session);
+  try {
+    const file = await loadWorkspacePdf(sourceId);
+    if (!linkedPickerActive(session) || session.sourceEpoch !== epoch) return;
+    if (!file || file.name !== source.fileName) throw new Error("Kaynak PDF depoda bulunamadı.");
+    session.file = file;
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    if (!linkedPickerActive(session) || session.sourceEpoch !== epoch) return;
+    const task = pdfjs.getDocument({ data: bytes, isEvalSupported: false });
+    session.task = task;
+    const doc = await task.promise;
+    if (!linkedPickerActive(session) || session.sourceEpoch !== epoch) return;
+    session.doc = doc;
+    session.total = doc.numPages;
+    linkedPickerMessage(doc.numPages + " sayfa · Seçimler sayfa grupları arasında korunur; önceden eklenen sayfalar tekrar seçilemez.");
+    renderLinkedPickerPage(session, 0);
+  } catch (error) {
+    if (!linkedPickerActive(session) || session.sourceEpoch !== epoch) return;
+    pending.textContent = "PDF okunamadı. Başka bir kaynak seç.";
+    linkedPickerMessage(error?.message || "PDF açılamadı.");
+    console.warn("Source PDF picker failed:", error);
   }
 }
 
