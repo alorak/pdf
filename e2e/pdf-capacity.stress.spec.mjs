@@ -40,6 +40,7 @@ for (const count of pagesToTest) {
   test(`P2 baseline — ${count} real PDF pages and repeated deep navigation`, async ({ page }, testInfo) => {
     const errors = [];
     page.on("pageerror", error => errors.push(error.message));
+    page.on('console', msg => { if (msg.type() === 'error' || msg.type() === 'warning') console.log('P2_PAGE_CONSOLE ' + msg.type() + ': ' + msg.text()); });
     const file = createPdfFixture(count, { prefix: "P2 STRESS" });
     await page.goto("");
     const cdp = await page.context().newCDPSession(page);
@@ -61,8 +62,11 @@ for (const count of pagesToTest) {
       const viewer = document.querySelector('#viewer');
       const first = document.querySelector('.page-shell');
       const rect = element => element?.getBoundingClientRect().toJSON() || null;
+      const surface = document.querySelector('.page-surface');
       return { viewer: rect(viewer), firstPage: rect(first),
         canvasCount: document.querySelectorAll('canvas').length,
+        surfaceCount: document.querySelectorAll('.page-surface').length,
+        firstSurfaceRect: rect(surface), firstSurfaceChildren: surface?.childElementCount,
         display: viewer && getComputedStyle(viewer).display };
     }));
     await expect.poll(() => page.locator('.page-surface canvas').count(), {
