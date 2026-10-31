@@ -155,6 +155,7 @@ function renderWorkspaceSidebar() {
   ui.activeWorkspaceLabel.textContent = workspaceDisplayName(active);
   ui.addPagesToolbar.hidden = !isLinkedOnlyWorkspace(active);
   ui.emptyOpen.hidden = isLinkedOnlyWorkspace(active);
+  ui.emptyAddPages.hidden = Boolean(active?.fileName || active?.mode === "pdf");
   ui.workspaceCount.textContent = `${workspaces.items.length} / ${MAX_WORKSPACES}`;
   ui.createWorkspace.disabled = workspaces.items.length >= MAX_WORKSPACES;
   ui.createWorkspace.title = ui.createWorkspace.disabled ? `En fazla ${MAX_WORKSPACES} workspace oluşturulabilir` : "Yeni çalışma alanı";
@@ -242,7 +243,7 @@ async function restoreWorkspacePdf(workspaceId) {
   const saved = activeWorkspace(workspaces);
   if (!saved) return;
   if (isLinkedOnlyWorkspace(saved)) {
-    await openLinkedWorkspaceReader();
+    if (saved.linkedPages?.length) await openLinkedWorkspaceReader();
     return;
   }
   if (!saved.fileName) return;
@@ -256,7 +257,8 @@ async function restoreWorkspacePdf(workspaceId) {
       return;
     }
     workspaceFiles.set(workspaceId, file);
-    await openPDF(file, { persistFile: false });
+    if (saved.linkedPages?.length) await openLinkedWorkspaceReader(file);
+    else await openPDF(file, { persistFile: false });
   } catch (error) {
     if (generation === state.generation) {
       console.warn("Workspace PDF restore failed:", error);
@@ -268,9 +270,10 @@ async function restoreWorkspacePdf(workspaceId) {
 }
 
 /** Reuse the normal page, thumbnail, zoom and annotation renderer for referenced pages. */
-async function openLinkedWorkspaceReader() {
+async function openLinkedWorkspaceReader(baseFile = null) {
   const workspace = activeWorkspace(workspaces);
-  if (!isLinkedOnlyWorkspace(workspace)) return;
+  if (!workspace?.linkedPages?.length) return;
+  if (!isLinkedOnlyWorkspace(workspace) && (!baseFile || !workspace.fileName)) return;
   const workspaceId = workspace.id;
   cancelAllWork();
   state.fit = workspace.view?.fit || DEFAULT_WORKSPACE_VIEW.fit;
@@ -282,6 +285,7 @@ async function openLinkedWorkspaceReader() {
   try {
     linkedDoc = await openLinkedDocument({
       references: workspace.linkedPages,
+      base: baseFile,
       workspaces: workspaces.items,
       loadFile: loadWorkspacePdf,
       pdfjs,
@@ -302,14 +306,16 @@ async function openLinkedWorkspaceReader() {
     state.pageCount = linkedDoc.numPages;
     state.dimensions = new Array(state.pageCount);
     state.dimensions[0] = { width: rect.width, height: rect.height };
-    state.fileSize = 0;
+    state.fileSize = baseFile?.size || 0;
     ui.app.classList.add("has-document");
     ui.empty.hidden = true;
     ui.pages.hidden = false;
-    ui.fileLabel.textContent = `Sayfa derlemesi · ${linkedDoc.numPages} sayfa`;
-    ui.fileLabel.title = `W${workspaceId} · başka PDF'lerden eklenmiş sayfalar`;
+    ui.fileLabel.textContent = baseFile
+      ? `${workspace.fileName} + ${workspace.linkedPages.length} sayfa`
+      : `Sayfa derlemesi · ${linkedDoc.numPages} sayfa`;
+    ui.fileLabel.title = `W${workspaceId} · kaynak PDF'lerden seçilmiş sayfalar`;
     ui.pdfInfoButton.disabled = true;
-    ui.status.textContent = `${linkedDoc.numPages} seçili sayfa · Dosyalar kaynak workspace'lerde`;
+    ui.status.textContent = `${linkedDoc.numPages} sayfa · PDF'ler kaynak workspace'lerde`;
     createPageElements();
     updateSettingsView();
     updateToolbar();
@@ -2312,7 +2318,10 @@ function buildLibraryWorkspaceCards(records) {
         createWorkspaceFromLibrary();
       } else {
         changeWorkspace(workspace.id);
-        if (!workspace.fileName && !workspace.linkedPages?.length) askToOpen(null, workspace.id);
+        if (!workspace.fileName && !workspace.linkedPages?.length) {
+          if (isLinkedOnlyWorkspace(workspace)) openAddLinkedPagesDialog();
+          else askToOpen(null, workspace.id);
+        }
       }
     });
     card.append(select);
