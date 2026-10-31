@@ -1,4 +1,5 @@
 name: P2.5 temporary full raster acceptance
+# Use on-disk Playwright upload for fixtures over 50 MiB.
 
 on:
   pull_request:

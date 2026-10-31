@@ -1,6 +1,8 @@
 import { test, expect } from "@playwright/test";
 import { performance } from "node:perf_hooks";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { generateImagePdf, imageFixtureManifest } from "../scripts/p2-5-image-fixtures.mjs";
 
 const profile = process.env.P2_IMAGE_PROFILE || "smoke";
@@ -49,10 +51,20 @@ async function openFixture(page, fixture, filename) {
   await page.locator("#emptyOpenButton").click();
   const picker = await choose;
   const time = performance.now();
-  await picker.setFiles({ name: filename + ".pdf", mimeType: "application/pdf", buffer: fixture });
-  await expect(page.locator("#confirmReplace")).toBeVisible();
-  await page.locator("#confirmReplace").click();
-  return time;
+  // Playwright rejects >50 MiB in-memory setFiles buffers. The large raster
+  // fixture must be uploaded from a real temporary file, never from a buffer.
+  // Keep it outside test-results so the 100 MiB source PDF is not archived.
+  const directory = await mkdtemp(join(tmpdir(), "p2-5-raster-"));
+  const path = join(directory, filename + ".pdf");
+  try {
+    await writeFile(path, fixture);
+    await picker.setFiles(path);
+    await expect(page.locator("#confirmReplace")).toBeVisible();
+    await page.locator("#confirmReplace").click();
+    return time;
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 }
 async function runRasterScenario(page, browser, kind, options, { mobile = false } = {}) {
   const filename = fixtureName(kind, mobile);
