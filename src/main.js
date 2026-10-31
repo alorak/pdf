@@ -103,6 +103,7 @@ let pendingDeleteWorkspaceId = null;
 let pendingLibraryDeletion = null;
 let libraryBookmarkWorkspaceId = null;
 let libraryBookmarkPageIndex = 0;
+let libraryBookmarkPreviewSession = null;
 let libraryRequestId = 0;
 let linkedPagesEpoch = 0;
 const linkedPageTasks = new Set();
@@ -1828,19 +1829,125 @@ function createWorkspaceFromLibrary() {
   askToOpen(null, next.activeId);
 }
 
+function releaseLibraryBookmarkPreviews() {
+  const session = libraryBookmarkPreviewSession;
+  libraryBookmarkPreviewSession = null;
+  if (!session) return;
+  session.cancelled = true;
+  session.epoch++;
+  try { session.renderTask?.cancel(); } catch { /* Already finished */ }
+  if (session.loadingTask) void session.loadingTask.destroy().catch(() => {});
+}
+
+function currentLibraryBookmarkPreview(session, epoch) {
+  return libraryBookmarkPreviewSession === session && !session.cancelled
+    && session.epoch === epoch && ui.libraryBookmarksDialog.open;
+}
+
+function loadLibraryBookmarkDocument(session) {
+  if (!session.documentPromise) {
+    session.documentPromise = (async () => {
+      let file = workspaceFiles.get(session.workspaceId);
+      if (!file || file.name !== session.fileName) file = await loadWorkspacePdf(session.workspaceId);
+      if (session.cancelled || libraryBookmarkPreviewSession !== session) return null;
+      if (!file || file.name !== session.fileName) throw new Error("PDF bulunamadı");
+      const data = new Uint8Array(await file.arrayBuffer());
+      if (session.cancelled || libraryBookmarkPreviewSession !== session) return null;
+      const task = pdfjs.getDocument({ data, isEvalSupported: false });
+      session.loadingTask = task;
+      return task.promise;
+    })();
+  }
+  return session.documentPromise;
+}
+
+async function drawLibraryBookmarkPreviews(session, previews, epoch) {
+  const current = () => currentLibraryBookmarkPreview(session, epoch);
+  try {
+    const pdf = await loadLibraryBookmarkDocument(session);
+    if (!current() || !pdf) return;
+    for (const { pageNumber, frame, placeholder } of previews) {
+      if (!current()) return;
+      if (pageNumber > pdf.numPages) {
+        placeholder.textContent = "Sayfa bulunamadı";
+        continue;
+      }
+      const cached = session.cache.get(pageNumber);
+      if (cached) {
+        const img = document.createElement("img");
+        img.src = cached;
+        img.alt = "";
+        img.setAttribute("aria-hidden", "true");
+        frame.replaceChildren(img);
+        continue;
+      }
+      try {
+        const page = await pdf.getPage(pageNumber);
+        if (!current()) return;
+        const base = page.getViewport({ scale: 1 });
+        const scale = Math.max(0.01, Math.min(
+          Math.max(1, frame.clientWidth - 12) / base.width,
+          Math.max(1, frame.clientHeight - 12) / base.height
+        ));
+        const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+        const viewport = page.getViewport({ scale: scale * pixelRatio });
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.ceil(viewport.width));
+        canvas.height = Math.max(1, Math.ceil(viewport.height));
+        canvas.style.width = `${Math.floor(viewport.width / pixelRatio)}px`;
+        canvas.style.height = `${Math.floor(viewport.height / pixelRatio)}px`;
+        canvas.setAttribute("aria-hidden", "true");
+        const canvasContext = canvas.getContext("2d", { alpha: false });
+        if (!canvasContext) throw new Error("Canvas context unavailable");
+        const task = page.render({ canvas, canvasContext, viewport });
+        session.renderTask = task;
+        await task.promise;
+        if (session.renderTask === task) session.renderTask = null;
+        if (!current()) return;
+        frame.replaceChildren(canvas);
+        if (session.cache.size >= 20) session.cache.delete(session.cache.keys().next().value);
+        try { session.cache.set(pageNumber, canvas.toDataURL("image/webp", 0.8)); }
+        catch { /* Thumbnail is still visible without a cache entry. */ }
+        page.cleanup();
+      } catch (error) {
+        if (!current()) return;
+        console.warn("Bookmark thumbnail render failed:", error);
+        placeholder.textContent = "Önizleme yok";
+      }
+    }
+  } catch (error) {
+    if (!current()) return;
+    console.warn("Bookmark PDF preview failed:", error);
+    for (const entry of previews) {
+      if (entry.frame.contains(entry.placeholder)) entry.placeholder.textContent = "PDF önizlemesi açılamadı";
+    }
+  }
+}
+
 function openLibraryBookmarkModal(workspaceId) {
   const workspace = workspaces.items.find((entry) => entry.id === workspaceId);
   if (!workspace || ui.libraryPage.hidden) return;
+  releaseLibraryBookmarkPreviews();
   libraryBookmarkWorkspaceId = workspaceId;
   libraryBookmarkPageIndex = 0;
-  renderLibraryBookmarkModal();
+  libraryBookmarkPreviewSession = {
+    workspaceId, fileName: workspace.fileName, cancelled: false,
+    epoch: 0, documentPromise: null, loadingTask: null,
+    renderTask: null, cache: new Map(),
+  };
   ui.libraryBookmarksDialog.showModal();
+  renderLibraryBookmarkModal();
   ui.closeLibraryBookmarks.focus();
 }
 
 function renderLibraryBookmarkModal() {
   const workspace = workspaces.items.find((entry) => entry.id === libraryBookmarkWorkspaceId);
   if (!workspace) return;
+  const session = libraryBookmarkPreviewSession;
+  const epoch = session ? ++session.epoch : 0;
+  try { session?.renderTask?.cancel(); } catch { /* Already finished */ }
+  if (session) session.renderTask = null;
+
   const summary = libraryBookmarkSummary(workspace);
   const current = paginateLibraryBookmarkPages(summary.pages, libraryBookmarkPageIndex);
   libraryBookmarkPageIndex = current.pageIndex;
@@ -1848,21 +1955,28 @@ function renderLibraryBookmarkModal() {
   ui.libraryBookmarksSummary.textContent =
     `${summary.count} yer imi · ${summary.pages.length} sayfa` +
     (workspace.fileName ? ` · ${workspace.fileName}` : "");
-  ui.libraryBookmarkPages.replaceChildren();
+
+  const fragment = document.createDocumentFragment();
+  const previews = [];
   if (!current.items.length) {
     const empty = document.createElement("p");
     empty.className = "library-bookmark-empty";
     empty.textContent = "Bu workspace'te kayıtlı sayfa veya metin yer imi bulunmuyor.";
-    ui.libraryBookmarkPages.append(empty);
+    fragment.append(empty);
   }
   for (const group of current.items) {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "library-bookmark-destination";
     button.setAttribute("aria-label", `W${workspace.id} PDF'sinde sayfa ${group.page} aç`);
-    const pageLabel = document.createElement("span");
-    pageLabel.className = "library-bookmark-page-number";
-    pageLabel.textContent = String(group.page);
+    const frame = document.createElement("span");
+    frame.className = "library-bookmark-preview";
+    const placeholder = document.createElement("span");
+    placeholder.className = "library-bookmark-preview-placeholder";
+    placeholder.textContent = "Yükleniyor…";
+    frame.append(placeholder);
+    previews.push({ pageNumber: group.page, frame, placeholder });
+
     const details = document.createElement("span");
     details.className = "library-bookmark-details";
     const title = document.createElement("strong");
@@ -1879,17 +1993,17 @@ function renderLibraryBookmarkModal() {
       snippet.textContent = group.preview;
       details.append(snippet);
     }
-    const arrow = document.createElement("span");
-    arrow.className = "library-bookmark-arrow";
-    arrow.textContent = "›";
-    arrow.setAttribute("aria-hidden", "true");
-    button.append(pageLabel, details, arrow);
-    button.addEventListener("click", () => { void navigateToLibraryBookmark(workspace.id, workspace.fileName, group.page); });
-    ui.libraryBookmarkPages.append(button);
+    button.append(frame, details);
+    button.addEventListener("click", () => {
+      void navigateToLibraryBookmark(workspace.id, workspace.fileName, group.page);
+    });
+    fragment.append(button);
   }
+  ui.libraryBookmarkPages.replaceChildren(fragment);
   ui.libraryBookmarkPaginationLabel.textContent = `${current.pageIndex + 1} / ${current.totalPages}`;
   ui.libraryBookmarkPrev.disabled = current.pageIndex === 0;
   ui.libraryBookmarkNext.disabled = current.pageIndex >= current.totalPages - 1;
+  if (session && previews.length) void drawLibraryBookmarkPreviews(session, previews, epoch);
 }
 
 async function navigateToLibraryBookmark(workspaceId, fileName, page) {
@@ -2278,7 +2392,10 @@ ui.closeAddLinkedPages.addEventListener("click", () => ui.addLinkedPagesDialog.c
 ui.cancelAddLinkedPages.addEventListener("click", () => ui.addLinkedPagesDialog.close());
 ui.confirmAddLinkedPages.addEventListener("click", () => { void confirmAddLinkedPages(); });
 ui.closeLibraryBookmarks.addEventListener("click", () => ui.libraryBookmarksDialog.close());
-ui.libraryBookmarksDialog.addEventListener("close", () => { libraryBookmarkWorkspaceId = null; });
+ui.libraryBookmarksDialog.addEventListener("close", () => {
+  releaseLibraryBookmarkPreviews();
+  libraryBookmarkWorkspaceId = null;
+});
 ui.libraryBookmarkPrev.addEventListener("click", () => {
   libraryBookmarkPageIndex--;
   renderLibraryBookmarkModal();
