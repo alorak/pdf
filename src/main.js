@@ -3453,16 +3453,46 @@ ui.viewer.addEventListener("pointermove", handleHighlightHover);
 ui.viewer.addEventListener("pointerleave", hideHighlightRemove);
 ui.viewer.addEventListener("scroll", hideHighlightRemove, { passive: true });
 
+// Native drag/drop works both for bookmarks and for linked-only page order.
+async function reorderLinkedPageAt(source, target, after = false) {
+  if (linkedPageReorderBusy || !isLinkedOnlyWorkspace(activeWorkspace(workspaces))
+      || state.thumbnailMode !== "pages") return;
+  const next = reorderLinkedWorkspacePage(workspaces, source, target, after);
+  if (next === workspaces) return;
+  linkedPageReorderBusy = true;
+  clearTimeout(lastPageSaveTimer);
+  lastPageSaveTimer = 0;
+  try {
+    await waitForWorkspaceSaves();
+    ensureWritable();
+    workspaces = next;
+    await persistWorkspaces();
+    renderWorkspaceSidebar();
+    await openLinkedWorkspaceReader();
+    showToast("Sayfa sırası kaydedildi; yer imleri ve okuma konumu taşındı.");
+  } catch (error) {
+    console.warn("Linked page reorder failed:", error);
+    showToast("Sayfa sırası kaydedilemedi. Önceki kayıtları korumak için sayfayı yenile.");
+  } finally { linkedPageReorderBusy = false; }
+}
+function isDraggableThumbnailMode() {
+  return state.thumbnailMode === "bookmarks"
+    || (state.thumbnailMode === "pages" && isLinkedOnlyWorkspace(activeWorkspace(workspaces)));
+}
 // Native drag/drop reorders bookmarks. Pages mode is always in PDF page order.
 function reorderBookmarkAt(source, entry, clientX, clientY) {
   const target = entry ? Number(entry.dataset.index) + 1 : null;
-  if (!source || !target || source === target || state.thumbnailMode !== "bookmarks") return;
+  if (!source || !target || source === target || !isDraggableThumbnailMode()) return;
   const bounds = entry.getBoundingClientRect();
   const after = state.thumbPosition === "bottom"
     ? clientX > bounds.left + bounds.width / 2
     : clientY > bounds.top + bounds.height / 2;
   const workspace = activeWorkspace(workspaces);
-  const next = reorderBookmarkedPage(workspaces, workspace.fileName, state.pageCount, source, target, after);
+  if (state.thumbnailMode === "pages" && isLinkedOnlyWorkspace(workspace)) {
+    void reorderLinkedPageAt(source, target, after);
+    return;
+  }
+  const next = reorderBookmarkedPage(workspaces, workspaceDocumentName(workspace), state.pageCount, source, target, after);
   if (next !== workspaces) updateWorkspaces(next);
 }
 function clearBookmarkDrag() {
@@ -3471,7 +3501,7 @@ function clearBookmarkDrag() {
 }
 ui.thumbList.addEventListener("dragstart", (event) => {
   const entry = event.target instanceof Element ? event.target.closest(".thumb-entry") : null;
-  if (state.thumbnailMode !== "bookmarks" || !entry) { event.preventDefault(); return; }
+  if (!isDraggableThumbnailMode() || !entry) { event.preventDefault(); return; }
   draggingBookmarkPage = Number(entry.dataset.index) + 1;
   entry.classList.add("dragging");
   if (event.dataTransfer) {
@@ -3482,14 +3512,14 @@ ui.thumbList.addEventListener("dragstart", (event) => {
 });
 ui.thumbList.addEventListener("dragover", (event) => {
   const entry = event.target instanceof Element ? event.target.closest(".thumb-entry") : null;
-  if (state.thumbnailMode !== "bookmarks" || !draggingBookmarkPage || !entry) return;
+  if (!isDraggableThumbnailMode() || !draggingBookmarkPage || !entry) return;
   event.preventDefault();
   if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
   for (const node of state.thumbEntries) node.classList.remove("drag-over");
   if (Number(entry.dataset.index) + 1 !== draggingBookmarkPage) entry.classList.add("drag-over");
 });
 ui.thumbList.addEventListener("drop", (event) => {
-  if (state.thumbnailMode !== "bookmarks" || !draggingBookmarkPage) return;
+  if (!isDraggableThumbnailMode() || !draggingBookmarkPage) return;
   event.preventDefault();
   event.stopPropagation();
   const entry = event.target instanceof Element ? event.target.closest(".thumb-entry") : null;
@@ -3501,7 +3531,7 @@ ui.thumbList.addEventListener("dragend", clearBookmarkDrag);
 // Touch/pen reorder uses a dedicated grip, keeping one-finger list scrolling natural.
 ui.thumbList.addEventListener("pointerdown", (event) => {
   const grip = event.target instanceof Element ? event.target.closest(".thumb-drag-handle") : null;
-  if (!grip || state.thumbnailMode !== "bookmarks" || event.pointerType === "mouse") return;
+  if (!grip || !isDraggableThumbnailMode() || event.pointerType === "mouse") return;
   const entry = grip.closest(".thumb-entry");
   if (!entry) return;
   event.preventDefault();
