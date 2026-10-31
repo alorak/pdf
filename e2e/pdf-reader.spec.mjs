@@ -46,6 +46,9 @@ async function openTestPdf(page) {
   await expect(page.locator("#replaceDialog")).toBeVisible();
   await page.locator("#confirmReplace").click();
   await expect(page.locator("#pageTotal")).toHaveText("3", { timeout: 20000 });
+  await expect.poll(() => page.locator('.page-surface canvas').count(), {
+    timeout: 15000, message: 'PDF must draw a real canvas, not only metadata',
+  }).toBeGreaterThan(0);
   await expect(page.locator("#searchToggle")).toBeEnabled();
 }
 
