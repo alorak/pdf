@@ -75,6 +75,10 @@ Test matrisi ve tekrar üretme: [stress/README.md](stress/README.md). [P2.3 tam 
 
 300 ve üzeri sayfada küçük resimler solda/altta, ana PDF sayfaları da dikey/yatay akışta yalnızca görünür pencereyi DOM'a oluşturur. 300+ yer imi için seçili sayfa sırası korunur. 5.000 sayfalık tam kabul testi başarılıdır; kalan karmaşık drag/drop ve yoğun yer-imi senaryoları için [kanıtlar ve kapsam](docs/p2-4c-thumbnails.md) belgesine bakın.
 
+### P2.5 — Görüntü ağırlıklı PDF ve bellek dayanıklılığı
+
+Taranmış (OCR'siz), karma görüntü+metin ve mobil Chromium senaryoları için tekrarlanabilir, büyük ve bağımsız RGB raster PDF'ler üretilir. Gerçek raster pikseli, son sayfa, metin arama, DOM/canvas sınırları ve gözlemsel JS heap ölçümleri doğrulanır. Normal PR'larda hafif profil, nightly CI'da 100+ MiB raster PDF koşusu kullanılır. [P2.5 kapsamı, ölçüm protokolü ve sınırlamalar](docs/p2-5-raster-memory.md).
+
 ## Çalıştırma
 
 Node.js 22+ gerektirir (Node.js 24 önerilir).
