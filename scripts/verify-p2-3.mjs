@@ -40,6 +40,9 @@ for (const pages of expected) {
     assert.ok(b.afterLoad.pageShells > 0 && b.afterLoad.pageShells <= 80);
     assert.ok(c.initial.pages > 0 && c.initial.pages <= 80);
     assert.ok(c.end.pages > 0 && c.end.pages <= 80);
+    assert.ok(b.afterLoad.thumbnailEntries > 0 && b.afterLoad.thumbnailEntries <= 80);
+    assert.ok(c.initial.thumbnailEntries > 0 && c.initial.thumbnailEntries <= 80);
+    assert.ok(c.end.thumbnailEntries > 0 && c.end.thumbnailEntries <= 80);
   } else {
     assert.equal(b.afterLoad.pageShells, pages);
     assert.equal(c.initial.pages, pages);

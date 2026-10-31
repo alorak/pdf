@@ -71,6 +71,10 @@ Test matrisi ve tekrar üretme: [stress/README.md](stress/README.md). [P2.3 tam 
 - Tam metin aramada bounded eşzamanlı PDF.js okuma, sayfa sırasını koruyan sonuç birleştirme ve 24 MiB RAM-only belge metin önbelleği kullanılır. Kaynak dosya ve workspace kayıtlarına dokunulmaz.
 - Yatay görünüm, yalnızca yer imleri modu ve küçük resimler henüz pencerelemeli değildir. Kabul matrisi: [P2.4 tasarım ve sınırlar](docs/p2-4-performance.md).
 
+### P2.4-C — Küçük resim sanallaştırma
+
+300 ve üzeri sayfada küçük resimler solda/altta, ana PDF sayfaları da dikey/yatay akışta yalnızca görünür pencereyi DOM'a oluşturur. 300+ yer imi için seçili sayfa sırası korunur. 5.000 sayfalık tam kabul testi başarılıdır; kalan karmaşık drag/drop ve yoğun yer-imi senaryoları için [kanıtlar ve kapsam](docs/p2-4c-thumbnails.md) belgesine bakın.
+
 ## Çalıştırma
 
 Node.js 22+ gerektirir (Node.js 24 önerilir).

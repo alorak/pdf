@@ -197,6 +197,21 @@ input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer
 .thumb-entry[hidden], .thumb-empty[hidden] { display: none !important; }
 .thumb-list { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 6px 22px 24px; display: flex; flex-direction: column; align-items: center; gap: 15px; scrollbar-width: thin; }
 .thumb-entry { position: relative; flex: 0 0 auto; width: 146px; border-radius: 10px; }
+
+/* P2.4-C: deterministic item size keeps native scrollbars accurate while only
+   the visible thumbnail window has live DOM/canvas and event listeners. */
+.thumb-list.virtual-thumbnails .thumb-entry { height: 185px; overflow: hidden; }
+.thumb-list.virtual-thumbnails .thumb-number {
+  max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+.thumb-list.virtual-thumbnails .virtual-thumb-spacer {
+  flex: 0 0 auto; width: 1px; min-height: 0; pointer-events: none;
+}
+.app-shell.thumbs-bottom .thumb-list.virtual-thumbnails .thumb-entry { height: 132px; }
+.app-shell.thumbs-bottom .thumb-list.virtual-thumbnails .virtual-thumb-spacer {
+  height: 1px; min-width: 0; width: auto;
+}
+
 .thumb-item {
   display: flex; flex-direction: column; align-items: center; gap: 6px; width: 100%;
   border: 0; padding: 7px; background: transparent; border-radius: 10px;
@@ -341,6 +356,11 @@ input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer
   gap: 40px; padding: 34px 40px 52px;
 }
 .pages.vertical { flex-direction: column; width: 100%; }
+/* P2.4-C horizontal PDF window: maintain full scrollWidth with virtual spacers. */
+.pages.horizontal.virtual-pages .virtual-page-spacer {
+  height: 1px; min-width: 0; flex: 0 0 auto;
+}
+
 .pages.horizontal { flex-direction: row; height: 100%; width: max-content; }
 .pages.virtual-pages .virtual-page-spacer {
   flex: 0 0 auto; align-self: center; width: 1px; pointer-events: none;
