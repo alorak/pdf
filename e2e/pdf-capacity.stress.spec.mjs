@@ -32,6 +32,9 @@ async function navigate(page, target) {
   await page.locator("#pageInput").fill(String(target));
   await page.locator("#pageInput").press("Enter");
   await expect(page.locator("#pageInput")).toHaveValue(String(target));
+  await expect.poll(() => page.locator('.page-shell[data-index="'+String(target-1)+'"] .page-surface canvas').count(), {
+    timeout: 18000, message: 'Deep target page must render a canvas',
+  }).toBeGreaterThan(0);
   await page.waitForTimeout(550);
   return Math.round(performance.now() - started);
 }
