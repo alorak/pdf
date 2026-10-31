@@ -27,7 +27,7 @@ function makeFile(name, bytes, modified) {
 
 test("20 workspaces × 100 referenced pages survive reorder, 1900 links and backup round-trip", { timeout: 90000 }, async () => {
   const started = clock();
-  const source = makeFile("large-source.pdf", generatePdfFixture(1000), 101);
+  const source = makeFile("large-source.pdf", generatePdfFixture(2000), 101);
   let state = setWorkspaceFile(initialWorkspaces(), source.name);
   for (let i = 1; i < MAX_WORKSPACES; i++) {
     state = addWorkspace(state);
