@@ -34,6 +34,9 @@ for (const pages of pageCounts) {
     });
     await page.locator("#confirmReplace").click();
     await expect(page.locator("#pageTotal")).toHaveText(String(pages), { timeout: 180_000 });
+    // Page totals alone can succeed before canvas drawing. A visual baseline
+    // must wait for an actual rendered PDF page.
+    await expect(page.locator(".page-surface canvas").first()).toBeVisible({ timeout: 45_000 });
     const firstPageMs = round(performance.now() - loadStart);
     const afterLoad = await metrics(page);
     assertSamples(afterLoad, pages);
