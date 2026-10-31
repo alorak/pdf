@@ -1608,6 +1608,7 @@ async function refreshLinkedPages() {
   const entries = references.map(makeLinkedPageCard);
   ui.linkedPagesList.append(...entries.map((entry) => entry.card));
   const documents = new Map();
+  const ownedTasks = new Set();
   const current = () => token === linkedPagesEpoch && !ui.linkedPagesPage.hidden && workspaces.activeId === target.id;
   try {
     for (const entry of entries) {
@@ -1633,6 +1634,7 @@ async function refreshLinkedPages() {
         if (!current()) break;
         const task = pdfjs.getDocument({ data: bytes, isEvalSupported: false });
         linkedPageTasks.add(task);
+        ownedTasks.add(task);
         doc = await task.promise;
         if (!current()) break;
         documents.set(ref.sourceWorkspaceId, doc);
@@ -1675,7 +1677,7 @@ async function refreshLinkedPages() {
       }
     }
   } finally {
-    for (const task of [...linkedPageTasks]) {
+    for (const task of ownedTasks) {
       linkedPageTasks.delete(task);
       try { await task.destroy(); } catch { /* Task may already be cancelled. */ }
     }
