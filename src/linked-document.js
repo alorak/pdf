@@ -65,9 +65,12 @@ export async function openLinkedDocument({ references, workspaces, loadFile, pdf
       ensureCurrent();
       const sourceId = reference.sourceWorkspaceId;
       const source = workspaces.find((item) => item.id === sourceId);
-      let doc = documentById.get(sourceId);
+      const sourceKey = JSON.stringify([
+        sourceId, reference.sourceFileName, reference.sourceSize, reference.sourceLastModified,
+      ]);
+      let doc = documentById.get(sourceKey);
       let valid = Boolean(doc);
-      if (!documentById.has(sourceId)) {
+      if (!documentById.has(sourceKey)) {
         try {
           if (!source || source.fileName !== reference.sourceFileName) throw new Error("Source changed");
           const file = await loadFile(sourceId);
@@ -84,7 +87,7 @@ export async function openLinkedDocument({ references, workspaces, loadFile, pdf
           doc = null;
           valid = false;
         }
-        documentById.set(sourceId, doc);
+        documentById.set(sourceKey, doc);
       }
       if (valid && Number.isSafeInteger(reference.page) && reference.page >= 1 &&
         reference.page <= doc.numPages) {
