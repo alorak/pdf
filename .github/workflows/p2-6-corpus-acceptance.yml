@@ -1,4 +1,4 @@
-name: P2.6 one-off licensed real PDF corpus acceptance
+name: P2.6 one-off licensed real PDF corpus acceptance\n# Pinned SHA-256 and explicit WASM decoder acceptance
 
 on:
   pull_request:
@@ -51,18 +51,19 @@ jobs:
           import {createHash} from 'node:crypto';
           const root='/tmp/p26-public-corpus';
           const entries=[
-            {id:'naca1947-original-scan',base:'naca-1947',rightsBasis:'1947 NACA government work; NASA NTRS public use',text:'either',minImagePages:0},
-            {id:'govinfo1941-original-scan',base:'govinfo-1941',rightsBasis:'1941 US GPO work; GovInfo 17 USC 105 public domain',text:'either',minImagePages:0},
-            {id:'cc0-jpeg-image-only',base:'cc0-scanned',rightsBasis:'tinytoolkit-org/pdf-sample-files CC0-1.0',text:'none',minImagePages:3},
-            {id:'cc0-text-ten-pages',base:'cc0-text-10',rightsBasis:'tinytoolkit-org/pdf-sample-files CC0-1.0',text:'present',minImagePages:0},
-            {id:'cc0-acroform-filled',base:'cc0-filled-form',rightsBasis:'tinytoolkit-org/pdf-sample-files CC0-1.0',text:'either',minImagePages:0},
+            {id:'naca1947-original-scan',expectedSha256:'db6f42598cd042130feb3d2867d35c019ad2e1448f1fd4885107bace207bb7ee',base:'naca-1947',rightsBasis:'1947 NACA government work; NASA NTRS public use',text:'either',minImagePages:1},
+            {id:'govinfo1941-original-scan',expectedSha256:'87732f0521d47afd3334584fc9f310ac9bdd86ed440f5abc1c69132cee6e4ff5',base:'govinfo-1941',rightsBasis:'1941 US GPO work; GovInfo 17 USC 105 public domain',text:'either',minImagePages:1},
+            {id:'cc0-jpeg-image-only',expectedSha256:'d32a62e246778d856c85b03bfc6c91c36c9a071756b733f78daf46b4253de634',base:'cc0-scanned',rightsBasis:'tinytoolkit-org/pdf-sample-files CC0-1.0',text:'none',minImagePages:3},
+            {id:'cc0-text-ten-pages',expectedSha256:'e8ce18676ce6c053532c6ace5a28fd9c0a79df22a8e19ae75026a249dcc2db6d',base:'cc0-text-10',rightsBasis:'tinytoolkit-org/pdf-sample-files CC0-1.0',text:'present',minImagePages:0},
+            {id:'cc0-acroform-filled',expectedSha256:'17a5947607077aa0581cfc6c7f3158779b36b2c4c92e18cdeb9793bdbb2912fc',base:'cc0-filled-form',rightsBasis:'tinytoolkit-org/pdf-sample-files CC0-1.0',text:'either',minImagePages:0},
           ];
           const cases=[];
           for(const item of entries){
             const bytes=await readFile(root+'/files/'+item.base+'.pdf');
             const sha256=createHash('sha256').update(bytes).digest('hex');
+            if(sha256!==item.expectedSha256)throw Error('Pinned SHA-256 mismatch: '+item.id);
             console.log('P2_6_PUBLIC_CORPUS_SOURCE '+JSON.stringify({id:item.id,bytes:bytes.length,sha256}));
-            const {base,...rest}=item;
+            const {base,expectedSha256,...rest}=item;
             cases.push({...rest,file:'files/'+base+'.pdf',sha256,rightsConfirmed:true});
           }
           await writeFile(root+'/manifest.json',JSON.stringify({version:1,cases},null,2));

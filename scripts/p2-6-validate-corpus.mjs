@@ -32,7 +32,7 @@ if (!manifestPath) {
       if (sha256 !== item.sha256) throw Error("Corpus SHA-256 mismatch: " + item.id);
       const beforeRss = process.memoryUsage().rss;
       const began = performance.now();
-      const loading = getDocument({ data: new Uint8Array(bytes), isEvalSupported: false });
+      const loading = getDocument({ data: new Uint8Array(bytes), isEvalSupported: false,\n        wasmUrl: new URL("../node_modules/pdfjs-dist/wasm/", import.meta.url).href });
       let numPages = 0, sampledPages = [], observedImagePages = 0, observedTextPages = 0;
       try {
         const pdf = await loading.promise;

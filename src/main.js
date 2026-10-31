@@ -2269,7 +2269,7 @@ async function openPDF(file, { replaceWorkspace = false, persistFile = true } = 
   try {
     const data = new Uint8Array(await file.arrayBuffer());
     if (generation !== state.generation) return;
-    state.loadingTask = pdfjs.getDocument({ data, isEvalSupported: false });
+    state.loadingTask = pdfjs.getDocument({ data, isEvalSupported: false, wasmUrl: import.meta.env.BASE_URL + "pdfjs-wasm/" });
     const doc = await state.loadingTask.promise;
     if (generation !== state.generation) {
       // cancelAllWork() already destroyed this document's loading task.
@@ -2457,7 +2457,7 @@ async function renderLinkedPickerCover(session, item) {
     }
     const bytes = new Uint8Array(await file.arrayBuffer());
     if (!linkedPickerActive(session)) return;
-    task = pdfjs.getDocument({ data: bytes, isEvalSupported: false });
+    task = pdfjs.getDocument({ data: bytes, isEvalSupported: false, wasmUrl: import.meta.env.BASE_URL + "pdfjs-wasm/" });
     session.covers.add(task);
     const pdf = await task.promise;
     if (!linkedPickerActive(session)) return;
@@ -2534,7 +2534,7 @@ async function chooseLinkedPickerSource(session, sourceId) {
     session.file = file;
     const bytes = new Uint8Array(await file.arrayBuffer());
     if (!linkedPickerActive(session) || session.sourceEpoch !== epoch) return;
-    const task = pdfjs.getDocument({ data: bytes, isEvalSupported: false });
+    const task = pdfjs.getDocument({ data: bytes, isEvalSupported: false, wasmUrl: import.meta.env.BASE_URL + "pdfjs-wasm/" });
     session.task = task;
     const doc = await task.promise;
     if (!linkedPickerActive(session) || session.sourceEpoch !== epoch) return;
@@ -2845,7 +2845,7 @@ function loadLibraryBookmarkDocument(session) {
       if (!file || file.name !== session.fileName) throw new Error("PDF bulunamadı");
       const data = new Uint8Array(await file.arrayBuffer());
       if (session.cancelled || libraryBookmarkPreviewSession !== session) return null;
-      const task = pdfjs.getDocument({ data, isEvalSupported: false });
+      const task = pdfjs.getDocument({ data, isEvalSupported: false, wasmUrl: import.meta.env.BASE_URL + "pdfjs-wasm/" });
       session.loadingTask = task;
       return task.promise;
     })();
@@ -3148,7 +3148,7 @@ async function renderLibraryPreview({ record, canvas, placeholder }, requestId) 
     if (!file || !isCurrent() || file.name !== record.name || file.size !== record.size) return;
     const bytes = new Uint8Array(await file.arrayBuffer());
     if (!isCurrent()) return;
-    loadingTask = pdfjs.getDocument({ data: bytes, isEvalSupported: false });
+    loadingTask = pdfjs.getDocument({ data: bytes, isEvalSupported: false, wasmUrl: import.meta.env.BASE_URL + "pdfjs-wasm/" });
     libraryPreviewTasks.add(loadingTask);
     const pdf = await loadingTask.promise;
     if (!isCurrent()) return;

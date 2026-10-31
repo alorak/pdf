@@ -19,8 +19,13 @@ for (const item of cases) {
     const errors = [];
     page.on("pageerror", e => errors.push(e.message));
     page.on("console", m => {
-      if (m.type() === "error" && /PDF page render failed|PDF thumbnail render failed/.test(m.text())) {
-        errors.push(m.text());
+      if (/PDF page render failed|PDF thumbnail render failed|Unable to decode image|failed to initialize/i.test(m.text())) {
+        errors.push(m.text().slice(0, 240));
+      }
+    });
+    page.on("response", response => {
+      if (response.url().includes("/pdfjs-wasm/") && response.status() >= 400) {
+        errors.push("decoder request failed: HTTP " + response.status());
       }
     });
     await page.goto("");
@@ -37,9 +42,20 @@ for (const item of cases) {
       await page.locator("#pageInput").fill(String(pageNo));
       await page.locator("#pageInput").press("Enter");
       const selector = '.page-shell[data-index="' + (pageNo - 1) + '"] canvas';
-      await expect.poll(() => page.locator(selector).evaluateAll(all => all.some(c => c.width > 0 &&
-        c.height > 0 && c.getContext("2d").getImageData(0, 0, 1, 1).data[3] !== 0)),
-        { timeout: 180_000 }).toBe(true);
+      await expect.poll(() => page.locator(selector).evaluateAll((all, checkRaster) => all.some(c => {
+        if (!c.width || !c.height) return false;
+        const ctx = c.getContext("2d");
+        if (!ctx) return false;
+        // Form-only pages can be drawn as transparent canvas plus HTML widgets.
+        // For raster cases, verify pixels are actually painted, not just allocated.
+        if (!checkRaster) return true;
+        for (const fraction of [0.15, 0.35, 0.55, 0.75]) {
+          const color = ctx.getImageData(Math.floor(c.width * fraction),
+            Math.floor(c.height * fraction), 1, 1).data;
+          if (color[3] > 0) return true;
+        }
+        return false;
+      }), item.minImagePages > 0), { timeout: 120_000 }).toBe(true);
       const sample = await page.evaluate(() => ({
         domNodes: document.querySelectorAll("*").length,
         pageCanvases: document.querySelectorAll(".page-surface canvas").length,
