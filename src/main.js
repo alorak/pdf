@@ -7,7 +7,7 @@ import {
   setWorkspaceFile, clearActiveWorkspace, removeWorkspace, saveSelectedText, savePageBookmark,
   removeSelectedText, removePageBookmarks, bookmarkedPageNumbers, orderedBookmarkedPageNumbers,
   reorderBookmarkedPage, moveBookmarkedPage, MAX_HIGHLIGHT_RECTS,
-  DEFAULT_WORKSPACE_VIEW, setWorkspaceView,
+  DEFAULT_WORKSPACE_VIEW, setWorkspaceView, setWorkspaceLastPage,
   MAX_LINKED_PAGES, addLinkedWorkspacePages, removeLinkedWorkspacePage,
 } from "./workspace-store.js";
 import { saveWorkspacePdf, loadWorkspacePdf, deleteWorkspacePdf, listWorkspacePdfs, deleteWorkspacePdfIfMatches, replaceWorkspacePdfWithMetadata } from "./pdf-storage.js";
@@ -18,6 +18,7 @@ import { initializeWorkspaceData, readWorkspaceData, saveWorkspaceData, writeWor
 import { classifyLibraryPdfs, measureLocalStorage, formatBytes, libraryWorkspaceSlots, libraryBookmarkSummary, paginateLibraryBookmarkPages } from "./library-utils.js";
 import { linkedPickerWindow, isOutsideDialogRect } from "./linked-picker-utils.js";
 import { openLinkedDocument, isLinkedOnlyWorkspace, workspaceDocumentName } from "./linked-document.js";
+import { dependentPageLinks, groupDependentLinks, stalePageLinks } from "./workspace-dependencies.js";
 import "./style.css";
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
@@ -115,6 +116,7 @@ let pendingSaves = Promise.resolve();
 const workspaceBroadcast = typeof BroadcastChannel !== "undefined"
   ? new BroadcastChannel("pdf-workspace-database-v2") : null;
 let staleExternalRevision = false;
+let lastPageSaveTimer = 0;
 const workspaceFiles = new Map(); // Active files are cached in memory; persistent copies live in IndexedDB.
 let pendingDeleteWorkspaceId = null;
 let pendingLibraryDeletion = null;
@@ -319,6 +321,11 @@ function closeSidebar() {
 }
 
 function changeWorkspace(id) {
+  if (lastPageSaveTimer) {
+    clearTimeout(lastPageSaveTimer);
+    lastPageSaveTimer = 0;
+    void persistWorkspaces().catch(() => {});
+  }
   closeLibrary();
   if (id === workspaces.activeId) { closeSidebar(); return; }
   cancelAllWork();
@@ -416,6 +423,7 @@ async function openLinkedWorkspaceReader(baseFile = null) {
     initializeObservers();
     ui.viewer.scrollTop = 0;
     ui.viewer.scrollLeft = 0;
+    restoreReadingPosition(workspaceId, generation);
   } catch (error) {
     if (linkedDoc && state.loadingTask !== linkedDoc) await linkedDoc.destroy();
     if (generation !== state.generation) return;
@@ -1120,6 +1128,28 @@ function updateToolbar() {
   }
 }
 
+function scheduleLastPageSave(page) {
+  if (!persistenceReady || persistenceFailed || staleExternalRevision) return;
+  const next = setWorkspaceLastPage(workspaces, page);
+  if (next === workspaces) return;
+  workspaces = next;
+  clearTimeout(lastPageSaveTimer);
+  lastPageSaveTimer = setTimeout(() => {
+    lastPageSaveTimer = 0;
+    void persistWorkspaces().catch(() => {});
+  }, 700);
+}
+
+function restoreReadingPosition(workspaceId, generation) {
+  const workspace = activeWorkspace(workspaces);
+  if (workspace?.id !== workspaceId) return;
+  const desired = Math.max(1, Math.min(state.pageCount, workspace.lastPage || 1));
+  requestAnimationFrame(() => {
+    if (generation !== state.generation || workspaces.activeId !== workspaceId || !state.doc) return;
+    if (desired !== 1) goToPage(desired, false);
+  });
+}
+
 function setCurrentPage(index, scrollThumbnail = true) {
   if (!state.doc) return;
   const page = clampPage(index + 1, state.pageCount);
@@ -1134,6 +1164,7 @@ function setCurrentPage(index, scrollThumbnail = true) {
     if (scrollThumbnail && state.thumbsVisible && thumb.isConnected) thumb.scrollIntoView({ block: "nearest", inline: "nearest" });
   }
   updateToolbar();
+  scheduleLastPageSave(page);
 }
 
 function goToPage(page, smooth = true) {
@@ -1730,6 +1761,7 @@ async function openPDF(file, { replaceWorkspace = false, persistFile = true } = 
     initializeObservers();
     ui.viewer.scrollTop = 0;
     ui.viewer.scrollLeft = 0;
+    restoreReadingPosition(workspaceId, generation);
     setLoading(false);
     ui.viewer.focus({ preventScroll: true });
   } catch (error) {
@@ -2385,7 +2417,7 @@ function renderLibraryBookmarkModal() {
     }
     button.append(frame, details);
     button.addEventListener("click", () => {
-      void navigateToLibraryBookmark(workspace.id, workspace.fileName, group.page);
+      void navigateToLibraryBookmark(workspace.id, workspaceDocumentName(workspace), group.page);
     });
     fragment.append(button);
   }
