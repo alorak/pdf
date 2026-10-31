@@ -42,20 +42,44 @@ for (const item of cases) {
       await page.locator("#pageInput").fill(String(pageNo));
       await page.locator("#pageInput").press("Enter");
       const selector = '.page-shell[data-index="' + (pageNo - 1) + '"] canvas';
-      await expect.poll(() => page.locator(selector).evaluateAll((all, checkRaster) => all.some(c => {
-        if (!c.width || !c.height) return false;
-        const ctx = c.getContext("2d");
-        if (!ctx) return false;
-        // Form-only pages can be drawn as transparent canvas plus HTML widgets.
-        // For raster cases, verify pixels are actually painted, not just allocated.
-        if (!checkRaster) return true;
-        for (const fraction of [0.15, 0.35, 0.55, 0.75]) {
-          const color = ctx.getImageData(Math.floor(c.width * fraction),
-            Math.floor(c.height * fraction), 1, 1).data;
-          if (color[3] > 0) return true;
-        }
-        return false;
-      }), item.minImagePages > 0), { timeout: 120_000 }).toBe(true);
+      try {
+        await expect.poll(() => page.locator(selector).evaluateAll((all, checkRaster) => all.some(c => {
+          if (!c.width || !c.height) return false;
+          const ctx = c.getContext("2d");
+          if (!ctx) return false;
+          if (!checkRaster) return true;
+          for (const fraction of [0.15, 0.35, 0.55, 0.75]) {
+            const color = ctx.getImageData(Math.floor(c.width * fraction),
+              Math.floor(c.height * fraction), 1, 1).data;
+            if (color[3] > 0) return true;
+          }
+          return false;
+        }), item.minImagePages > 0), { timeout: 25_000 }).toBe(true);
+      } catch (error) {
+        const diag = await page.evaluate(({ targetPage, checkRaster }) => {
+          const shells = [...document.querySelectorAll(".page-shell")];
+          const shell = shells.find(x => x.dataset.index === String(targetPage - 1));
+          const canvases = [...(shell?.querySelectorAll("canvas") || [])];
+          return { pageNo: targetPage, checkRaster,
+            pageTotal: document.querySelector("#pageTotal")?.textContent,
+            pageInput: document.querySelector("#pageInput")?.value,
+            shellCount: shells.length,
+            shellNumbers: shells.slice(0, 8).map(x => x.dataset.index),
+            selectedShellConnected: Boolean(shell?.isConnected),
+            selectedShellHeight: shell?.getBoundingClientRect().height,
+            pageSurfaceChildren: shell?.querySelector(".page-surface")?.children.length,
+            canvasCount: canvases.length,
+            canvasDims: canvases.map(c => [c.width, c.height]),
+            selectedPageHidden: shell?.hidden,
+            viewerDimensions: (() => { const v = document.querySelector("#viewer"); return [v?.clientWidth, v?.clientHeight, v?.scrollTop]; })(),
+            pagesHidden: document.querySelector("#pages")?.hidden,
+            toastVisible: !document.querySelector("#toast")?.hidden,
+          };
+        }, { targetPage: pageNo, checkRaster: item.minImagePages > 0 });
+        console.log("P2_6_RENDER_DIAGNOSTIC " + JSON.stringify({ id: item.id, ...diag,
+          consoleErrors: errors.slice(0, 6) }));
+        throw error;
+      }
       const sample = await page.evaluate(() => ({
         domNodes: document.querySelectorAll("*").length,
         pageCanvases: document.querySelectorAll(".page-surface canvas").length,

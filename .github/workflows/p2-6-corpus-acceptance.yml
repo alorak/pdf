@@ -1,4 +1,5 @@
 name: P2.6 one-off licensed real PDF corpus acceptance
+# Focused DOM/render diagnosis of unsupported cases
 # Pinned SHA-256 and explicit WASM decoder acceptance
 
 on:
@@ -76,7 +77,7 @@ jobs:
           npm install --no-save --package-lock=false @playwright/test@1.56.1
           npx playwright install --with-deps chromium
       - name: Chromium real PDF first/middle/last rendered canvas and navigation
-        run: npm run test:corpus:browser
+        run: npm run test:corpus:browser -- --grep "govinfo1941|cc0-acroform-filled"
       - name: Archive manifest and test reports (never PDFs)
         if: always()
         shell: bash
