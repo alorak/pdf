@@ -1234,7 +1234,12 @@ function createPageElements() {
     preview.className = "thumb-preview";
     const number = document.createElement("span");
     number.className = "thumb-number";
-    number.textContent = String(index + 1);
+    const linkedSource = isLinkedOnlyWorkspace(activeWorkspace(workspaces))
+      ? activeWorkspace(workspaces).linkedPages[index] : null;
+    number.textContent = linkedSource
+      ? `${index + 1} · W${linkedSource.sourceWorkspaceId}/${linkedSource.page}`
+      : String(index + 1);
+    if (linkedSource) thumb.title = `W${linkedSource.sourceWorkspaceId} · ${linkedSource.sourceFileName} · sayfa ${linkedSource.page}`;
     thumb.append(preview, number);
     thumb.addEventListener("click", () => goToPage(index + 1));
     const entry = document.createElement("div");
