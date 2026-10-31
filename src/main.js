@@ -1636,11 +1636,14 @@ async function confirmDeleteLibraryPdf() {
     // Check both in-memory and saved workspace metadata immediately before removal.
     // Never remove a PDF that became associated with a workspace meanwhile.
     const persisted = loadWorkspaces();
-    const activeRecord = classifyLibraryPdfs([record], [...workspaces.items, ...persisted.items])[0];
-    if (!activeRecord.orphan) {
+    const linked = [...workspaces.items, ...persisted.items].some(
+      (item) => item.id === record.workspaceId && item.fileName === record.name
+    );
+    if (linked) {
       showToast("PDF artık bir workspace'e bağlı; silinmedi.");
     } else if (await deleteWorkspacePdfIfMatches(record.workspaceId, record)) {
-      workspaceFiles.delete(record.workspaceId);
+      const cached = workspaceFiles.get(record.workspaceId);
+      if (cached?.name === record.name && cached.size === record.size) workspaceFiles.delete(record.workspaceId);
       showToast("Sahipsiz PDF silindi.");
     } else {
       showToast("PDF değişmiş veya zaten silinmiş; kayıtlar yeniden okunuyor.");
