@@ -251,6 +251,38 @@ export async function restoreWorkspaceBackup(parsed, expectedRevision) {
   });
 }
 
+/** Delete a genuinely orphaned PDF only after verifying metadata within the same transaction. */
+export async function deleteOrphanPdfSafe(expected) {
+  if (!Number.isSafeInteger(expected?.workspaceId) || expected.workspaceId < 1 ||
+    typeof expected.name !== "string" || !Number.isFinite(expected.size)) {
+    throw new Error("Geçersiz sahipsiz PDF kaydı");
+  }
+  const db = await openDatabase();
+  return transactionResult(db, [META, PDFS], "readwrite", (tx, done, abort) => {
+    const meta = tx.objectStore(META).get(KEY);
+    meta.onsuccess = () => {
+      const live = meta.result ? readWorkspaces(JSON.stringify(meta.result.value)) : initialWorkspaces();
+      if (live.items.some(w => w.id === expected.workspaceId && w.fileName === expected.name)) {
+        done(false);
+        return;
+      }
+      const pdfStore = tx.objectStore(PDFS);
+      const req = pdfStore.get(expected.workspaceId);
+      req.onsuccess = () => {
+        const current = req.result;
+        if (!current || current.name !== expected.name ||
+          current.blob?.size !== expected.size ||
+          current.lastModified !== expected.lastModified) {
+          done(false);
+          return;
+        }
+        pdfStore.delete(expected.workspaceId);
+        done(true);
+      };
+    };
+  });
+}
+
 export async function inspectWorkspaceIntegrity(state, pdfRecords) {
   const byId = new Map(pdfRecords.map((r) => [r.workspaceId, r]));
   const present = new Set(state.items.map((x) => x.id));
