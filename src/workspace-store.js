@@ -172,10 +172,23 @@ export function addLinkedWorkspacePages(state, source) {
 export function removeLinkedWorkspacePage(state, referenceId) {
   const workspace = activeWorkspace(state);
   const current = workspace?.linkedPages || [];
-  if (!current.some((ref) => ref.id === referenceId)) return state;
-  return replaceActive(state, (item) => ({
-    ...item, linkedPages: current.filter((ref) => ref.id !== referenceId),
-  }));
+  const removedIndex = current.findIndex((ref) => ref.id === referenceId);
+  if (removedIndex < 0) return state;
+  const removedPage = removedIndex + 1;
+  return replaceActive(state, (item) => {
+    const remaining = current.filter((ref) => ref.id !== referenceId);
+    if (item.fileName) return { ...item, linkedPages: remaining };
+    // The virtual PDF's page numbers are contiguous. Keep annotations attached
+    // to the correct surviving page rather than silently shifting targets.
+    const notes = item.notes
+      .filter((note) => !(note.fileName === "@workspace-linked-pages" && note.page === removedPage))
+      .map((note) => note.fileName === "@workspace-linked-pages" && note.page > removedPage
+        ? { ...note, page: note.page - 1 } : note);
+    const bookmarkOrder = (item.bookmarkOrder || [])
+      .filter((page) => page !== removedPage)
+      .map((page) => page > removedPage ? page - 1 : page);
+    return { ...item, linkedPages: remaining, notes, bookmarkOrder };
+  });
 }
 
 export function switchWorkspace(state, id) {
