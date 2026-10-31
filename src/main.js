@@ -10,7 +10,7 @@ import {
   DEFAULT_WORKSPACE_VIEW, setWorkspaceView,
 } from "./workspace-store.js";
 import { saveWorkspacePdf, loadWorkspacePdf, deleteWorkspacePdf, listWorkspacePdfs, deleteWorkspacePdfIfMatches } from "./pdf-storage.js";
-import { classifyLibraryPdfs, measureLocalStorage, formatBytes, libraryWorkspaceSlots } from "./library-utils.js";
+import { classifyLibraryPdfs, measureLocalStorage, formatBytes, libraryWorkspaceSlots, libraryBookmarkSummary, paginateLibraryBookmarkPages } from "./library-utils.js";
 import "./style.css";
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
@@ -32,6 +32,14 @@ const ui = {
   libraryWorkspaceCount: $("libraryWorkspaceCount"), libraryQuotaText: $("libraryQuotaText"),
   libraryQuotaProgress: $("libraryQuotaProgress"), libraryPersistenceStatus: $("libraryPersistenceStatus"),
   libraryPersist: $("libraryPersist"),
+  libraryBookmarksDialog: $("libraryBookmarksDialog"),
+  libraryBookmarksTitle: $("libraryBookmarksTitle"),
+  libraryBookmarksSummary: $("libraryBookmarksSummary"),
+  libraryBookmarkPages: $("libraryBookmarkPages"),
+  libraryBookmarkPrev: $("libraryBookmarkPrev"),
+  libraryBookmarkNext: $("libraryBookmarkNext"),
+  libraryBookmarkPaginationLabel: $("libraryBookmarkPaginationLabel"),
+  closeLibraryBookmarks: $("closeLibraryBookmarks"),
   deleteLibraryPdfDialog: $("deleteLibraryPdfDialog"), deleteLibraryPdfName: $("deleteLibraryPdfName"),
   cancelDeleteLibraryPdf: $("cancelDeleteLibraryPdf"), cancelDeleteLibraryPdfTop: $("cancelDeleteLibraryPdfTop"),
   confirmDeleteLibraryPdf: $("confirmDeleteLibraryPdf"),
@@ -84,6 +92,8 @@ let workspaces = loadWorkspaces();
 const workspaceFiles = new Map(); // Active files are cached in memory; persistent copies live in IndexedDB.
 let pendingDeleteWorkspaceId = null;
 let pendingLibraryDeletion = null;
+let libraryBookmarkWorkspaceId = null;
+let libraryBookmarkPageIndex = 0;
 let libraryRequestId = 0;
 const libraryPreviewTasks = new Set();
 const libraryPreviewCache = new Map(); // Small in-memory first-page thumbnails, not PDF files.
@@ -1527,6 +1537,104 @@ function createWorkspaceFromLibrary() {
   askToOpen(null, next.activeId);
 }
 
+function openLibraryBookmarkModal(workspaceId) {
+  const workspace = workspaces.items.find((entry) => entry.id === workspaceId);
+  if (!workspace || ui.libraryPage.hidden) return;
+  libraryBookmarkWorkspaceId = workspaceId;
+  libraryBookmarkPageIndex = 0;
+  renderLibraryBookmarkModal();
+  ui.libraryBookmarksDialog.showModal();
+  ui.closeLibraryBookmarks.focus();
+}
+
+function renderLibraryBookmarkModal() {
+  const workspace = workspaces.items.find((entry) => entry.id === libraryBookmarkWorkspaceId);
+  if (!workspace) return;
+  const summary = libraryBookmarkSummary(workspace);
+  const current = paginateLibraryBookmarkPages(summary.pages, libraryBookmarkPageIndex);
+  libraryBookmarkPageIndex = current.pageIndex;
+  ui.libraryBookmarksTitle.textContent = `W${workspace.id} · Yer imleri`;
+  ui.libraryBookmarksSummary.textContent =
+    `${summary.count} yer imi · ${summary.pages.length} sayfa` +
+    (workspace.fileName ? ` · ${workspace.fileName}` : "");
+  ui.libraryBookmarkPages.replaceChildren();
+  if (!current.items.length) {
+    const empty = document.createElement("p");
+    empty.className = "library-bookmark-empty";
+    empty.textContent = "Bu workspace'te kayıtlı sayfa veya metin yer imi bulunmuyor.";
+    ui.libraryBookmarkPages.append(empty);
+  }
+  for (const group of current.items) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "library-bookmark-destination";
+    button.setAttribute("aria-label", `W${workspace.id} PDF'sinde sayfa ${group.page} aç`);
+    const pageLabel = document.createElement("span");
+    pageLabel.className = "library-bookmark-page-number";
+    pageLabel.textContent = String(group.page);
+    const details = document.createElement("span");
+    details.className = "library-bookmark-details";
+    const title = document.createElement("strong");
+    title.textContent = `Sayfa ${group.page}`;
+    const subtitle = document.createElement("small");
+    const parts = [];
+    if (group.pageBookmarks) parts.push(`${group.pageBookmarks} sayfa yer imi`);
+    if (group.textNotes) parts.push(`${group.textNotes} metin yer imi`);
+    subtitle.textContent = parts.join(" · ");
+    details.append(title, subtitle);
+    if (group.preview) {
+      const snippet = document.createElement("span");
+      snippet.className = "library-bookmark-snippet";
+      snippet.textContent = group.preview;
+      details.append(snippet);
+    }
+    const arrow = document.createElement("span");
+    arrow.className = "library-bookmark-arrow";
+    arrow.textContent = "›";
+    arrow.setAttribute("aria-hidden", "true");
+    button.append(pageLabel, details, arrow);
+    button.addEventListener("click", () => { void navigateToLibraryBookmark(workspace.id, workspace.fileName, group.page); });
+    ui.libraryBookmarkPages.append(button);
+  }
+  ui.libraryBookmarkPaginationLabel.textContent = `${current.pageIndex + 1} / ${current.totalPages}`;
+  ui.libraryBookmarkPrev.disabled = current.pageIndex === 0;
+  ui.libraryBookmarkNext.disabled = current.pageIndex >= current.totalPages - 1;
+}
+
+async function navigateToLibraryBookmark(workspaceId, fileName, page) {
+  const workspace = workspaces.items.find((entry) => entry.id === workspaceId);
+  if (!workspace || !fileName || workspace.fileName !== fileName
+    || !libraryBookmarkSummary(workspace).pages.some((item) => item.page === page)) {
+    showToast("Yer imi artık mevcut değil. Library'yi yeniden açıp kontrol et.");
+    return;
+  }
+  ui.libraryBookmarksDialog.close();
+  closeLibrary();
+  const alreadyLoaded = workspaces.activeId === workspaceId
+    && Boolean(state.doc) && ui.fileLabel.textContent === fileName;
+  if (workspaces.activeId !== workspaceId) {
+    cancelAllWork();
+    workspaces = switchWorkspace(workspaces, workspaceId);
+    persistWorkspaces();
+    applyWorkspaceView();
+    renderWorkspaceSidebar();
+  }
+  if (ui.workspaceSidebar.classList.contains("is-open")) closeSidebar();
+  if (!alreadyLoaded) await restoreWorkspacePdf(workspaceId);
+  if (workspaces.activeId !== workspaceId || !state.doc ||
+    activeWorkspace(workspaces)?.fileName !== fileName || page > state.pageCount) {
+    showToast("PDF veya istenen sayfa açılamadı. Dosyayı yeniden açman gerekebilir.");
+    return;
+  }
+  setThumbnailMode("pages");
+  const generation = state.generation;
+  requestAnimationFrame(() => {
+    if (generation === state.generation && workspaces.activeId === workspaceId && state.doc) {
+      goToPage(page, false);
+    }
+  });
+}
+
 function buildLibraryWorkspaceCards(records) {
   const byWorkspace = new Map(records.filter((record) => !record.orphan)
     .map((record) => [record.workspaceId, record]));
@@ -1537,16 +1645,18 @@ function buildLibraryWorkspaceCards(records) {
   for (const slot of libraryWorkspaceSlots(workspaces, MAX_WORKSPACES)) {
     const { workspace } = slot;
     const record = workspace ? byWorkspace.get(workspace.id) : null;
-    const card = document.createElement("button");
-    card.type = "button";
+    const card = document.createElement("div");
     card.className = "library-workspace-card";
+    const select = document.createElement("button");
+    select.type = "button";
+    select.className = "library-workspace-select";
     if (!workspace) card.classList.add("is-uncreated");
     if (workspace && workspace.id === workspaces.activeId) card.classList.add("is-active");
     const label = workspace
       ? `W${workspace.id}: ${workspace.fileName || "PDF yok"}`
       : `Yeni workspace oluştur (W${slot.id})`;
-    card.setAttribute("aria-label", label);
-    card.title = label;
+    select.setAttribute("aria-label", label);
+    select.title = label;
 
     const preview = document.createElement("div");
     preview.className = "library-workspace-preview";
@@ -1595,8 +1705,8 @@ function buildLibraryWorkspaceCards(records) {
     filename.textContent = record?.name || workspace?.fileName || (workspace ? "Boş workspace" : "Oluşturmak için tıkla");
     filename.title = filename.textContent;
     footer.append(title, filename);
-    card.append(preview, footer);
-    card.addEventListener("click", () => {
+    select.append(preview, footer);
+    select.addEventListener("click", () => {
       if (!workspace) {
         createWorkspaceFromLibrary();
       } else {
@@ -1604,6 +1714,18 @@ function buildLibraryWorkspaceCards(records) {
         if (!workspace.fileName) askToOpen(null, workspace.id);
       }
     });
+    card.append(select);
+    if (workspace) {
+      const { count } = libraryBookmarkSummary(workspace);
+      const badge = document.createElement("button");
+      badge.type = "button";
+      badge.className = "library-bookmark-badge";
+      badge.textContent = String(count);
+      badge.setAttribute("aria-label", `W${workspace.id}: ${count} yer imi, listeyi aç`);
+      badge.title = `${count} yer imi · Sayfalara git`;
+      badge.addEventListener("click", () => openLibraryBookmarkModal(workspace.id));
+      card.append(badge);
+    }
     fragment.append(card);
   }
   ui.libraryWorkspaceGrid.replaceChildren(fragment);
@@ -1849,6 +1971,16 @@ ui.closeSidebar.addEventListener("click", closeSidebar);
 ui.sidebarBackdrop.addEventListener("click", closeSidebar);
 ui.emptyOpen.addEventListener("click", openSidebar);
 ui.openLibrary.addEventListener("click", openLibraryPage);
+ui.closeLibraryBookmarks.addEventListener("click", () => ui.libraryBookmarksDialog.close());
+ui.libraryBookmarksDialog.addEventListener("close", () => { libraryBookmarkWorkspaceId = null; });
+ui.libraryBookmarkPrev.addEventListener("click", () => {
+  libraryBookmarkPageIndex--;
+  renderLibraryBookmarkModal();
+});
+ui.libraryBookmarkNext.addEventListener("click", () => {
+  libraryBookmarkPageIndex++;
+  renderLibraryBookmarkModal();
+});
 ui.libraryPersist.addEventListener("click", async () => {
   ui.libraryPersist.disabled = true;
   try {
