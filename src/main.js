@@ -22,6 +22,8 @@ const $ = (id) => document.getElementById(id);
 const ui = {
   app: $("app"), menu: $("menuButton"),
   input: $("fileInput"), emptyOpen: $("emptyOpenButton"),
+  emptyHeading: $("emptyHeading"), emptyDescription: $("emptyDescription"),
+  emptyDropHint: $("emptyDropHint"),
   emptyAddPages: $("emptyAddPagesButton"), addPagesToolbar: $("addPagesToolbar"),
   activeWorkspaceLabel: $("activeWorkspaceLabel"), workspaceSidebar: $("workspaceSidebar"),
   sidebarBackdrop: $("sidebarBackdrop"), closeSidebar: $("closeSidebar"),
@@ -156,6 +158,15 @@ function renderWorkspaceSidebar() {
   ui.addPagesToolbar.hidden = !isLinkedOnlyWorkspace(active);
   ui.emptyOpen.hidden = isLinkedOnlyWorkspace(active);
   ui.emptyAddPages.hidden = Boolean(active?.fileName || active?.mode === "pdf");
+  if (isLinkedOnlyWorkspace(active)) {
+    ui.emptyHeading.textContent = "Sayfalarını ekle, okumaya başla.";
+    ui.emptyDescription.textContent = "Diğer workspace'lerdeki PDF'lerden sayfalar seç. Kaynak dosyalar korunur.";
+    ui.emptyDropHint.hidden = true;
+  } else {
+    ui.emptyHeading.textContent = "PDF dosyanı aç, okumaya başla.";
+    ui.emptyDescription.textContent = "Bilgisayarından PDF açabilir veya başka workspace'lerden sayfa seçebilirsin.";
+    ui.emptyDropHint.hidden = false;
+  }
   ui.workspaceCount.textContent = `${workspaces.items.length} / ${MAX_WORKSPACES}`;
   ui.createWorkspace.disabled = workspaces.items.length >= MAX_WORKSPACES;
   ui.createWorkspace.title = ui.createWorkspace.disabled ? `En fazla ${MAX_WORKSPACES} workspace oluşturulabilir` : "Yeni çalışma alanı";
