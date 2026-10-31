@@ -13,14 +13,11 @@ for (const extension of [".css", ".js"]) {
     if (!existsSync(`dist/${asset}`)) throw new Error(`Referenced Pages asset not found: ${asset}`);
   }
 }
-for (const directory of ["pdfjs-wasm", "pdfjs-standard-fonts", "pdfjs-cmaps", "pdfjs-iccs"]) {
-  if (!existsSync("dist/" + directory)) {
-    throw new Error("PDF.js resource directory missing from Pages bundle: " + directory);
-  }
-}
+// JPX/JPEG2000 and JBIG2 image decoding must work on GitHub Pages as
+// same-origin static assets. Vite's dev server uses the matching middleware.
 for (const name of ["openjpeg.wasm", "jbig2.wasm"]) {
-  if (!existsSync("dist/pdfjs-wasm/" + name)) {
-    throw new Error("PDF.js decoder missing from Pages bundle: " + name);
+  if (!existsSync(`dist/pdfjs-wasm/${name}`)) {
+    throw new Error(`Missing PDF.js image decoder asset: ${name}`);
   }
 }
-console.log("GitHub Pages output includes CSS/JS, decoders, fonts, CMaps and ICC resources.");
+console.log("GitHub Pages output contains compiled CSS/JS and both PDF.js WASM decoders.");
