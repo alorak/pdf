@@ -15,6 +15,7 @@ async function counters(page, cdp) {
   const dom = await cdp.send("Memory.getDOMCounters");
   const canvas = await page.evaluate(() => ({
     pages: document.querySelectorAll(".page-shell").length,
+    thumbnailEntries: document.querySelectorAll(".thumb-entry").length,
     pageCanvases: document.querySelectorAll(".page-surface canvas").length,
     thumbCanvases: document.querySelectorAll(".thumb-preview canvas").length,
     totalCanvases: document.querySelectorAll("canvas").length,
@@ -108,7 +109,7 @@ for (const count of pagesToTest) {
     console.log("P2_BASELINE " + JSON.stringify({
       pages: count, firstDisplayMs: initialMs, maxHeapBytes: Math.max(
         initial.heapBytes || 0, ...times.map(x => x.heapBytes || 0)),
-      domNodes: end.domNodes, pageCanvas: end.pageCanvases, thumbCanvas: end.thumbCanvases,
+      domNodes: end.domNodes, thumbEntries: end.thumbnailEntries, pageCanvas: end.pageCanvases, thumbCanvas: end.thumbCanvases,
     }));
 
     // Structural correctness gates. Timings/memory are baselined, not invented SLAs.
@@ -121,6 +122,11 @@ for (const count of pagesToTest) {
     } else {
       expect(initial.pages).toBe(count);
       expect(end.pages).toBe(count);
+    }
+    if (count >= 300) {
+      expect(initial.thumbnailEntries).toBeGreaterThan(0);
+      expect(initial.thumbnailEntries).toBeLessThanOrEqual(80);
+      expect(end.thumbnailEntries).toBeLessThanOrEqual(80);
     }
     expect(errors).toEqual([]);
     expect(end.pageCanvases).toBeLessThanOrEqual(16);

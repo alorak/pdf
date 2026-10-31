@@ -24,6 +24,7 @@ import { dependentPageLinks, groupDependentLinks, stalePageLinks } from "./works
 import { evictDistantPages, flattenOutline, MAX_SEARCH_RESULTS } from "./pdf-navigation.js";
 import { VIRTUAL_PAGE_THRESHOLD, pageOffsets, pageWindow, pageSpacerHeights } from "./page-window.js";
 import { createPdfTextCache, scanPdfText } from "./pdf-search.js";
+import { THUMBNAIL_VIRTUAL_THRESHOLD, thumbnailWindow, thumbnailScrollOffset } from "./thumbnail-window.js";
 import "./style.css";
 
 installMapUpsertPolyfills();
@@ -127,6 +128,8 @@ const state = {
   renderTasks: new Map(), textLayers: new Map(), highlightRegions: new Map(), activeRenders: 0, observer: null,
   thumbVisible: new Set(), thumbPending: new Set(), thumbRendered: new Set(),
   thumbTasks: new Map(), activeThumbRenders: 0, thumbObserver: null,
+  thumbOrder: [], thumbBookmarks: new Set(), thumbRange: null, thumbMounted: new Set(),
+  thumbVirtual: false, thumbScrollFrame: 0,
   scrollFrame: 0, toastTimer: 0,
 };
 
@@ -1126,48 +1129,56 @@ function updateThumbnailFilter(resetScroll = false) {
   ui.thumbBookmarks.setAttribute("aria-pressed", String(onlyBookmarks));
   ui.thumbPagesCount.textContent = String(state.pageCount);
   ui.thumbBookmarksCount.textContent = String(bookmarked.size);
-  for (let index = 0; index < state.thumbs.length; index++) {
-    const isBookmarked = bookmarked.has(index + 1);
-    state.thumbs[index].classList.toggle("bookmarked", isBookmarked);
-    state.thumbEntries[index].draggable = (onlyBookmarks && isBookmarked) || reorderPages;
-    state.thumbEntries[index].querySelector(".thumb-remove").hidden = !onlyBookmarks || !isBookmarked;
-    const grip = state.thumbEntries[index].querySelector(".thumb-drag-handle");
-    grip.hidden = !reorderPages && (!onlyBookmarks || !isBookmarked);
-    grip.title = reorderPages
-      ? `Derleme sayfası ${index + 1} sırasını sürükle; ok tuşlarıyla taşı`
-      : `Yer imi ${index + 1} sırasını sürükle; ok tuşlarıyla taşı`;
-    state.thumbEntries[index].querySelector(".thumb-unlink").hidden =
-      onlyBookmarks || !isLinkedOnlyWorkspace(workspace);
-  }
-
-  // Both the thumbnail strip and the main PDF viewport share the same page
-  // selection. Detached shells are not rendered, laid out or scrollable.
+  // Keep logical page order separate from mounted thumbnail nodes.
   const visiblePages = onlyBookmarks
     ? ordered : Array.from({ length: state.pageCount }, (_, index) => index + 1);
-  const fragment = document.createDocumentFragment();
-  for (const page of visiblePages) {
-    const entry = state.thumbEntries[page - 1];
-    if (entry) fragment.append(entry);
+  const virtual = visiblePages.length >= THUMBNAIL_VIRTUAL_THRESHOLD;
+  const orderChanged = virtual !== state.thumbVirtual
+    || visiblePages.length !== state.thumbOrder.length
+    || visiblePages.some((page, index) => state.thumbOrder[index] !== page);
+  if (orderChanged) clearThumbnailEntries();
+  state.thumbVirtual = virtual;
+  state.thumbOrder = visiblePages;
+  state.thumbBookmarks = bookmarked;
+  ui.thumbList.classList.toggle("virtual-thumbnails", virtual);
+  ui.thumbList.classList.toggle("virtual-bottom", virtual && state.thumbPosition === "bottom");
+  if (resetScroll) {
+    ui.thumbList.scrollTop = 0;
+    ui.thumbList.scrollLeft = 0;
   }
-  ui.thumbList.replaceChildren(fragment, ui.thumbEmpty);
+  if (virtual) {
+    mountVirtualThumbnails(orderChanged);
+  } else {
+    const fragment = document.createDocumentFragment();
+    for (const page of visiblePages) {
+      const index = page - 1;
+      const entry = ensureThumbnailEntry(index);
+      updateThumbnailEntry(index);
+      state.thumbMounted.add(index);
+      fragment.append(entry);
+    }
+    ui.thumbList.replaceChildren(fragment, ui.thumbEmpty);
+    for (const index of state.thumbMounted) if (!visiblePages.includes(index + 1)) releaseThumbnailEntry(index);
+    for (const index of state.thumbMounted) state.thumbObserver?.observe(state.thumbs[index]);
+  }
   ui.thumbEmpty.hidden = !onlyBookmarks || ordered.length > 0 || !state.doc;
   ui.bookmarkPagesEmpty.hidden = !onlyBookmarks || ordered.length > 0 || !state.doc;
   ui.pages.classList.toggle("bookmarks-empty", onlyBookmarks && visiblePages.length === 0 && Boolean(state.doc));
 
-  const virtual = usingVirtualPages();
-  ui.pages.classList.toggle("virtual-pages", virtual);
-  if (virtual) {
+  const pageVirtual = usingVirtualPages();
+  ui.pages.classList.toggle("virtual-pages", pageVirtual);
+  if (pageVirtual) {
     if (!state.virtualOffsets) updateVirtualOffsets();
     mountVirtualPages();
   }
-  const currentOrder = virtual ? [] : [...ui.pages.children].filter((element) =>
+  const currentOrder = pageVirtual ? [] : [...ui.pages.children].filter((element) =>
     element !== ui.bookmarkPagesEmpty && !element.classList.contains("virtual-page-spacer"));
-  const nextOrder = virtual ? [] : visiblePages.map((page) => {
+  const nextOrder = pageVirtual ? [] : visiblePages.map((page) => {
     const index = page - 1;
     if (!state.shells[index]) state.shells[index] = makePageShell(index);
     return state.shells[index];
   });
-  const pageOrderChanged = !virtual && (state.virtualRange !== null
+  const pageOrderChanged = !pageVirtual && (state.virtualRange !== null
     || currentOrder.length !== nextOrder.length
     || nextOrder.some((shell, index) => currentOrder[index] !== shell));
   if (pageOrderChanged) {
@@ -1186,7 +1197,7 @@ function updateThumbnailFilter(resetScroll = false) {
   const previousPage = state.current;
   if (visiblePages.length && !visiblePages.includes(previousPage)) state.current = visiblePages[0];
   for (let index = 0; index < state.thumbs.length; index++) {
-    state.thumbs[index].classList.toggle("active", index + 1 === state.current);
+    state.thumbs[index]?.classList.toggle("active", index + 1 === state.current);
   }
   updateToolbar();
   if (resetScroll) {
@@ -1305,9 +1316,10 @@ function setCurrentPage(index, scrollThumbnail = true) {
   if (previous) previous.classList.remove("active");
   state.current = page;
   const thumb = state.thumbs[page - 1];
-  if (thumb) {
-    thumb.classList.add("active");
-    if (scrollThumbnail && state.thumbsVisible && thumb.isConnected) thumb.scrollIntoView({ block: "nearest", inline: "nearest" });
+  if (thumb) thumb.classList.add("active");
+  if (scrollThumbnail && state.thumbsVisible) {
+    if (state.thumbVirtual) scrollThumbnailToPage(page);
+    else if (thumb?.isConnected) thumb.scrollIntoView({ block: "nearest", inline: "nearest" });
   }
   updateToolbar();
   scheduleLastPageSave(page);
@@ -1427,7 +1439,15 @@ function setThumbnailPosition(position) {
   hideSelectionMenu();
   updateSettingsView();
   persistWorkspaceView();
-  if (state.doc && state.fit !== "custom") requestAnimationFrame(() => applyFit(state.fit));
+  if (state.doc) {
+    state.thumbRange = null;
+    if (state.thumbVirtual) {
+      ui.thumbList.classList.toggle("virtual-bottom", state.thumbPosition === "bottom");
+      mountVirtualThumbnails(true);
+      scrollThumbnailToPage(state.current);
+    }
+    if (state.fit !== "custom") requestAnimationFrame(() => applyFit(state.fit));
+  }
 }
 
 function closeViewMenu(restoreFocus = false) {
@@ -1688,6 +1708,14 @@ function cancelAllWork() {
   state.shells = [];
   state.thumbs = [];
   state.thumbEntries = [];
+  state.thumbOrder = [];
+  state.thumbBookmarks.clear();
+  state.thumbMounted.clear();
+  state.thumbRange = null;
+  state.thumbVirtual = false;
+  if (state.thumbScrollFrame) cancelAnimationFrame(state.thumbScrollFrame);
+  state.thumbScrollFrame = 0;
+  ui.thumbList.classList.remove("virtual-thumbnails", "virtual-bottom");
   state.highlightRegions.clear();
   draggingBookmarkPage = null;
   touchBookmarkDrag = null;
@@ -1723,22 +1751,7 @@ function makePageShell(index) {
   return shell;
 }
 
-function createPageElements() {
-  // A new document must never reuse the previous virtual range after clearing DOM.
-  state.virtualRange = null;
-  state.virtualOffsets = null;
-  const pageFragment = document.createDocumentFragment();
-  const thumbFragment = document.createDocumentFragment();
-  state.shells = new Array(state.pageCount);
-  state.thumbs = new Array(state.pageCount);
-  state.thumbEntries = new Array(state.pageCount);
-  for (let index = 0; index < state.pageCount; index++) {
-    if (!usingVirtualPages()) {
-      const shell = makePageShell(index);
-      state.shells[index] = shell;
-      pageFragment.append(shell);
-    }
-
+function makeThumbnailEntry(index) {
     const thumb = document.createElement("button");
     thumb.type = "button";
     thumb.className = "thumb-item" + (index === 0 ? " active" : "");
@@ -1825,11 +1838,149 @@ function createPageElements() {
     });
     state.thumbs[index] = thumb;
     state.thumbEntries[index] = entry;
-    thumbFragment.append(entry);
+    return entry;
+}
+
+function ensureThumbnailEntry(index) {
+  if (!state.thumbEntries[index]) makeThumbnailEntry(index);
+  return state.thumbEntries[index];
+}
+
+function updateThumbnailEntry(index) {
+  const entry = state.thumbEntries[index];
+  const thumb = state.thumbs[index];
+  if (!entry || !thumb) return;
+  const workspace = activeWorkspace(workspaces);
+  const bookmarked = state.thumbBookmarks.has(index + 1);
+  const onlyBookmarks = state.thumbnailMode === "bookmarks";
+  const reorderPages = !onlyBookmarks && isLinkedOnlyWorkspace(workspace) && Boolean(state.doc);
+  thumb.classList.toggle("active", index + 1 === state.current);
+  thumb.classList.toggle("bookmarked", bookmarked);
+  entry.draggable = (onlyBookmarks && bookmarked) || reorderPages;
+  entry.querySelector(".thumb-remove").hidden = !onlyBookmarks || !bookmarked;
+  const grip = entry.querySelector(".thumb-drag-handle");
+  grip.hidden = !reorderPages && (!onlyBookmarks || !bookmarked);
+  grip.title = reorderPages
+    ? `Derleme sayfası ${index + 1} sırasını sürükle; ok tuşlarıyla taşı`
+    : `Yer imi ${index + 1} sırasını sürükle; ok tuşlarıyla taşı`;
+  entry.querySelector(".thumb-unlink").hidden = onlyBookmarks || !isLinkedOnlyWorkspace(workspace);
+}
+
+function releaseThumbnailEntry(index) {
+  const entry = state.thumbEntries[index];
+  if (!entry) return;
+  state.thumbObserver?.unobserve(state.thumbs[index]);
+  state.thumbPending.delete(index);
+  state.thumbVisible.delete(index);
+  state.thumbTasks.get(index)?.cancel();
+  state.thumbRendered.delete(index);
+  entry.remove();
+  state.thumbEntries[index] = null;
+  state.thumbs[index] = null;
+  state.thumbMounted.delete(index);
+}
+
+function clearThumbnailEntries() {
+  for (const index of [...state.thumbMounted]) releaseThumbnailEntry(index);
+  state.thumbRange = null;
+}
+
+function thumbnailGeometry() {
+  const horizontal = state.thumbPosition === "bottom";
+  return { horizontal, size: horizontal ? 92 : 185, gap: 15,
+    offset: horizontal ? ui.thumbList.scrollLeft : ui.thumbList.scrollTop,
+    viewport: horizontal ? ui.thumbList.clientWidth : ui.thumbList.clientHeight,
+    padding: horizontal ? 22 : 6 };
+}
+
+function mountVirtualThumbnails(force = false) {
+  if (!state.thumbVirtual) return;
+  const g = thumbnailGeometry();
+  const range = thumbnailWindow(state.thumbOrder.length, Math.max(0, g.offset - g.padding),
+    g.viewport, g.size, g.gap);
+  const old = state.thumbRange;
+  if (!force && old?.start === range.start && old?.end === range.end) return;
+  const kept = new Set();
+  const nodes = [];
+  if (range.start) {
+    const before = document.createElement("div");
+    before.className = "virtual-thumb-spacer";
+    before.style[g.horizontal ? "width" : "height"] = range.before + "px";
+    before.setAttribute("aria-hidden", "true");
+    nodes.push(before);
+  }
+  for (let cursor = range.start; cursor < range.end; cursor++) {
+    const index = state.thumbOrder[cursor] - 1;
+    kept.add(index);
+    const entry = ensureThumbnailEntry(index);
+    updateThumbnailEntry(index);
+    nodes.push(entry);
+  }
+  if (range.end < state.thumbOrder.length) {
+    const after = document.createElement("div");
+    after.className = "virtual-thumb-spacer";
+    after.style[g.horizontal ? "width" : "height"] = range.after + "px";
+    after.setAttribute("aria-hidden", "true");
+    nodes.push(after);
+  }
+  // Detach unneeded canvases/listeners; do not retain 5,000 detached DOM nodes.
+  for (const index of [...state.thumbMounted]) if (!kept.has(index)) releaseThumbnailEntry(index);
+  ui.thumbList.replaceChildren(...nodes, ui.thumbEmpty);
+  state.thumbRange = { start: range.start, end: range.end };
+  for (const index of kept) {
+    state.thumbMounted.add(index);
+    state.thumbObserver?.observe(state.thumbs[index]);
+  }
+}
+
+function scheduleThumbnailWindow() {
+  if (!state.thumbVirtual || state.thumbScrollFrame) return;
+  const generation = state.generation;
+  state.thumbScrollFrame = requestAnimationFrame(() => {
+    state.thumbScrollFrame = 0;
+    if (generation === state.generation) mountVirtualThumbnails();
+  });
+}
+
+function scrollThumbnailToPage(page) {
+  if (!state.thumbsVisible || !state.thumbVirtual) return;
+  const position = state.thumbOrder.indexOf(page);
+  if (position < 0) return;
+  const g = thumbnailGeometry();
+  const start = thumbnailScrollOffset(position, g.size, g.gap);
+  const end = start + g.size;
+  const viewStart = Math.max(0, g.offset - g.padding);
+  const viewEnd = viewStart + g.viewport;
+  if (start < viewStart || end > viewEnd) {
+    const desired = Math.max(0, start - Math.max(0, (g.viewport - g.size) / 2)) + g.padding;
+    if (g.horizontal) ui.thumbList.scrollLeft = desired;
+    else ui.thumbList.scrollTop = desired;
+    mountVirtualThumbnails();
+  }
+}
+
+function createPageElements() {
+  // A new document must never reuse the previous virtual range after clearing DOM.
+  state.virtualRange = null;
+  state.virtualOffsets = null;
+  const pageFragment = document.createDocumentFragment();
+  state.shells = new Array(state.pageCount);
+  state.thumbMounted.clear();
+  state.thumbRange = null;
+  state.thumbs = new Array(state.pageCount);
+  state.thumbEntries = new Array(state.pageCount);
+  for (let index = 0; index < state.pageCount; index++) {
+    if (!usingVirtualPages()) {
+      const shell = makePageShell(index);
+      state.shells[index] = shell;
+      pageFragment.append(shell);
+    }
+
+
   }
   if (!usingVirtualPages()) ui.pages.replaceChildren(pageFragment);
   else { ui.pages.replaceChildren(ui.bookmarkPagesEmpty); updateVirtualOffsets(); }
-  ui.thumbList.replaceChildren(thumbFragment, ui.thumbEmpty);
+  ui.thumbList.replaceChildren(ui.thumbEmpty);
   updateThumbnailFilter();
 }
 
@@ -1861,6 +2012,7 @@ function initializeObservers() {
   state.thumbObserver = new IntersectionObserver((entries) => {
     if (generation !== state.generation) return;
     for (const entry of entries) {
+      if (!entry.target.isConnected) continue;
       const index = Number(entry.target.dataset.index);
       if (entry.isIntersecting) {
         state.thumbVisible.add(index);
@@ -1877,7 +2029,7 @@ function initializeObservers() {
   }, { root: ui.thumbList, rootMargin: "240px", threshold: 0 });
 
   for (const shell of state.shells) if (shell?.isConnected) state.observer.observe(shell);
-  for (const thumb of state.thumbs) state.thumbObserver.observe(thumb);
+  for (const thumb of state.thumbs) if (thumb?.isConnected) state.thumbObserver.observe(thumb);
 }
 
 function pickClosest(pending) {
@@ -3684,7 +3836,7 @@ document.addEventListener("keydown", event => {
 ui.viewer.addEventListener("scroll", () => { scheduleScrollUpdate(); hideSelectionMenu(); }, { passive: true });
 ui.viewer.addEventListener("wheel", () => { state.programmaticScrollUntil = 0; }, { passive: true });
 ui.viewer.addEventListener("touchstart", () => { state.programmaticScrollUntil = 0; }, { passive: true });
-ui.thumbList.addEventListener("scroll", hideSelectionMenu, { passive: true });
+ui.thumbList.addEventListener("scroll", () => { hideSelectionMenu(); scheduleThumbnailWindow(); }, { passive: true });
 ui.viewer.addEventListener("pointermove", handleHighlightHover);
 ui.viewer.addEventListener("pointerleave", hideHighlightRemove);
 ui.viewer.addEventListener("scroll", hideHighlightRemove, { passive: true });
@@ -3733,7 +3885,7 @@ function reorderBookmarkAt(source, entry, clientX, clientY) {
 }
 function clearBookmarkDrag() {
   draggingBookmarkPage = null;
-  for (const entry of state.thumbEntries) entry.classList.remove("dragging", "drag-over");
+  for (const entry of state.thumbEntries) entry?.classList.remove("dragging", "drag-over");
 }
 ui.thumbList.addEventListener("dragstart", (event) => {
   const entry = event.target instanceof Element ? event.target.closest(".thumb-entry") : null;
@@ -3751,7 +3903,7 @@ ui.thumbList.addEventListener("dragover", (event) => {
   if (!isDraggableThumbnailMode() || !draggingBookmarkPage || !entry) return;
   event.preventDefault();
   if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
-  for (const node of state.thumbEntries) node.classList.remove("drag-over");
+  for (const node of state.thumbEntries) node?.classList.remove("drag-over");
   if (Number(entry.dataset.index) + 1 !== draggingBookmarkPage) entry.classList.add("drag-over");
 });
 ui.thumbList.addEventListener("drop", (event) => {
@@ -3781,7 +3933,7 @@ ui.thumbList.addEventListener("pointermove", (event) => {
   if (!touchBookmarkDrag || touchBookmarkDrag.pointerId !== event.pointerId) return;
   event.preventDefault();
   const hovered = document.elementFromPoint(event.clientX, event.clientY)?.closest?.(".thumb-entry");
-  for (const entry of state.thumbEntries) entry.classList.remove("drag-over");
+  for (const entry of state.thumbEntries) entry?.classList.remove("drag-over");
   if (hovered && Number(hovered.dataset.index) + 1 !== touchBookmarkDrag.source) hovered.classList.add("drag-over");
 });
 function finishTouchBookmarkDrag(event) {

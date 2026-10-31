@@ -11,6 +11,7 @@ const metrics = async page => page.evaluate(() => ({
   jsHeapMb: typeof performance.memory?.usedJSHeapSize === "number"
     ? Number((performance.memory.usedJSHeapSize / 1048576).toFixed(1)) : null,
   pageShells: document.querySelectorAll(".page-shell").length,
+  thumbnailEntries: document.querySelectorAll(".thumb-entry").length,
   pageCanvases: document.querySelectorAll(".page-surface canvas").length,
   thumbnailCanvases: document.querySelectorAll(".thumb-preview canvas").length,
 }));
@@ -95,6 +96,10 @@ function assertSamples(metrics, pages) {
     expect(metrics.pageShells).toBeLessThanOrEqual(80);
   } else {
     expect(metrics.pageShells).toBe(pages);
+  }
+  if (pages >= 300) {
+    expect(metrics.thumbnailEntries).toBeGreaterThan(0);
+    expect(metrics.thumbnailEntries).toBeLessThanOrEqual(80);
   }
   expect(metrics.pageCanvases).toBeLessThanOrEqual(30);
   expect(metrics.thumbnailCanvases).toBeLessThanOrEqual(110);
