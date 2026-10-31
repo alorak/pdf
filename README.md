@@ -79,6 +79,10 @@ Test matrisi ve tekrar üretme: [stress/README.md](stress/README.md). [P2.3 tam 
 
 Taranmış (OCR'siz), karma görüntü+metin ve mobil Chromium senaryoları için tekrarlanabilir, büyük ve bağımsız RGB raster PDF'ler üretilir. Gerçek raster pikseli, son sayfa, metin arama, DOM/canvas sınırları ve gözlemsel JS heap ölçümleri doğrulanır. Normal PR'larda hafif profil, nightly CI'da 100+ MiB raster PDF koşusu kullanılır. **Tam P2.5 kabul testi 31.10.2026'da başarılı tamamlandı.** [P2.5 kapsamı, ölçüm protokolü ve sınırlamalar](docs/p2-5-raster-memory.md).
 
+### P2.6 — Kota, gerçek PDF corpus'u ve fiziksel Android
+
+Chromium'da gerçek IndexedDB kota override sonrası atomik rollback/reload, yerel izne tabi gerçek PDF corpus doğrulayıcıları ve ADB üzerinden fiziksel Android ölçüm protokolü: [P2.6 test planı ve kabul sınırları](docs/p2-6-field-reliability.md). Gerçek corpus ve cihaz testleri **yerel olarak** çalıştırılır; dosyalar repoya yüklenmez.
+
 ## Çalıştırma
 
 Node.js 22+ gerektirir (Node.js 24 önerilir).

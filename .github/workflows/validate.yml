@@ -42,6 +42,8 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: PDF reader Chromium E2E
         run: npx playwright test
+      - name: Confirm actual Chromium quota rejection and recovery evidence
+        run: node scripts/verify-p2-6-quota.mjs
       - name: P2 capacity and 20-workspace smoke (100 pages)
         env:
           P2_STRESS_PAGES: "100"
