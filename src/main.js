@@ -2726,6 +2726,16 @@ ui.addLinkedPages.addEventListener("click", openAddLinkedPagesDialog);
 ui.closeAddLinkedPages.addEventListener("click", () => ui.addLinkedPagesDialog.close());
 ui.cancelAddLinkedPages.addEventListener("click", () => ui.addLinkedPagesDialog.close());
 ui.confirmAddLinkedPages.addEventListener("click", () => { void confirmAddLinkedPages(); });
+ui.linkedPickerPrev.addEventListener("click", () => {
+  if (linkedPickerSession) renderLinkedPickerPage(linkedPickerSession, linkedPickerSession.index - 1);
+});
+ui.linkedPickerNext.addEventListener("click", () => {
+  if (linkedPickerSession) renderLinkedPickerPage(linkedPickerSession, linkedPickerSession.index + 1);
+});
+ui.addLinkedPagesDialog.addEventListener("close", disposeLinkedPicker);
+ui.addLinkedPagesDialog.addEventListener("cancel", (event) => {
+  if (linkedPickerSession?.saving) event.preventDefault();
+});
 ui.closeLibraryBookmarks.addEventListener("click", () => ui.libraryBookmarksDialog.close());
 ui.libraryBookmarksDialog.addEventListener("close", () => {
   releaseLibraryBookmarkPreviews();
@@ -2753,9 +2763,6 @@ ui.libraryPersist.addEventListener("click", async () => {
 });
 ui.cancelDeleteLibraryPdf.addEventListener("click", () => ui.deleteLibraryPdfDialog.close());
 ui.cancelDeleteLibraryPdfTop.addEventListener("click", () => ui.deleteLibraryPdfDialog.close());
-ui.deleteLibraryPdfDialog.addEventListener("click", (event) => {
-  if (event.target === ui.deleteLibraryPdfDialog && !ui.confirmDeleteLibraryPdf.disabled) ui.deleteLibraryPdfDialog.close();
-});
 ui.deleteLibraryPdfDialog.addEventListener("cancel", (event) => {
   if (ui.confirmDeleteLibraryPdf.disabled) event.preventDefault();
 });
@@ -2781,17 +2788,11 @@ ui.createWorkspace.addEventListener("click", () => {
 });
 ui.cancelDeleteWorkspace.addEventListener("click", () => ui.deleteWorkspaceDialog.close());
 ui.cancelDeleteWorkspaceTop.addEventListener("click", () => ui.deleteWorkspaceDialog.close());
-ui.deleteWorkspaceDialog.addEventListener("click", (event) => {
-  if (event.target === ui.deleteWorkspaceDialog) ui.deleteWorkspaceDialog.close();
-});
 ui.deleteWorkspaceDialog.addEventListener("close", () => { pendingDeleteWorkspaceId = null; });
 ui.deleteWorkspaceDialog.addEventListener("cancel", (event) => { if (ui.confirmDeleteWorkspace.disabled) event.preventDefault(); });
 ui.confirmDeleteWorkspace.addEventListener("click", () => { void confirmDeleteWorkspace(); });
 ui.cancelReplace.addEventListener("click", () => ui.replaceDialog.close());
 ui.cancelReplaceTop.addEventListener("click", () => ui.replaceDialog.close());
-ui.replaceDialog.addEventListener("click", (event) => {
-  if (event.target === ui.replaceDialog) ui.replaceDialog.close();
-});
 ui.replaceDialog.addEventListener("close", () => {
   pendingDropFile = null;
   pendingOpenWorkspaceId = null;
@@ -2832,9 +2833,22 @@ ui.viewer.addEventListener("contextmenu", (event) => {
 });
 ui.pdfInfoButton.addEventListener("click", () => { void showPdfInfo(); });
 ui.closePdfInfo.addEventListener("click", () => ui.pdfInfoDialog.close());
-ui.pdfInfoDialog.addEventListener("click", (event) => {
-  if (event.target === ui.pdfInfoDialog) ui.pdfInfoDialog.close();
-});
+// A click on the backdrop is targeted at the dialog itself. Only close when
+// the pointer is outside the rendered dialog rectangle, not on its padding.
+for (const dialog of document.querySelectorAll("dialog")) {
+  dialog.addEventListener("click", (event) => {
+    if (event.target !== dialog || event.button !== 0) return;
+    const rect = dialog.getBoundingClientRect();
+    const outside = event.clientX < rect.left || event.clientX >= rect.right
+      || event.clientY < rect.top || event.clientY >= rect.bottom;
+    if (!outside) return;
+    if (dialog === ui.deleteWorkspaceDialog && ui.confirmDeleteWorkspace.disabled) return;
+    if (dialog === ui.deleteLibraryPdfDialog && ui.confirmDeleteLibraryPdf.disabled) return;
+    if (dialog === ui.addLinkedPagesDialog && linkedPickerSession?.saving) return;
+    dialog.close();
+  });
+}
+
 ui.copySelection.addEventListener("click", () => {
   const text = contextSelection?.text;
   hideSelectionMenu();
