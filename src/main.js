@@ -1560,6 +1560,21 @@ async function openPDF(file, { replaceWorkspace = false, persistFile = true } = 
     return;
   }
   const workspaceId = workspaces.activeId;
+  // Verify identity again at commit time in case the PDF changed since confirmation.
+  if (replaceWorkspace && persistFile && activeWorkspace(workspaces)?.fileName) {
+    try {
+      const existing = await loadWorkspacePdf(workspaceId);
+      if (existing && await samePdfContent(existing, file)) {
+        showToast("Aynı PDF yeniden seçildi. Yer imleri ve vurgular korundu.");
+        if (!state.doc) void restoreWorkspacePdf(workspaceId);
+        return;
+      }
+    } catch (error) {
+      console.warn("PDF equality check failed:", error);
+      showToast("PDF kimliği doğrulanamadı; önceki dosya ve yer imleri korundu.");
+      return;
+    }
+  }
   cancelAllWork();
   state.fit = activeWorkspace(workspaces)?.view?.fit || DEFAULT_WORKSPACE_VIEW.fit;
   ui.pages.classList.toggle("fit-height", state.fit === "height");
@@ -1582,24 +1597,49 @@ async function openPDF(file, { replaceWorkspace = false, persistFile = true } = 
     if (generation !== state.generation) return;
     const rect = first.getViewport({ scale: 1 });
     if (persistFile) {
-      try {
-        await saveWorkspacePdf(workspaceId, file);
-      } catch (error) {
-        console.warn("PDF persistence failed:", error);
-        if (replaceWorkspace && activeWorkspace(workspaces)?.fileName) {
+      if (replaceWorkspace) {
+        const before = workspaces;
+        try {
+          const next = replacementWorkspaceState(before, workspaceId, file.name);
+          const metadata = makePdfMetadataCommit(
+            localStorage, WORKSPACE_STORAGE_KEY, before, next,
+            () => generation === state.generation &&
+              workspaces.activeId === workspaceId && workspaces === before,
+          );
+          // The PDF and the metadata update are coordinated inside an active
+          // IndexedDB transaction. A failed localStorage write aborts the PDF put.
+          await replaceWorkspacePdfWithMetadata(workspaceId, file, metadata);
+          workspaces = next;
+        } catch (error) {
+          console.warn("PDF replacement transaction failed:", error);
           cancelAllWork();
-          showToast("Yeni PDF kaydedilemedi; önceki PDF ve yer imleri korundu.");
+          if (error instanceof AggregateError) {
+            showToast("PDF değiştirme tamamlanamadı. Workspace verisi geri alınamadı; sayfayı yenilemeden önce verilerini yedekle.");
+          } else {
+            showToast("Yeni PDF kaydedilemedi; eski PDF ve yer imleri korundu.");
+          }
           void restoreWorkspacePdf(workspaceId);
           return;
         }
-        showToast("PDF yalnızca bu oturumda açıldı; tarayıcı depolama alanını kontrol et.");
+      } else {
+        try {
+          await saveWorkspacePdf(workspaceId, file);
+        } catch (error) {
+          console.warn("PDF save failed:", error);
+          cancelAllWork();
+          showToast("PDF kaydedilemedi; workspace değiştirilmedi.");
+          void restoreWorkspacePdf(workspaceId);
+          return;
+        }
       }
     }
     if (generation !== state.generation || workspaces.activeId !== workspaceId) return;
-    if (replaceWorkspace) workspaces = clearActiveWorkspace(workspaces);
-    workspaces = setWorkspaceFile(workspaces, file.name);
+    if (persistFile && !replaceWorkspace) {
+      workspaces = setWorkspaceFile(workspaces, file.name);
+      persistWorkspaces();
+    }
+    // Restoring an existing PDF must not rewrite its bookmark metadata.
     workspaceFiles.set(workspaceId, file);
-    persistWorkspaces();
     renderWorkspaceSidebar();
     // Existing workspaces may contain both a base PDF and older linked-page
     // references. Preserve and display all pages in the same reader.
