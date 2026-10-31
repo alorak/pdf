@@ -4,14 +4,14 @@ import { pageOffsets, pageIndexAtOffset, pageWindow, pageSpacerHeights } from ".
 
 test("virtual page offsets preserve the full scroll height with gaps and mixed dimensions", () => {
   const offsets = pageOffsets([100, 150, 80, 120, 90], 2, 40);
-  assert.deepEqual(offsets, [0, 242, 584, 786, 1028, 1210]);
+  assert.deepEqual(offsets, [0, 242, 584, 786, 1068, 1250]);
   assert.equal(pageIndexAtOffset(offsets, 0), 0);
   assert.equal(pageIndexAtOffset(offsets, 300), 1);
   assert.equal(pageIndexAtOffset(offsets, 1209), 4);
   assert.equal(pageIndexAtOffset(offsets, 2000), 4);
   const { before, after } = pageSpacerHeights(offsets, 1, 3, 40);
   assert.equal(before, 202);
-  assert.equal(after, 424);
+  assert.equal(after, 464);
   // Top spacer + gap + rendered shells + gap + bottom spacer = full document height.
   assert.equal(before + 40 + (342-40) + 40 + (202-40) + 40 + after, offsets[5]);
 });

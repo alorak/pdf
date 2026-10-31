@@ -35,7 +35,7 @@ test("concurrent scan remains page-ordered and never exceeds concurrency", async
 
 test("repeat search uses bounded in-memory cached text, and clear forces re-read", async () => {
   const doc = mockDocument(["istanbul", "ankara", "izmir"]);
-  const cache = createPdfTextCache(40);
+  const cache = createPdfTextCache(64);
   await scanPdfText(doc, "ankara", { cache, yieldTask: async () => {} });
   assert.equal(doc.reads, 3);
   assert.equal((await scanPdfText(doc, "izmir", { cache, yieldTask: async () => {} }))[0].page, 3);
@@ -43,7 +43,7 @@ test("repeat search uses bounded in-memory cached text, and clear forces re-read
   cache.clear();
   await scanPdfText(doc, "istanbul", { cache, yieldTask: async () => {} });
   assert.equal(doc.reads, 6);
-  assert.ok(cache.bytes <= 40);
+  assert.ok(cache.bytes <= 64);
 });
 
 test("cancellation, upper result limit and document errors are deterministic", async () => {

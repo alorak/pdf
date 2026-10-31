@@ -1055,7 +1055,7 @@ function mountVirtualPages(focusIndex = null) {
   // When switching from an unwindowed layout, also release all former shells.
   if (!old) {
     for (let index = 0; index < state.shells.length; index++) {
-      if (state.shells[index].isConnected) unmountVirtualPage(index);
+      if (state.shells[index]?.isConnected) unmountVirtualPage(index);
     }
   } else {
     for (let index = old.start; index < old.end; index++) {
