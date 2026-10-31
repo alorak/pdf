@@ -10,7 +10,6 @@ import {
 function fixture() {
   let state = setWorkspaceFile(initialWorkspaces(), "source.pdf");
   state = addWorkspace(state);
-  state = setWorkspaceFile(state, "target.pdf");
   return state;
 }
 
@@ -27,7 +26,8 @@ test("target workspace references source PDF pages without copying the original"
   state = addLinks(state);
   assert.deepEqual(activeWorkspace(state).linkedPages.map((ref) => ref.page), [1, 3, 4]);
   assert.deepEqual(state.items[0].linkedPages, []);
-  assert.equal(activeWorkspace(state).fileName, "target.pdf");
+  assert.equal(activeWorkspace(state).fileName, "");
+  assert.equal(activeWorkspace(state).mode, "pages");
   assert.ok(activeWorkspace(state).linkedPages.every((ref) =>
     ref.sourceWorkspaceId === 1 && ref.sourceFileName === "source.pdf"));
   assert.equal(readWorkspaces(JSON.stringify(state)).items[1].linkedPages.length, 3);
@@ -82,13 +82,14 @@ test("removal only deletes the link, and source PDF and notes survive", () => {
   assert.equal(removeLinkedWorkspacePage(state, "unknown"), state);
 });
 
-test("replacing target PDF retains independent linked page collection", () => {
+test("page workspace cannot switch to PDF, and deletion of source keeps explicit stale references", () => {
   let state = addLinks(fixture());
+  assert.equal(setWorkspaceFile(state, "new.pdf"), state);
   state = clearActiveWorkspace(state);
-  assert.equal(activeWorkspace(state).fileName, "");
+  assert.equal(activeWorkspace(state).mode, "pages");
   assert.equal(activeWorkspace(state).linkedPages.length, 3);
   state = removeWorkspace(state, 1);
-  assert.equal(activeWorkspace(state).linkedPages.length, 3, "missing source references remain explicit until manually removed");
+  assert.equal(activeWorkspace(state).linkedPages.length, 3, "missing source references remain visible until manually removed");
 });
 
 test("source ranges parse strictly and uniquely", () => {
