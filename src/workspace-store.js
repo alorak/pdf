@@ -208,7 +208,7 @@ export function setWorkspaceView(state, view) {
 
 export function setWorkspaceFile(state, fileName) {
   const current = activeWorkspace(state);
-  if (current && (current.mode === "pages" || (!current.fileName && current.linkedPages?.length))
+  if (current && (current.mode === "pages" || (current.mode !== "pdf" && !current.fileName && current.linkedPages?.length))
     && String(fileName || "")) return state;
   return replaceActive(state, (item) => {
     const nextFile = String(fileName).slice(0, 255);
@@ -219,7 +219,7 @@ export function setWorkspaceFile(state, fileName) {
 
 export function clearActiveWorkspace(state) {
   return replaceActive(state, (item) => ({ ...item, notes: [], fileName: "",
-    mode: item.mode === "pages" ? "pages" : "empty", bookmarkOrder: [] }));
+    mode: item.mode === "pages" ? "pages" : item.mode === "pdf" ? "pdf" : "empty", bookmarkOrder: [] }));
 }
 
 export function removeWorkspace(state, id) {
