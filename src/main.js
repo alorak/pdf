@@ -443,12 +443,17 @@ async function confirmDeleteWorkspace() {
   ui.cancelDeleteWorkspace.disabled = true;
   ui.cancelDeleteWorkspaceTop.disabled = true;
   try {
-    await deleteWorkspacePdf(id);
-    workspaceFiles.delete(id);
+    await waitForWorkspaceSaves();
+    if (pendingDeleteWorkspaceId !== id) throw new Error("Silme hedefi değişti");
     const wasActive = workspaces.activeId === id;
+    const next = removeWorkspace(workspaces, id);
+    const revision = await writeWorkspaceAndPdf(next, workspaceRevision, { remove: id });
+    workspaceRevision = revision;
+    persistedWorkspaces = next;
+    workspaces = next;
+    broadcastWorkspaceRevision();
+    workspaceFiles.delete(id);
     if (wasActive) cancelAllWork();
-    workspaces = removeWorkspace(workspaces, id);
-    persistWorkspaces();
     if (wasActive) applyWorkspaceView();
     renderWorkspaceSidebar();
     ui.deleteWorkspaceDialog.close();
@@ -1677,47 +1682,28 @@ async function openPDF(file, { replaceWorkspace = false, persistFile = true } = 
     if (generation !== state.generation) return;
     const rect = first.getViewport({ scale: 1 });
     if (persistFile) {
-      if (replaceWorkspace) {
-        const before = workspaces;
-        try {
-          const next = replacementWorkspaceState(before, workspaceId, file.name);
-          const metadata = makePdfMetadataCommit(
-            localStorage, WORKSPACE_STORAGE_KEY, before, next,
-            () => generation === state.generation &&
-              workspaces.activeId === workspaceId && workspaces === before,
-          );
-          // The PDF and the metadata update are coordinated inside an active
-          // IndexedDB transaction. A failed localStorage write aborts the PDF put.
-          await replaceWorkspacePdfWithMetadata(workspaceId, file, metadata);
-          workspaces = next;
-        } catch (error) {
-          console.warn("PDF replacement transaction failed:", error);
-          cancelAllWork();
-          if (error instanceof AggregateError) {
-            showToast("PDF değiştirme tamamlanamadı. Workspace verisi geri alınamadı; sayfayı yenilemeden önce verilerini yedekle.");
-          } else {
-            showToast("Yeni PDF kaydedilemedi; eski PDF ve yer imleri korundu.");
-          }
-          void restoreWorkspacePdf(workspaceId);
-          return;
-        }
-      } else {
-        try {
-          await saveWorkspacePdf(workspaceId, file);
-        } catch (error) {
-          console.warn("PDF save failed:", error);
-          cancelAllWork();
-          showToast("PDF kaydedilemedi; workspace değiştirilmedi.");
-          void restoreWorkspacePdf(workspaceId);
-          return;
-        }
+      try {
+        await waitForWorkspaceSaves();
+        if (generation !== state.generation || workspaces.activeId !== workspaceId) return;
+        const next = replaceWorkspace
+          ? replacementWorkspaceState(workspaces, workspaceId, file.name)
+          : setWorkspaceFile(workspaces, file.name);
+        const revision = await writeWorkspaceAndPdf(next, workspaceRevision, {
+          put: { id: workspaceId, file },
+        });
+        workspaceRevision = revision;
+        workspaces = next;
+        persistedWorkspaces = next;
+        broadcastWorkspaceRevision();
+      } catch (error) {
+        console.error("PDF transaction failed:", error);
+        cancelAllWork();
+        showToast("PDF kaydedilemedi; eski PDF ve yer imleri korundu. Sayfayı yenilemeden tekrar deneme.");
+        void restoreWorkspacePdf(workspaceId);
+        return;
       }
     }
     if (generation !== state.generation || workspaces.activeId !== workspaceId) return;
-    if (persistFile && !replaceWorkspace) {
-      workspaces = setWorkspaceFile(workspaces, file.name);
-      persistWorkspaces();
-    }
     // Restoring an existing PDF must not rewrite its bookmark metadata.
     workspaceFiles.set(workspaceId, file);
     if (persistFile && replaceWorkspace) libraryPreviewCache.delete(workspaceId);
@@ -2752,8 +2738,9 @@ async function confirmDeleteLibraryPdf() {
   try {
     // Check both in-memory and saved workspace metadata immediately before removal.
     // Never remove a PDF that became associated with a workspace meanwhile.
-    const persisted = loadWorkspaces();
-    const linked = [...workspaces.items, ...persisted.items].some(
+    await waitForWorkspaceSaves();
+    const persisted = await readWorkspaceData();
+    const linked = [...workspaces.items, ...persisted.state.items].some(
       (item) => item.id === record.workspaceId && item.fileName === record.name
     );
     if (linked) {
