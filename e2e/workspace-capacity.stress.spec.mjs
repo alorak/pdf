@@ -40,14 +40,9 @@ test("P2 baseline — 20 workspaces and a 100-page linked compilation", async ({
   await page.locator("#pageInput").fill("100");
   await page.locator("#pageInput").press("Enter");
   await expect(page.locator("#pageInput")).toHaveValue("100");
-  await page.locator("#menuButton").click();
-  await expect(page.locator("#workspaceCount")).toContainText("20 / 20");
-  await page.locator("#openLibrary").click();
-  await expect(page.locator("#libraryPage")).toBeVisible();
-  await expect(page.locator("#libraryWorkspaceCount")).toContainText("20 / 20");
-  await page.locator("#showSourceRelations").click();
-  await expect(page.locator("#sourceRelationsList")).toContainText("W1 → W20");
-  await expect(page.locator("#sourceRelationsList")).toContainText("100 sayfa");
+  await expect.poll(() => page.locator('.page-surface canvas').count(), {
+    timeout: 15000, message: 'Linked PDF must draw actual canvases',
+  }).toBeGreaterThan(0);
   const cdp=await page.context().newCDPSession(page);
   await cdp.send("Performance.enable");
   const current = await cdp.send("Performance.getMetrics");
@@ -57,6 +52,14 @@ test("P2 baseline — 20 workspaces and a 100-page linked compilation", async ({
     pageCanvases:document.querySelectorAll(".page-surface canvas").length,
     thumbCanvases:document.querySelectorAll(".thumb-preview canvas").length,
   }));
+  await page.locator("#menuButton").click();
+  await expect(page.locator("#workspaceCount")).toContainText("20 / 20");
+  await page.locator("#openLibrary").click();
+  await expect(page.locator("#libraryPage")).toBeVisible();
+  await expect(page.locator("#libraryWorkspaceCount")).toContainText("20 / 20");
+  await page.locator("#showSourceRelations").click();
+  await expect(page.locator("#sourceRelationsList")).toContainText("W1 → W20");
+  await expect(page.locator("#sourceRelationsList")).toContainText("100 sayfa");
   const result={suite:"p2-stage2",profile:"20 workspaces / 100 links",pages:100,
     firstDisplayMs:loadMs,fixtureBytes:file.length,
     heapBytes:values.JSHeapUsedSize??null,domNodes:dom.nodes,
