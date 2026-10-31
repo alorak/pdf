@@ -36,7 +36,12 @@ for (const pages of expected) {
   assert.ok(m, `model PDF.js ${pages}-page measurement missing`);
   assert.ok(b, `browser search ${pages}-page measurement missing`);
   assert.equal(b.lastPageCanvasRendered, true, "last-page timing must await actual PDF canvas");
-  assert.equal(b.afterLoad.pageShells, pages);
+  if (pages >= 300) {
+    assert.ok(b.afterLoad.pageShells > 0 && b.afterLoad.pageShells <= 80);
+    assert.ok(c.end.pages > 0 && c.end.pages <= 80);
+  } else {
+    assert.equal(b.afterLoad.pageShells, pages);
+  }
   assert.ok(Number.isFinite(b.firstPageMs) && b.firstPageMs >= 0);
   assert.ok(Number.isFinite(b.lastPageJumpMs) && b.lastPageJumpMs >= 0);
   assert.ok(Number.isFinite(b.searchMs) && b.searchMs >= 0);

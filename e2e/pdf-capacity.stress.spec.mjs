@@ -112,8 +112,16 @@ for (const count of pagesToTest) {
     }));
 
     // Structural correctness gates. Timings/memory are baselined, not invented SLAs.
-    expect(initial.pages).toBe(count);
-    expect(end.pages).toBe(count);
+    if (count >= 300) {
+      expect(initial.pages).toBeGreaterThan(0);
+      expect(initial.pages).toBeLessThanOrEqual(80);
+      expect(end.pages).toBeGreaterThan(0);
+      expect(end.pages).toBeLessThanOrEqual(80);
+      expect(times.every(x => x.pages <= 80)).toBe(true);
+    } else {
+      expect(initial.pages).toBe(count);
+      expect(end.pages).toBe(count);
+    }
     expect(errors).toEqual([]);
     expect(end.pageCanvases).toBeLessThanOrEqual(16);
     expect(end.thumbCanvases).toBeLessThanOrEqual(100);

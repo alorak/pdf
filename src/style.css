@@ -342,6 +342,10 @@ input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer
 }
 .pages.vertical { flex-direction: column; width: 100%; }
 .pages.horizontal { flex-direction: row; height: 100%; width: max-content; }
+.pages.virtual-pages .virtual-page-spacer {
+  flex: 0 0 auto; align-self: center; width: 1px; pointer-events: none;
+  visibility: hidden; content-visibility: hidden;
+}
 .pages.fit-height { padding-top: 0; padding-bottom: 0; }
 .pages.fit-height.vertical { gap: 0; }
 .pages.bookmarks-empty { justify-content: center; min-width: 100%; }

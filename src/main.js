@@ -21,7 +21,9 @@ import { linkedPickerWindow, isOutsideDialogRect } from "./linked-picker-utils.j
 import { openLinkedDocument, isLinkedOnlyWorkspace, workspaceDocumentName } from "./linked-document.js";
 import { exportLinkedPages } from "./pdf-export.js";
 import { dependentPageLinks, groupDependentLinks, stalePageLinks } from "./workspace-dependencies.js";
-import { findTextMatches, searchableText, evictDistantPages, flattenOutline, MAX_SEARCH_RESULTS } from "./pdf-navigation.js";
+import { evictDistantPages, flattenOutline, MAX_SEARCH_RESULTS } from "./pdf-navigation.js";
+import { VIRTUAL_PAGE_THRESHOLD, pageOffsets, pageWindow, pageSpacerHeights } from "./page-window.js";
+import { createPdfTextCache, scanPdfText } from "./pdf-search.js";
 import "./style.css";
 
 installMapUpsertPolyfills();
@@ -118,6 +120,8 @@ const state = {
   thumbnailMode: "pages", outlineOpen: false, outlineGeneration: 0,
   searchToken: 0, searchResults: [], searchIndex: -1, searchTimer: 0,
   programmaticScrollUntil: 0,
+  searchCache: createPdfTextCache(),
+  virtualOffsets: null, virtualRange: null,
   dimensions: [], shells: [], thumbs: [], thumbEntries: [],
   visible: new Set(), pending: new Set(), rendered: new Map(),
   renderTasks: new Map(), textLayers: new Map(), highlightRegions: new Map(), activeRenders: 0, observer: null,
@@ -1009,6 +1013,80 @@ function setPageSize(index) {
   shell.style.height = `${Math.ceil(height * state.scale) + 2}px`;
 }
 
+function usingVirtualPages() {
+  // Bookmark-only view and horizontal mode retain existing ordering/scroll semantics.
+  return state.pageCount >= VIRTUAL_PAGE_THRESHOLD
+    && state.orientation === "vertical" && state.thumbnailMode === "pages";
+}
+
+function updateVirtualOffsets() {
+  if (!usingVirtualPages()) { state.virtualOffsets = null; return; }
+  const fallback = getDimensions(0).height;
+  state.virtualOffsets = pageOffsets(
+    Array.from({ length: state.pageCount }, (_, index) => state.dimensions[index]?.height || fallback),
+    state.scale, state.fit === "height" ? 0 : 40);
+}
+
+function unmountVirtualPage(index) {
+  const shell = state.shells[index];
+  if (!shell) return;
+  state.observer?.unobserve(shell);
+  state.visible.delete(index);
+  state.pending.delete(index);
+  state.renderTasks.get(index)?.cancel();
+  state.textLayers.get(index)?.cancel();
+  state.textLayers.delete(index);
+  state.highlightRegions.delete(index);
+  shell.querySelector(".page-surface")?.replaceChildren();
+  state.rendered.delete(index);
+  if (usingVirtualPages()) state.shells[index] = null;
+}
+
+function mountVirtualPages(focusIndex = null) {
+  if (!usingVirtualPages()) return;
+  if (!state.virtualOffsets) updateVirtualOffsets();
+  const offsets = state.virtualOffsets;
+  const padding = parseFloat(getComputedStyle(ui.pages).paddingTop) || 0;
+  const viewStart = Math.max(0, (focusIndex === null
+    ? ui.viewer.scrollTop - padding : offsets[focusIndex]));
+  const range = pageWindow(offsets, viewStart, ui.viewer.clientHeight, 1300);
+  const old = state.virtualRange;
+  if (old?.start === range.start && old?.end === range.end) return;
+  // When switching from an unwindowed layout, also release all former shells.
+  if (!old) {
+    for (let index = 0; index < state.shells.length; index++) {
+      if (state.shells[index].isConnected) unmountVirtualPage(index);
+    }
+  } else {
+    for (let index = old.start; index < old.end; index++) {
+      if (index < range.start || index >= range.end) unmountVirtualPage(index);
+    }
+  }
+  const spacers = pageSpacerHeights(offsets, range.start, range.end, state.fit === "height" ? 0 : 40);
+  const elements = [];
+  if (range.start) {
+    const top = document.createElement("div");
+    top.className = "virtual-page-spacer";
+    top.style.height = spacers.before + "px";
+    top.setAttribute("aria-hidden", "true");
+    elements.push(top);
+  }
+  for (let index = range.start; index < range.end; index++) {
+    if (!state.shells[index]) state.shells[index] = makePageShell(index);
+    elements.push(state.shells[index]);
+  }
+  if (range.end < state.pageCount) {
+    const bottom = document.createElement("div");
+    bottom.className = "virtual-page-spacer";
+    bottom.style.height = spacers.after + "px";
+    bottom.setAttribute("aria-hidden", "true");
+    elements.push(bottom);
+  }
+  ui.pages.replaceChildren(...elements, ui.bookmarkPagesEmpty);
+  state.virtualRange = { start: range.start, end: range.end };
+  for (let index = range.start; index < range.end; index++) state.observer?.observe(state.shells[index]);
+}
+
 function visiblePageNumbers() {
   if (!state.doc) return [];
   if (state.thumbnailMode === "bookmarks") {
@@ -1076,11 +1154,25 @@ function updateThumbnailFilter(resetScroll = false) {
   ui.bookmarkPagesEmpty.hidden = !onlyBookmarks || ordered.length > 0 || !state.doc;
   ui.pages.classList.toggle("bookmarks-empty", onlyBookmarks && visiblePages.length === 0 && Boolean(state.doc));
 
-  const currentOrder = [...ui.pages.children].filter((element) => element !== ui.bookmarkPagesEmpty);
-  const nextOrder = visiblePages.map((page) => state.shells[page - 1]).filter(Boolean);
-  const pageOrderChanged = currentOrder.length !== nextOrder.length
-    || nextOrder.some((shell, index) => currentOrder[index] !== shell);
+  const virtual = usingVirtualPages();
+  ui.pages.classList.toggle("virtual-pages", virtual);
+  if (virtual) {
+    if (!state.virtualOffsets) updateVirtualOffsets();
+    mountVirtualPages();
+  }
+  const currentOrder = virtual ? [] : [...ui.pages.children].filter((element) =>
+    element !== ui.bookmarkPagesEmpty && !element.classList.contains("virtual-page-spacer"));
+  const nextOrder = virtual ? [] : visiblePages.map((page) => {
+    const index = page - 1;
+    if (!state.shells[index]) state.shells[index] = makePageShell(index);
+    return state.shells[index];
+  });
+  const pageOrderChanged = !virtual && (state.virtualRange !== null
+    || currentOrder.length !== nextOrder.length
+    || nextOrder.some((shell, index) => currentOrder[index] !== shell));
   if (pageOrderChanged) {
+    state.virtualRange = null;
+    state.virtualOffsets = null;
     for (const shell of state.shells) {
       if (shell) state.observer?.unobserve(shell);
     }
@@ -1229,6 +1321,13 @@ function goToPage(page, smooth = true) {
   state.programmaticScrollUntil = performance.now() + (smooth ? 800 : 450);
   setCurrentPage(index);
   if (state.fit !== "custom") applyFit(state.fit);
+  if (usingVirtualPages() && !state.shells[index]?.isConnected) {
+    if (!state.virtualOffsets) updateVirtualOffsets();
+    const padding = parseFloat(getComputedStyle(ui.pages).paddingTop) || 0;
+    ui.viewer.scrollTop = padding + state.virtualOffsets[index];
+    mountVirtualPages(index);
+    smooth = false; // Long virtual jumps cannot animate through unmounted pages.
+  }
   state.shells[index]?.scrollIntoView({
     behavior: smooth ? "smooth" : "auto",
     block: state.orientation === "vertical" ? "start" : "nearest",
@@ -1266,7 +1365,7 @@ function cancelPageRenders() {
   for (const task of state.renderTasks.values()) task.cancel();
   for (const layer of state.textLayers.values()) layer.cancel();
   state.textLayers.clear();
-  for (const shell of state.shells) shell.querySelector(".textLayer")?.remove();
+  for (const shell of state.shells) shell?.querySelector(".textLayer")?.remove();
   state.rendered.clear();
 }
 
@@ -1282,6 +1381,14 @@ function setScale(scale, fit = "custom") {
   if (changed) {
     cancelPageRenders();
     for (let i = 0; i < state.shells.length; i++) setPageSize(i);
+    updateVirtualOffsets();
+    if (usingVirtualPages() && anchor && state.virtualOffsets) {
+      const padding = parseFloat(getComputedStyle(ui.pages).paddingTop) || 0;
+      ui.viewer.scrollTop = padding + state.virtualOffsets[anchor.index];
+      mountVirtualPages(anchor.index);
+    } else if (usingVirtualPages()) {
+      mountVirtualPages();
+    }
     restoreViewportAnchor(anchor);
     for (const index of state.visible) state.pending.add(index);
     pumpPages();
@@ -1305,6 +1412,7 @@ function updateOrientation(direction) {
   if (state.doc) {
     ui.viewer.scrollTop = 0;
     ui.viewer.scrollLeft = 0;
+    updateThumbnailFilter();
     if (state.fit !== "custom") applyFit(state.fit);
     requestAnimationFrame(() => goToPage(state.current, false));
   }
@@ -1471,33 +1579,35 @@ async function runDocumentSearch() {
     ui.searchStatus.textContent = "Arama en fazla 160 karakter olabilir.";
     return;
   }
+  const cancelled = () => token !== state.searchToken
+    || doc !== state.doc || generation !== state.generation;
   ui.searchStatus.textContent = "PDF sayfaları taranıyor…";
+  let lastProgress = performance.now();
   try {
-    for (let pageNo = 1; pageNo <= doc.numPages; pageNo++) {
-      if (token !== state.searchToken || doc !== state.doc || generation !== state.generation) return;
-      const page = await doc.getPage(pageNo);
-      const content = await page.getTextContent();
-      if (token !== state.searchToken || doc !== state.doc || generation !== state.generation) return;
-      const rest = MAX_SEARCH_RESULTS - state.searchResults.length;
-      state.searchResults.push(...findTextMatches(searchableText(content), term, pageNo, rest));
-      if (pageNo % 6 === 0 || pageNo === doc.numPages) {
-        ui.searchStatus.textContent = `${pageNo}/${doc.numPages} sayfa · ${state.searchResults.length} sonuç`;
+    const matches = await scanPdfText(doc, term, {
+      cache: state.searchCache,
+      maxResults: MAX_SEARCH_RESULTS,
+      batchSize: 8,
+      isCancelled: cancelled,
+      onProgress: (scanned, total, results) => {
+        if (cancelled()) return;
+        const now = performance.now();
+        if (now - lastProgress < 180 && scanned !== total && results.length < MAX_SEARCH_RESULTS) return;
+        lastProgress = now;
+        state.searchResults = results.slice();
+        ui.searchStatus.textContent = `${scanned}/${total} sayfa · ${results.length} sonuç`;
         showSearchResults();
-        await new Promise(resolve => setTimeout(resolve, 0));
-      }
-      if (state.searchResults.length >= MAX_SEARCH_RESULTS) {
-        ui.searchStatus.textContent = `İlk ${MAX_SEARCH_RESULTS} sonuç gösteriliyor. Aramayı daraltabilirsin.`;
-        break;
-      }
-    }
-    if (token === state.searchToken && doc === state.doc && state.searchResults.length < MAX_SEARCH_RESULTS) {
-      ui.searchStatus.textContent = state.searchResults.length
-        ? `${state.searchResults.length} eşleşme bulundu.`
-        : "Eşleşme bulunamadı.";
-    }
-    if (token === state.searchToken) showSearchResults();
+      },
+    });
+    if (cancelled() || matches === null) return;
+    state.searchResults = matches;
+    ui.searchStatus.textContent = matches.length >= MAX_SEARCH_RESULTS
+      ? `İlk ${MAX_SEARCH_RESULTS} sonuç gösteriliyor. Aramayı daraltabilirsin.`
+      : matches.length ? `${matches.length} eşleşme bulundu.` : "Eşleşme bulunamadı.";
+    showSearchResults();
   } catch (error) {
-    if (token === state.searchToken) ui.searchStatus.textContent = "PDF metni aranamadı.";
+    if (cancelled()) return;
+    ui.searchStatus.textContent = "PDF metni aranamadı.";
     console.warn("PDF text search failed:", error);
   }
 }
@@ -1526,8 +1636,11 @@ function cancelAllWork() {
   clearTimeout(state.searchTimer);
   state.searchToken++;
   state.searchResults = [];
+  state.searchCache.clear();
   state.searchIndex = -1;
   state.programmaticScrollUntil = 0;
+  state.virtualOffsets = null;
+  state.virtualRange = null;
   ui.searchQuery.value = "";
   state.outlineGeneration++;
   state.outlineOpen = false;
@@ -1580,6 +1693,7 @@ function cancelAllWork() {
   touchBookmarkDrag = null;
   hideHighlightRemove();
   ui.pages.replaceChildren();
+  ui.pages.classList.remove("virtual-pages");
   ui.thumbList.replaceChildren(ui.thumbEmpty);
   ui.thumbEmpty.hidden = true;
   ui.app.classList.remove("has-document");
@@ -1595,6 +1709,20 @@ function cancelAllWork() {
   updateToolbar();
 }
 
+function makePageShell(index) {
+  const shell = document.createElement("article");
+  shell.className = "page-shell";
+  shell.dataset.index = String(index);
+  shell.setAttribute("aria-label", `Sayfa ${index + 1}`);
+  const surface = document.createElement("div");
+  surface.className = "page-surface";
+  shell.append(surface);
+  const { width, height } = getDimensions(index);
+  shell.style.width = `${Math.ceil(width * state.scale) + 2}px`;
+  shell.style.height = `${Math.ceil(height * state.scale) + 2}px`;
+  return shell;
+}
+
 function createPageElements() {
   const pageFragment = document.createDocumentFragment();
   const thumbFragment = document.createDocumentFragment();
@@ -1602,16 +1730,11 @@ function createPageElements() {
   state.thumbs = new Array(state.pageCount);
   state.thumbEntries = new Array(state.pageCount);
   for (let index = 0; index < state.pageCount; index++) {
-    const shell = document.createElement("article");
-    shell.className = "page-shell";
-    shell.dataset.index = String(index);
-    shell.setAttribute("aria-label", `Sayfa ${index + 1}`);
-    const surface = document.createElement("div");
-    surface.className = "page-surface";
-    shell.append(surface);
-    state.shells[index] = shell;
-    setPageSize(index);
-    pageFragment.append(shell);
+    if (!usingVirtualPages()) {
+      const shell = makePageShell(index);
+      state.shells[index] = shell;
+      pageFragment.append(shell);
+    }
 
     const thumb = document.createElement("button");
     thumb.type = "button";
@@ -1701,7 +1824,8 @@ function createPageElements() {
     state.thumbEntries[index] = entry;
     thumbFragment.append(entry);
   }
-  ui.pages.replaceChildren(pageFragment);
+  if (!usingVirtualPages()) ui.pages.replaceChildren(pageFragment);
+  else { ui.pages.replaceChildren(ui.bookmarkPagesEmpty); updateVirtualOffsets(); }
   ui.thumbList.replaceChildren(thumbFragment, ui.thumbEmpty);
   updateThumbnailFilter();
 }
@@ -1711,6 +1835,7 @@ function initializeObservers() {
   state.observer = new IntersectionObserver((entries) => {
     if (generation !== state.generation) return;
     for (const entry of entries) {
+      if (!entry.target.isConnected) continue;
       const index = Number(entry.target.dataset.index);
       if (entry.isIntersecting) {
         state.visible.add(index);
@@ -1748,7 +1873,7 @@ function initializeObservers() {
     pumpThumbs();
   }, { root: ui.thumbList, rootMargin: "240px", threshold: 0 });
 
-  for (const shell of state.shells) state.observer.observe(shell);
+  for (const shell of state.shells) if (shell?.isConnected) state.observer.observe(shell);
   for (const thumb of state.thumbs) state.thumbObserver.observe(thumb);
 }
 
@@ -1793,6 +1918,12 @@ async function renderPage(index, generation, epoch) {
     if (!previous || Math.abs(previous.width - base.width) > .5 || Math.abs(previous.height - base.height) > .5) {
       state.dimensions[index] = { width: base.width, height: base.height };
       setPageSize(index);
+      if (usingVirtualPages()) {
+        updateVirtualOffsets();
+        requestAnimationFrame(() => {
+          if (generation === state.generation) mountVirtualPages();
+        });
+      }
       if (index === state.current - 1 && state.fit !== "custom") {
         requestAnimationFrame(() => {
           if (generation === state.generation && state.fit !== "custom") applyFit(state.fit);
@@ -1905,6 +2036,7 @@ function scheduleScrollUpdate() {
   if (state.scrollFrame) return;
   state.scrollFrame = requestAnimationFrame(() => {
     state.scrollFrame = 0;
+    if (state.doc && usingVirtualPages()) mountVirtualPages();
     if (!state.doc || !state.visible.size || performance.now() < state.programmaticScrollUntil) return;
     const area = ui.viewer.getBoundingClientRect();
     const center = state.orientation === "vertical" ? area.top + area.height / 2 : area.left + area.width / 2;

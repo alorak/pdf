@@ -90,7 +90,12 @@ for (const pages of pageCounts) {
 }
 
 function assertSamples(metrics, pages) {
-  expect(metrics.pageShells).toBe(pages);
+  if (pages >= 300) {
+    expect(metrics.pageShells).toBeGreaterThan(0);
+    expect(metrics.pageShells).toBeLessThanOrEqual(80);
+  } else {
+    expect(metrics.pageShells).toBe(pages);
+  }
   expect(metrics.pageCanvases).toBeLessThanOrEqual(30);
   expect(metrics.thumbnailCanvases).toBeLessThanOrEqual(110);
 }
