@@ -195,6 +195,15 @@ export function removeLinkedWorkspacePage(state, referenceId) {
   });
 }
 
+/** Remove a stale reference in any workspace, without switching the active reader. */
+export function removeWorkspaceLinkedPage(state, workspaceId, referenceId) {
+  if (!state.items.some(item => item.id === workspaceId)) return state;
+  const previousActiveId = state.activeId;
+  const updated = removeLinkedWorkspacePage({ ...state, activeId: workspaceId }, referenceId);
+  if (updated.items === state.items) return state;
+  return { ...updated, activeId: previousActiveId };
+}
+
 export function switchWorkspace(state, id) {
   return state.items.some((item) => item.id === id) ? { ...state, activeId: id } : state;
 }
