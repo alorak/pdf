@@ -1,3 +1,5 @@
+export const LINKED_DOCUMENT_NAME = "@workspace-linked-pages";
+
 /**
  * A read-only virtual PDF document. Pages are resolved from the original
  * workspace PDFs; nothing is merged or copied into IndexedDB.
@@ -77,4 +79,8 @@ export async function openLinkedDocument({ references, workspaces, loadFile, pdf
 
 export function isLinkedOnlyWorkspace(workspace) {
   return Boolean(workspace && !workspace.fileName && workspace.linkedPages?.length);
+}
+
+export function workspaceDocumentName(workspace) {
+  return workspace?.fileName || (isLinkedOnlyWorkspace(workspace) ? LINKED_DOCUMENT_NAME : "");
 }
