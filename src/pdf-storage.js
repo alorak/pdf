@@ -56,6 +56,59 @@ export async function saveWorkspacePdf(workspaceId, file) {
   }));
 }
 
+/**
+ * Replace a PDF only when its associated localStorage metadata can be written.
+ *
+ * Writing metadata from the IDB put request's success callback allows aborting
+ * the still-open transaction if localStorage rejects. The previously committed
+ * PDF then remains unchanged. If IDB aborts after metadata was written, attempt
+ * a compensating localStorage rollback before reporting the failure.
+ */
+export function replaceWorkspacePdfInDatabase(db, workspaceId, file, metadata) {
+  if (!Number.isSafeInteger(workspaceId) || workspaceId < 1 || !file ||
+    typeof metadata?.commit !== "function" || typeof metadata.rollback !== "function") {
+    throw new Error("Geçersiz PDF değiştirme işlemi");
+  }
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, "readwrite");
+    let metadataCommitted = false;
+    let primaryError = null;
+    const request = tx.objectStore(STORE_NAME).put({
+      workspaceId, name: file.name, type: file.type || "application/pdf",
+      lastModified: file.lastModified || Date.now(), blob: file,
+    });
+    request.onsuccess = () => {
+      try {
+        metadata.commit();
+        metadataCommitted = true;
+      } catch (error) {
+        primaryError = error;
+        try { tx.abort(); } catch { /* Already aborted */ }
+      }
+    };
+    request.onerror = () => { primaryError = request.error; };
+    tx.oncomplete = () => resolve();
+    tx.onabort = () => {
+      if (metadataCommitted) {
+        try { metadata.rollback(); } catch (rollbackError) {
+          reject(new AggregateError(
+            [primaryError || tx.error || new Error("PDF işlemi iptal edildi"), rollbackError],
+            "PDF kaydı geri alındı ancak workspace bilgisi geri alınamadı",
+          ));
+          return;
+        }
+      }
+      reject(primaryError || tx.error || new Error("PDF kaydı iptal edildi; önceki PDF korundu"));
+    };
+    tx.onerror = () => { primaryError ||= tx.error; };
+  });
+}
+
+export async function replaceWorkspacePdfWithMetadata(workspaceId, file, metadata) {
+  const db = await openDatabase();
+  return replaceWorkspacePdfInDatabase(db, workspaceId, file, metadata);
+}
+
 export async function loadWorkspacePdf(workspaceId) {
   if (!Number.isSafeInteger(workspaceId) || workspaceId < 1) return null;
   const record = await transaction("readonly", (store) => store.get(workspaceId));
