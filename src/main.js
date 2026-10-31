@@ -9,7 +9,8 @@ import {
   reorderBookmarkedPage, moveBookmarkedPage, MAX_HIGHLIGHT_RECTS,
   DEFAULT_WORKSPACE_VIEW, setWorkspaceView,
 } from "./workspace-store.js";
-import { saveWorkspacePdf, loadWorkspacePdf, deleteWorkspacePdf } from "./pdf-storage.js";
+import { saveWorkspacePdf, loadWorkspacePdf, deleteWorkspacePdf, listWorkspacePdfs, deleteWorkspacePdfIfMatches } from "./pdf-storage.js";
+import { classifyLibraryPdfs, measureLocalStorage, formatBytes } from "./library-utils.js";
 import "./style.css";
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
@@ -21,7 +22,18 @@ const ui = {
   activeWorkspaceLabel: $("activeWorkspaceLabel"), workspaceSidebar: $("workspaceSidebar"),
   sidebarBackdrop: $("sidebarBackdrop"), closeSidebar: $("closeSidebar"),
   workspaceList: $("workspaceList"), workspaceCount: $("workspaceCount"),
-  createWorkspace: $("createWorkspace"),
+  createWorkspace: $("createWorkspace"), openLibrary: $("openLibrary"),
+  readerPage: document.querySelector("main.workspace"), libraryPage: $("libraryPage"),
+  libraryBack: $("libraryBack"), refreshLibrary: $("refreshLibrary"),
+  libraryPdfSize: $("libraryPdfSize"), libraryPdfCount: $("libraryPdfCount"),
+  libraryLocalSize: $("libraryLocalSize"), libraryLocalCount: $("libraryLocalCount"),
+  libraryTotalSize: $("libraryTotalSize"), libraryOrphanCount: $("libraryOrphanCount"),
+  libraryList: $("libraryList"), libraryQuotaText: $("libraryQuotaText"),
+  libraryQuotaProgress: $("libraryQuotaProgress"), libraryPersistenceStatus: $("libraryPersistenceStatus"),
+  libraryPersist: $("libraryPersist"),
+  deleteLibraryPdfDialog: $("deleteLibraryPdfDialog"), deleteLibraryPdfName: $("deleteLibraryPdfName"),
+  cancelDeleteLibraryPdf: $("cancelDeleteLibraryPdf"), cancelDeleteLibraryPdfTop: $("cancelDeleteLibraryPdfTop"),
+  confirmDeleteLibraryPdf: $("confirmDeleteLibraryPdf"),
   replaceDialog: $("replaceDialog"), replaceTitle: $("replaceTitle"), replaceWorkspaceName: $("replaceWorkspaceName"), replaceMessage: $("replaceMessage"),
   deleteWorkspaceDialog: $("deleteWorkspaceDialog"), deleteWorkspaceName: $("deleteWorkspaceName"),
   cancelDeleteWorkspace: $("cancelDeleteWorkspace"), cancelDeleteWorkspaceTop: $("cancelDeleteWorkspaceTop"),
@@ -70,6 +82,8 @@ const state = {
 let workspaces = loadWorkspaces();
 const workspaceFiles = new Map(); // Active files are cached in memory; persistent copies live in IndexedDB.
 let pendingDeleteWorkspaceId = null;
+let pendingLibraryDeletion = null;
+let libraryRequestId = 0;
 let pendingDropFile = null;
 let pendingOpenWorkspaceId = null;
 let pickingWorkspaceId = null;
@@ -177,6 +191,7 @@ function closeSidebar() {
 }
 
 function changeWorkspace(id) {
+  closeLibrary();
   if (id === workspaces.activeId) { closeSidebar(); return; }
   cancelAllWork();
   workspaces = switchWorkspace(workspaces, id);
@@ -274,6 +289,7 @@ function askToOpen(file = null, workspaceId = workspaces.activeId) {
 
 function openPdfForWorkspace(file, workspaceId) {
   if (!file || !workspaces.items.some((item) => item.id === workspaceId)) return;
+  closeLibrary();
   if (!file.name.toLowerCase().endsWith(".pdf") && file.type !== "application/pdf") {
     showToast("Lütfen bir PDF dosyası seç.");
     return;
@@ -1468,6 +1484,179 @@ function stepZoom(direction) {
   setScale(next);
 }
 
+
+function closeLibrary() {
+  if (ui.libraryPage.hidden) return;
+  libraryRequestId++;
+  ui.libraryPage.hidden = true;
+  ui.readerPage.hidden = false;
+  ui.app.classList.remove("library-open");
+  ui.openLibrary.setAttribute("aria-current", "false");
+}
+
+function openLibraryPage() {
+  closeSidebar();
+  ui.readerPage.hidden = true;
+  ui.libraryPage.hidden = false;
+  ui.app.classList.add("library-open");
+  ui.openLibrary.setAttribute("aria-current", "page");
+  ui.libraryBack.focus();
+  void refreshLibrary();
+}
+
+function makeLibraryPdfRow(record) {
+  const row = document.createElement("article");
+  row.className = "library-file";
+  const icon = document.createElement("span");
+  icon.className = "library-file-icon";
+  icon.textContent = "PDF";
+  icon.setAttribute("aria-hidden", "true");
+  const details = document.createElement("div");
+  details.className = "library-file-details";
+  const name = document.createElement("strong");
+  name.textContent = record.name || "Adsız PDF";
+  name.title = record.name;
+  const meta = document.createElement("small");
+  meta.textContent = `${formatBytes(record.size)} · ${record.orphan
+    ? (record.workspace ? `W${record.workspaceId} · ilişkisiz kayıt` : `W${record.workspaceId} · workspace silinmiş`)
+    : `W${record.workspaceId} · workspace'e bağlı`}`;
+  details.append(name, meta);
+  const status = document.createElement("span");
+  status.className = "library-file-status" + (record.orphan ? " is-orphan" : "");
+  status.textContent = record.orphan ? "Sahipsiz" : "Kullanımda";
+  row.append(icon, details, status);
+  if (record.orphan) {
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "library-remove";
+    remove.textContent = "Sil";
+    remove.setAttribute("aria-label", `${record.name || "Adsız PDF"} dosyasını sil`);
+    remove.addEventListener("click", () => askDeleteLibraryPdf(record));
+    row.append(remove);
+  }
+  return row;
+}
+
+async function refreshLibrary() {
+  const requestId = ++libraryRequestId;
+  ui.libraryList.setAttribute("aria-busy", "true");
+  ui.libraryList.textContent = "PDF kayıtları okunuyor…";
+  ui.refreshLibrary.disabled = true;
+  let local;
+  try { local = measureLocalStorage(window.localStorage); }
+  catch { local = null; }
+  ui.libraryLocalSize.textContent = local ? formatBytes(local.bytes) : "Kullanılamıyor";
+  ui.libraryLocalCount.textContent = local ? `${local.keys} anahtar` : "Erişim engellendi";
+  void updateLibraryQuota(requestId);
+  try {
+    const records = await listWorkspacePdfs();
+    if (requestId !== libraryRequestId) return;
+    const sorted = classifyLibraryPdfs(records, workspaces.items)
+      .sort((a, b) => Number(b.orphan) - Number(a.orphan) || a.name.localeCompare(b.name, "tr"));
+    const pdfBytes = sorted.reduce((total, record) => total + record.size, 0);
+    const orphans = sorted.filter((record) => record.orphan);
+    ui.libraryPdfSize.textContent = formatBytes(pdfBytes);
+    ui.libraryPdfCount.textContent = `${sorted.length} PDF`;
+    ui.libraryTotalSize.textContent = local ? formatBytes(pdfBytes + local.bytes) : "—";
+    ui.libraryOrphanCount.textContent = `${orphans.length} sahipsiz PDF · ${formatBytes(orphans.reduce((total, record) => total + record.size, 0))}`;
+    ui.libraryList.replaceChildren();
+    if (!sorted.length) {
+      const empty = document.createElement("p");
+      empty.className = "library-empty";
+      empty.textContent = "Henüz bu tarayıcıda kaydedilmiş PDF bulunmuyor.";
+      ui.libraryList.append(empty);
+    } else {
+      sorted.forEach((record) => ui.libraryList.append(makeLibraryPdfRow(record)));
+    }
+  } catch (error) {
+    if (requestId !== libraryRequestId) return;
+    console.warn("Library load failed:", error);
+    ui.libraryPdfSize.textContent = "Kullanılamıyor";
+    ui.libraryPdfCount.textContent = "PDF kayıtları okunamadı";
+    ui.libraryTotalSize.textContent = "—";
+    ui.libraryOrphanCount.textContent = "IndexedDB erişimi başarısız";
+    ui.libraryList.textContent = "PDF kütüphanesi okunamadı. Tarayıcı depolama izinlerini kontrol edip yeniden dene.";
+  } finally {
+    if (requestId === libraryRequestId) {
+      ui.libraryList.setAttribute("aria-busy", "false");
+      ui.refreshLibrary.disabled = false;
+    }
+  }
+}
+
+async function updateLibraryQuota(requestId) {
+  ui.libraryPersist.hidden = true;
+  if (!navigator.storage?.estimate) {
+    ui.libraryQuotaText.textContent = "Bu tarayıcıda desteklenmiyor";
+    ui.libraryPersistenceStatus.textContent = "Kalıcı depolama API'si kullanılamıyor";
+    return;
+  }
+  try {
+    const estimate = await navigator.storage.estimate();
+    if (requestId !== libraryRequestId) return;
+    const usage = estimate.usage;
+    const quota = estimate.quota;
+    if (!Number.isFinite(usage) || !Number.isFinite(quota) || quota <= 0) {
+      ui.libraryQuotaText.textContent = "Kota bilgisi yok";
+      ui.libraryQuotaProgress.value = 0;
+    } else {
+      const percent = Math.min(100, 100 * usage / quota);
+      ui.libraryQuotaText.textContent = `${formatBytes(usage)} / ${formatBytes(quota)} (%${percent.toLocaleString("tr-TR", { maximumFractionDigits: 1 })})`;
+      ui.libraryQuotaProgress.value = percent;
+    }
+    const persisted = typeof navigator.storage.persisted === "function"
+      ? await navigator.storage.persisted() : null;
+    if (requestId !== libraryRequestId) return;
+    ui.libraryPersistenceStatus.textContent = persisted === true
+      ? "Kalıcı depolama etkin: otomatik temizlenme riski azaltıldı."
+      : "Standart depolama: tarayıcı alan gerektiğinde verileri temizleyebilir.";
+    ui.libraryPersist.hidden = persisted === true || typeof navigator.storage.persist !== "function";
+  } catch (error) {
+    if (requestId !== libraryRequestId) return;
+    console.warn("Storage quota unavailable:", error);
+    ui.libraryQuotaText.textContent = "Kota okunamadı";
+    ui.libraryPersistenceStatus.textContent = "Depolama durumu öğrenilemedi.";
+  }
+}
+
+function askDeleteLibraryPdf(record) {
+  if (!record.orphan || ui.libraryPage.hidden) return;
+  pendingLibraryDeletion = record;
+  ui.deleteLibraryPdfName.textContent = record.name || "Adsız PDF";
+  ui.deleteLibraryPdfDialog.showModal();
+}
+
+async function confirmDeleteLibraryPdf() {
+  const record = pendingLibraryDeletion;
+  if (!record) return;
+  ui.confirmDeleteLibraryPdf.disabled = true;
+  ui.cancelDeleteLibraryPdf.disabled = true;
+  ui.cancelDeleteLibraryPdfTop.disabled = true;
+  try {
+    // Check both in-memory and saved workspace metadata immediately before removal.
+    // Never remove a PDF that became associated with a workspace meanwhile.
+    const persisted = loadWorkspaces();
+    const activeRecord = classifyLibraryPdfs([record], [...workspaces.items, ...persisted.items])[0];
+    if (!activeRecord.orphan) {
+      showToast("PDF artık bir workspace'e bağlı; silinmedi.");
+    } else if (await deleteWorkspacePdfIfMatches(record.workspaceId, record)) {
+      workspaceFiles.delete(record.workspaceId);
+      showToast("Sahipsiz PDF silindi.");
+    } else {
+      showToast("PDF değişmiş veya zaten silinmiş; kayıtlar yeniden okunuyor.");
+    }
+    ui.deleteLibraryPdfDialog.close();
+    await refreshLibrary();
+  } catch (error) {
+    console.warn("Orphan PDF delete failed:", error);
+    showToast("PDF silinemedi. Depolama izinlerini kontrol et.");
+  } finally {
+    ui.confirmDeleteLibraryPdf.disabled = false;
+    ui.cancelDeleteLibraryPdf.disabled = false;
+    ui.cancelDeleteLibraryPdfTop.disabled = false;
+  }
+}
+
 ui.menu.addEventListener("click", () => {
   if (ui.workspaceSidebar.classList.contains("is-open")) closeSidebar();
   else openSidebar();
@@ -1475,10 +1664,39 @@ ui.menu.addEventListener("click", () => {
 ui.closeSidebar.addEventListener("click", closeSidebar);
 ui.sidebarBackdrop.addEventListener("click", closeSidebar);
 ui.emptyOpen.addEventListener("click", openSidebar);
+ui.openLibrary.addEventListener("click", openLibraryPage);
+ui.libraryBack.addEventListener("click", closeLibrary);
+ui.refreshLibrary.addEventListener("click", () => { void refreshLibrary(); });
+ui.libraryPersist.addEventListener("click", async () => {
+  ui.libraryPersist.disabled = true;
+  try {
+    const allowed = await navigator.storage.persist();
+    showToast(allowed ? "Kalıcı depolama etkinleştirildi." : "Tarayıcı kalıcı depolama izni vermedi.");
+  } catch {
+    showToast("Kalıcı depolama isteği başarısız oldu.");
+  } finally {
+    ui.libraryPersist.disabled = false;
+    if (!ui.libraryPage.hidden) void refreshLibrary();
+  }
+});
+ui.cancelDeleteLibraryPdf.addEventListener("click", () => ui.deleteLibraryPdfDialog.close());
+ui.cancelDeleteLibraryPdfTop.addEventListener("click", () => ui.deleteLibraryPdfDialog.close());
+ui.deleteLibraryPdfDialog.addEventListener("click", (event) => {
+  if (event.target === ui.deleteLibraryPdfDialog && !ui.confirmDeleteLibraryPdf.disabled) ui.deleteLibraryPdfDialog.close();
+});
+ui.deleteLibraryPdfDialog.addEventListener("cancel", (event) => {
+  if (ui.confirmDeleteLibraryPdf.disabled) event.preventDefault();
+});
+ui.deleteLibraryPdfDialog.addEventListener("close", () => { pendingLibraryDeletion = null; });
+ui.confirmDeleteLibraryPdf.addEventListener("click", () => { void confirmDeleteLibraryPdf(); });
+window.addEventListener("storage", (event) => {
+  if (event.key === WORKSPACE_STORAGE_KEY && !ui.libraryPage.hidden) void refreshLibrary();
+});
 ui.createWorkspace.addEventListener("click", () => {
   const next = addWorkspace(workspaces);
   if (next === workspaces) return;
   cancelAllWork();
+  closeLibrary();
   workspaces = next;
   persistWorkspaces();
   applyWorkspaceView();
@@ -1803,7 +2021,7 @@ document.addEventListener("keydown", (event) => {
     hideSelectionMenu();
     if (ui.workspaceSidebar.classList.contains("is-open")) closeSidebar();
   }
-  if (!state.doc || document.querySelector("dialog[open]") || event.altKey || event.shiftKey || modifier || event.defaultPrevented) return;
+  if (!ui.libraryPage.hidden || !state.doc || document.querySelector("dialog[open]") || event.altKey || event.shiftKey || modifier || event.defaultPrevented) return;
   const active = document.activeElement;
   if (["INPUT", "TEXTAREA", "SELECT"].includes(active?.tagName) || active?.isContentEditable) return;
   // The arrow keys move by whole pages in either flow direction; wheel/touch/mouse handle panning.
