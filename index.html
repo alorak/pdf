@@ -218,18 +218,35 @@
     </dialog>
 
     <dialog id="addLinkedPagesDialog" class="settings-dialog linked-pages-dialog" aria-labelledby="addLinkedPagesTitle">
-      <div class="dialog-top"><div>
-        <span class="eyebrow">DİĞER WORKSPACE'LERDEN</span>
-        <h2 id="addLinkedPagesTitle">PDF sayfaları ekle</h2>
-      </div><button id="closeAddLinkedPages" class="icon-button" type="button" aria-label="Kapat">✕</button></div>
-      <label for="linkedSourceWorkspace">Kaynak workspace</label>
-      <select id="linkedSourceWorkspace" aria-label="Kaynak workspace"></select>
-      <label for="linkedPageNumbers">Eklenecek sayfalar</label>
-      <input id="linkedPageNumbers" type="text" inputmode="text" maxlength="300" autocomplete="off" placeholder="Örnek: 1,3-5,9" />
-      <p id="linkedPagesMessage" class="linked-pages-message">Bir PDF ve sayfa numaraları seç. Aynı sayfalar tekrar eklenmez.</p>
-      <div class="replace-actions">
+      <div class="dialog-top">
+        <div><span class="eyebrow">DİĞER WORKSPACE'LERDEN</span><h2 id="addLinkedPagesTitle">PDF sayfaları ekle</h2></div>
+        <button id="closeAddLinkedPages" class="icon-button" type="button" aria-label="Kapat">✕</button>
+      </div>
+      <section class="linked-picker-section" aria-labelledby="linkedSourceHeading">
+        <div class="linked-picker-section-head">
+          <h3 id="linkedSourceHeading">Kaynak PDF seç</h3>
+          <span id="linkedSourceCount" class="linked-picker-hint"></span>
+        </div>
+        <div id="linkedSourceGrid" class="linked-source-grid" role="group" aria-label="Kaynak çalışma alanları"></div>
+      </section>
+      <section class="linked-picker-section" aria-labelledby="linkedPageHeading">
+        <div class="linked-picker-section-head">
+          <h3 id="linkedPageHeading">Sayfaları seç</h3>
+          <span id="linkedSelectionCount" class="linked-picker-hint">0 seçili</span>
+        </div>
+        <div id="linkedPagePickerGrid" class="linked-picker-page-grid" role="group" aria-label="PDF sayfa önizlemeleri">
+          <p class="linked-picker-empty">Önce yukarıdan bir PDF seç.</p>
+        </div>
+        <div class="linked-picker-pagination">
+          <button id="linkedPickerPrev" class="secondary-button" type="button" disabled>← Önceki</button>
+          <span id="linkedPickerPageLabel">—</span>
+          <button id="linkedPickerNext" class="secondary-button" type="button" disabled>Sonraki →</button>
+        </div>
+      </section>
+      <p id="linkedPagesMessage" class="linked-pages-message" role="status" aria-live="polite">PDF önizlemesine tıklayarak kaynak ve sayfaları seçebilirsin.</p>
+      <div class="replace-actions linked-picker-footer">
         <button id="cancelAddLinkedPages" class="secondary-button" type="button">Vazgeç</button>
-        <button id="confirmAddLinkedPages" class="primary-button" type="button">Sayfaları ekle</button>
+        <button id="confirmAddLinkedPages" class="primary-button" type="button" disabled>Sayfaları ekle (0)</button>
       </div>
     </dialog>
 
