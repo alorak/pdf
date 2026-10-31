@@ -57,6 +57,17 @@ for (const count of pagesToTest) {
     await page.locator("#confirmReplace").click();
     await expect(page.locator("#pageTotal")).toHaveText(String(count), { timeout: 120_000 });
     const initialMs = Math.round(performance.now() - started);
+    console.log('P2_RENDER_DIAG', await page.evaluate(() => {
+      const viewer = document.querySelector('#viewer');
+      const first = document.querySelector('.page-shell');
+      const rect = element => element?.getBoundingClientRect().toJSON() || null;
+      return { viewer: rect(viewer), firstPage: rect(first),
+        canvasCount: document.querySelectorAll('canvas').length,
+        display: viewer && getComputedStyle(viewer).display };
+    }));
+    await expect.poll(() => page.locator('.page-surface canvas').count(), {
+      timeout: 12000, message: 'A PDF page must render to a real canvas',
+    }).toBeGreaterThan(0);
     const initial = await counters(page, cdp);
 
     const times = [];
