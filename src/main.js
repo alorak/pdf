@@ -110,6 +110,7 @@ const state = {
   orientation: "vertical", thumbPosition: "left", thumbsVisible: true,
   thumbnailMode: "pages", outlineOpen: false, outlineGeneration: 0,
   searchToken: 0, searchResults: [], searchIndex: -1, searchTimer: 0,
+  programmaticScrollUntil: 0,
   dimensions: [], shells: [], thumbs: [], thumbEntries: [],
   visible: new Set(), pending: new Set(), rendered: new Map(),
   renderTasks: new Map(), textLayers: new Map(), highlightRegions: new Map(), activeRenders: 0, observer: null,
@@ -1179,7 +1180,10 @@ function restoreReadingPosition(workspaceId, generation) {
     // Thumbnail filtering is not persisted per workspace. Always restore a
     // physical page in the full-page view before applying the reading position.
     if (state.thumbnailMode !== "pages") setThumbnailMode("pages");
-    if (desired !== 1) goToPage(desired, false);
+    if (desired !== 1) {
+      goToPage(desired, false);
+      state.programmaticScrollUntil = performance.now() + 1400;
+    }
   });
 }
 
@@ -1205,6 +1209,7 @@ function goToPage(page, smooth = true) {
   const visiblePage = pageInActiveView(page);
   if (visiblePage === null) return;
   const index = visiblePage - 1;
+  state.programmaticScrollUntil = performance.now() + (smooth ? 800 : 450);
   setCurrentPage(index);
   if (state.fit !== "custom") applyFit(state.fit);
   state.shells[index]?.scrollIntoView({
@@ -1505,6 +1510,8 @@ function cancelAllWork() {
   state.searchToken++;
   state.searchResults = [];
   state.searchIndex = -1;
+  state.programmaticScrollUntil = 0;
+  ui.searchQuery.value = "";
   state.outlineGeneration++;
   state.outlineOpen = false;
   ui.outlineList.hidden = true;
@@ -1874,7 +1881,7 @@ function scheduleScrollUpdate() {
   if (state.scrollFrame) return;
   state.scrollFrame = requestAnimationFrame(() => {
     state.scrollFrame = 0;
-    if (!state.doc || !state.visible.size) return;
+    if (!state.doc || !state.visible.size || performance.now() < state.programmaticScrollUntil) return;
     const area = ui.viewer.getBoundingClientRect();
     const center = state.orientation === "vertical" ? area.top + area.height / 2 : area.left + area.width / 2;
     let bestIndex = state.current - 1;
@@ -3418,6 +3425,8 @@ document.addEventListener("keydown", event => {
 });
 
 ui.viewer.addEventListener("scroll", () => { scheduleScrollUpdate(); hideSelectionMenu(); }, { passive: true });
+ui.viewer.addEventListener("wheel", () => { state.programmaticScrollUntil = 0; }, { passive: true });
+ui.viewer.addEventListener("touchstart", () => { state.programmaticScrollUntil = 0; }, { passive: true });
 ui.thumbList.addEventListener("scroll", hideSelectionMenu, { passive: true });
 ui.viewer.addEventListener("pointermove", handleHighlightHover);
 ui.viewer.addEventListener("pointerleave", hideHighlightRemove);
