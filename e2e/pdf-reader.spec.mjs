@@ -35,7 +35,10 @@ function pdfFixture() {
 async function openTestPdf(page) {
   await page.goto("");
   await expect(page.locator("#emptyOpenButton")).toBeVisible();
-  await page.locator("#fileInput").setInputFiles({
+  const chooserPromise = page.waitForEvent("filechooser");
+  await page.locator("#emptyOpenButton").click();
+  const chooser = await chooserPromise;
+  await chooser.setFiles({
     name: "academic-fixture.pdf",
     mimeType: "application/pdf",
     buffer: pdfFixture(),
