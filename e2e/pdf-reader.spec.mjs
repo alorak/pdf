@@ -71,6 +71,7 @@ test("the last read PDF page is saved and restored on reload", async ({ page }) 
   await page.locator("#pageInput").press("Enter");
   await expect(page.locator("#pageInput")).toHaveValue("3");
   await page.waitForTimeout(950); // debounce persistence interval: 700ms
+  await expect(page.locator("#pageInput")).toHaveValue("3");
   await page.reload();
   await expect(page.locator("#pageTotal")).toHaveText("3", { timeout: 20000 });
   await expect(page.locator("#pageInput")).toHaveValue("3");
