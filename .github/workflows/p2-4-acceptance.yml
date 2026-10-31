@@ -1,4 +1,5 @@
 name: P2.4 temporary full performance acceptance
+# Re-run complete evidence verification after virtual DOM assertions were updated.
 
 on:
   pull_request:
