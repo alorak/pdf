@@ -12,6 +12,7 @@ import {
 } from "./workspace-store.js";
 import { saveWorkspacePdf, loadWorkspacePdf, deleteWorkspacePdf, listWorkspacePdfs, deleteWorkspacePdfIfMatches } from "./pdf-storage.js";
 import { classifyLibraryPdfs, measureLocalStorage, formatBytes, libraryWorkspaceSlots, libraryBookmarkSummary, paginateLibraryBookmarkPages } from "./library-utils.js";
+import { linkedPickerWindow, isOutsideDialogRect } from "./linked-picker-utils.js";
 import "./style.css";
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
@@ -1889,13 +1890,13 @@ function toggleLinkedPickerPage(session, page, button, check) {
 
 function renderLinkedPickerPage(session, index) {
   if (!linkedPickerActive(session) || !session.doc) return;
-  const max = Math.max(0, Math.ceil(session.total / LINKED_PICKER_PAGE_SIZE) - 1);
-  session.index = Math.max(0, Math.min(max, index));
+  if (session.saving) return;
+  const windowInfo = linkedPickerWindow(session.total, index, LINKED_PICKER_PAGE_SIZE);
+  session.index = windowInfo.index;
   const epoch = ++session.renderEpoch;
   try { session.renderTask?.cancel(); } catch { /* Render finished */ }
   session.renderTask = null;
-  const first = session.index * LINKED_PICKER_PAGE_SIZE + 1;
-  const last = Math.min(session.total, first + LINKED_PICKER_PAGE_SIZE - 1);
+  const { first, last } = windowInfo;
   const fragment = document.createDocumentFragment();
   const previews = [];
   for (let pageNumber = first; pageNumber <= last; pageNumber++) {
@@ -1923,9 +1924,9 @@ function renderLinkedPickerPage(session, index) {
     fragment.append(button);
   }
   ui.linkedPagePickerGrid.replaceChildren(fragment);
-  ui.linkedPickerPageLabel.textContent = (session.index + 1) + " / " + (max + 1) + " · Sayfa " + first + "–" + last;
+  ui.linkedPickerPageLabel.textContent = (session.index + 1) + " / " + windowInfo.groups + " · Sayfa " + first + "–" + last;
   ui.linkedPickerPrev.disabled = session.index === 0;
-  ui.linkedPickerNext.disabled = session.index === max;
+  ui.linkedPickerNext.disabled = session.index >= windowInfo.groups - 1;
   updateLinkedPickerSelection(session);
   void renderLinkedPickerPagePreviews(session, previews, epoch);
 }
@@ -2838,10 +2839,7 @@ ui.closePdfInfo.addEventListener("click", () => ui.pdfInfoDialog.close());
 for (const dialog of document.querySelectorAll("dialog")) {
   dialog.addEventListener("click", (event) => {
     if (event.target !== dialog || event.button !== 0) return;
-    const rect = dialog.getBoundingClientRect();
-    const outside = event.clientX < rect.left || event.clientX >= rect.right
-      || event.clientY < rect.top || event.clientY >= rect.bottom;
-    if (!outside) return;
+    if (!isOutsideDialogRect(event.clientX, event.clientY, dialog.getBoundingClientRect())) return;
     if (dialog === ui.deleteWorkspaceDialog && ui.confirmDeleteWorkspace.disabled) return;
     if (dialog === ui.deleteLibraryPdfDialog && ui.confirmDeleteLibraryPdf.disabled) return;
     if (dialog === ui.addLinkedPagesDialog && linkedPickerSession?.saving) return;
