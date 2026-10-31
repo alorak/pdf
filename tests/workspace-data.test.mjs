@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { initialWorkspaces, savePageBookmark, setWorkspaceFile } from "../src/workspace-store.js";
 import {
   initializeWorkspaceData, readWorkspaceData, saveWorkspaceData,
-  writeWorkspaceAndPdf, getAllStoredPdfs, readWorkspaceBundle, restoreWorkspaceBackup,
+  writeWorkspaceAndPdf, getAllStoredPdfs, readWorkspaceBundle, restoreWorkspaceBackup, deleteOrphanPdfSafe,
 } from "../src/workspace-data.js";
 
 /** Small IDB transaction simulator that commits all staged stores together. */
@@ -172,4 +172,22 @@ test("consistent snapshot returns metadata and PDF records from one readonly tra
   assert.equal(bundle.revision, latest.revision);
   assert.deepEqual(bundle.state, latest.state);
   assert.deepEqual(bundle.records.map(record => record.workspaceId), [5]);
+});
+
+test("orphan deletion cannot remove a PDF currently referenced by workspace metadata", async () => {
+  let snap = await readWorkspaceData();
+  const pdf = new Blob(["%PDF-protected"]); pdf.name = "protected.pdf"; pdf.lastModified = 77;
+  const next = setWorkspaceFile(snap.state, "protected.pdf");
+  await writeWorkspaceAndPdf(next, snap.revision, { put: { id: 1, file: pdf } });
+  const denied = await deleteOrphanPdfSafe({
+    workspaceId: 1, name: "protected.pdf", size: pdf.size, lastModified: 77,
+  });
+  assert.equal(denied, false);
+  assert.equal((await getAllStoredPdfs()).some(p => p.workspaceId === 1), true);
+  const orphan = (await getAllStoredPdfs()).find(p => p.workspaceId === 5);
+  const deleted = await deleteOrphanPdfSafe({
+    workspaceId: 5, name: orphan.name, size: orphan.blob.size, lastModified: orphan.lastModified,
+  });
+  assert.equal(deleted, true);
+  assert.deepEqual((await getAllStoredPdfs()).map(p => p.workspaceId), [1]);
 });
