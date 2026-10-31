@@ -1955,10 +1955,12 @@ function buildLibraryWorkspaceCards(records) {
     placeholder.className = "library-workspace-placeholder";
     const symbol = document.createElement("span");
     symbol.className = "symbol";
-    symbol.textContent = record ? "PDF" : workspace?.fileName ? "!" : "+";
+    const linkedCount = workspace?.linkedPages?.length || 0;
+    symbol.textContent = record ? "PDF" : linkedCount ? "↗" : workspace?.fileName ? "!" : "+";
     const message = document.createElement("span");
     message.className = "message";
     message.textContent = record ? "Önizleme…" :
+      linkedCount ? `${linkedCount} ek sayfa` :
       workspace?.fileName ? "PDF kaydı bulunamadı" : workspace ? "PDF ekle" : "Yeni workspace";
     placeholder.append(symbol, message);
     preview.append(placeholder);
@@ -1989,11 +1991,12 @@ function buildLibraryWorkspaceCards(records) {
     workspaceName.textContent = `W${slot.id}`;
     const size = document.createElement("small");
     size.textContent = record ? formatBytes(record.size) :
-      workspace ? `${workspace.notes.length} kayıt` : "Oluşturulmadı";
+      workspace ? (linkedCount ? `${linkedCount} ek sayfa` : `${workspace.notes.length} kayıt`) : "Oluşturulmadı";
     title.append(workspaceName, size);
     const filename = document.createElement("span");
     filename.className = "library-workspace-file";
-    filename.textContent = record?.name || workspace?.fileName || (workspace ? "Boş workspace" : "Oluşturmak için tıkla");
+    filename.textContent = record?.name || workspace?.fileName
+      || (workspace ? (linkedCount ? "Bağlantılı PDF sayfaları" : "Boş workspace") : "Oluşturmak için tıkla");
     filename.title = filename.textContent;
     footer.append(title, filename);
     select.append(preview, footer);
@@ -2002,7 +2005,10 @@ function buildLibraryWorkspaceCards(records) {
         createWorkspaceFromLibrary();
       } else {
         changeWorkspace(workspace.id);
-        if (!workspace.fileName) askToOpen(null, workspace.id);
+        if (!workspace.fileName) {
+          if (workspace.linkedPages?.length) openLinkedPages();
+          else askToOpen(null, workspace.id);
+        }
       }
     });
     card.append(select);
