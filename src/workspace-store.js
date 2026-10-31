@@ -148,7 +148,9 @@ export function addWorkspace(state) {
 export function addLinkedWorkspacePages(state, source) {
   const target = activeWorkspace(state);
   const origin = state.items.find((item) => item.id === source?.sourceWorkspaceId);
-  if (!target || !origin || origin.id === target.id || !origin.fileName
+  // A workspace is either a PDF reader or a referenced-page reader.
+  // Legacy mixed data remains readable, but cannot add further references.
+  if (!target || target.fileName || !origin || origin.id === target.id || !origin.fileName
     || origin.fileName !== source.sourceFileName) return state;
   const pages = Array.isArray(source.pages) ? source.pages : [];
   const incoming = normalizeLinkedPages(pages.map((page) => ({
@@ -188,6 +190,8 @@ export function setWorkspaceView(state, view) {
 }
 
 export function setWorkspaceFile(state, fileName) {
+  const current = activeWorkspace(state);
+  if (current && !current.fileName && current.linkedPages?.length && String(fileName || "")) return state;
   return replaceActive(state, (item) => {
     const nextFile = String(fileName).slice(0, 255);
     return { ...item, fileName: nextFile, bookmarkOrder: nextFile === item.fileName ? item.bookmarkOrder : [] };
