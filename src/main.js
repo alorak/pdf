@@ -8,7 +8,7 @@ import {
   removeSelectedText, removePageBookmarks, bookmarkedPageNumbers, orderedBookmarkedPageNumbers,
   reorderBookmarkedPage, moveBookmarkedPage, MAX_HIGHLIGHT_RECTS,
   DEFAULT_WORKSPACE_VIEW, setWorkspaceView,
-  MAX_LINKED_PAGES, parseLinkedPageSelection, addLinkedWorkspacePages, removeLinkedWorkspacePage,
+  MAX_LINKED_PAGES, addLinkedWorkspacePages, removeLinkedWorkspacePage,
 } from "./workspace-store.js";
 import { saveWorkspacePdf, loadWorkspacePdf, deleteWorkspacePdf, listWorkspacePdfs, deleteWorkspacePdfIfMatches } from "./pdf-storage.js";
 import { classifyLibraryPdfs, measureLocalStorage, formatBytes, libraryWorkspaceSlots, libraryBookmarkSummary, paginateLibraryBookmarkPages } from "./library-utils.js";
@@ -1981,57 +1981,103 @@ async function renderLinkedPickerPagePreviews(session, entries, epoch) {
 
 function openAddLinkedPagesDialog() {
   const target = activeWorkspace(workspaces);
-  ui.linkedSourceWorkspace.replaceChildren();
-  for (const item of workspaces.items) {
-    if (item.id === target.id || !item.fileName) continue;
-    const option = document.createElement("option");
-    option.value = String(item.id);
-    option.textContent = `W${item.id} · ${item.fileName}`;
-    ui.linkedSourceWorkspace.append(option);
+  disposeLinkedPicker();
+  const sources = workspaces.items.filter(item => item.id !== target.id && item.fileName);
+  const session = {
+    targetId: target.id, closed: false, saving: false,
+    sourceId: null, sourceEpoch: 0, renderEpoch: 0,
+    file: null, task: null, doc: null, renderTask: null,
+    total: 0, index: 0, selected: new Set(), pageCache: new Map(),
+    covers: new Set(), sources: [],
+  };
+  linkedPickerSession = session;
+  ui.linkedSourceGrid.replaceChildren();
+  ui.linkedPagePickerGrid.replaceChildren();
+  ui.linkedSelectionCount.textContent = "0 sayfa seçili";
+  ui.linkedSourceCount.textContent = sources.length + " PDF";
+  ui.linkedPickerPageLabel.textContent = "—";
+  ui.linkedPickerPrev.disabled = true;
+  ui.linkedPickerNext.disabled = true;
+  ui.confirmAddLinkedPages.disabled = true;
+  ui.confirmAddLinkedPages.textContent = "Sayfaları ekle (0)";
+  const cards = [];
+  for (const workspace of sources) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "linked-source-card";
+    button.setAttribute("aria-pressed", "false");
+    button.setAttribute("aria-label", "W" + workspace.id + " PDF seç: " + workspace.fileName);
+    const { paper, placeholder } = linkedPickerPaper("Önizleme…");
+    const label = document.createElement("span");
+    label.className = "linked-source-card-label";
+    label.textContent = "W" + workspace.id;
+    const filename = document.createElement("span");
+    filename.className = "linked-source-card-file";
+    filename.textContent = workspace.fileName;
+    filename.title = workspace.fileName;
+    button.append(paper, label, filename);
+    button.addEventListener("click", () => { void chooseLinkedPickerSource(session, workspace.id); });
+    cards.push({ workspace, paper, button });
+    ui.linkedSourceGrid.append(button);
   }
-  ui.linkedPageNumbers.value = "";
-  ui.linkedPagesMessage.textContent = ui.linkedSourceWorkspace.options.length
-    ? "Sayfa numaralarını 1,3-5 şeklinde gir. Dosya kopyalanmaz."
-    : "Önce başka bir workspace'e PDF açmalısın.";
-  ui.confirmAddLinkedPages.disabled = !ui.linkedSourceWorkspace.options.length;
+  session.sources = cards;
+  if (!sources.length) {
+    const empty = document.createElement("p");
+    empty.className = "linked-picker-empty";
+    empty.textContent = "Diğer workspace'lerde kayıtlı PDF yok.";
+    ui.linkedSourceGrid.append(empty);
+  }
+  const notice = document.createElement("p");
+  notice.className = "linked-picker-empty";
+  notice.textContent = sources.length
+    ? "Önce bir kaynak PDF kapağı seç."
+    : "Önce başka bir workspace'e PDF ekle.";
+  ui.linkedPagePickerGrid.append(notice);
+  linkedPickerMessage("PDF kopyalanmaz. Seçtiğin sayfalar kaynak çalışma alanına bağlantı olarak eklenir.");
   ui.addLinkedPagesDialog.showModal();
-  (ui.linkedSourceWorkspace.options.length ? ui.linkedPageNumbers : ui.closeAddLinkedPages).focus();
+  if (cards.length) cards[0].button.focus();
+  else ui.closeAddLinkedPages.focus();
+  void renderLinkedPickerCovers(session, cards);
 }
 
 async function confirmAddLinkedPages() {
-  const sourceWorkspaceId = Number(ui.linkedSourceWorkspace.value);
-  const targetId = workspaces.activeId;
-  const source = workspaces.items.find((item) => item.id === sourceWorkspaceId);
-  if (!source || sourceWorkspaceId === targetId || !source.fileName) return;
+  const session = linkedPickerSession;
+  if (!session || !linkedPickerActive(session) || session.saving
+    || !session.file || !session.selected.size) return;
+  session.saving = true;
   ui.confirmAddLinkedPages.disabled = true;
-  ui.linkedPagesMessage.textContent = "PDF ve sayfa numaraları doğrulanıyor…";
-  let task;
+  ui.closeAddLinkedPages.disabled = true;
+  ui.cancelAddLinkedPages.disabled = true;
+  linkedPickerMessage("Seçilen sayfalar doğrulanıyor…");
   try {
-    const file = await loadWorkspacePdf(sourceWorkspaceId);
-    if (!file || file.name !== source.fileName) throw new Error("Kaynak PDF IndexedDB'de bulunamadı.");
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    task = pdfjs.getDocument({ data: bytes, isEvalSupported: false });
-    const documentPdf = await task.promise;
-    const pages = parseLinkedPageSelection(ui.linkedPageNumbers.value, documentPdf.numPages);
-    if (!ui.addLinkedPagesDialog.open || workspaces.activeId !== targetId
-      || workspaces.items.find((item) => item.id === sourceWorkspaceId)?.fileName !== file.name) return;
+    const stored = await loadWorkspacePdf(session.sourceId);
+    const source = workspaces.items.find(item => item.id === session.sourceId);
+    if (!linkedPickerActive(session) || !source || !stored ||
+      source.fileName !== session.file.name || stored.name !== session.file.name
+      || stored.size !== session.file.size || stored.lastModified !== session.file.lastModified) {
+      throw new Error("Kaynak PDF silinmiş veya değiştirilmiş. Yeniden seç.");
+    }
+    const pages = [...session.selected].sort((a, b) => a - b);
     const next = addLinkedWorkspacePages(workspaces, {
-      sourceWorkspaceId, sourceFileName: file.name, sourceSize: file.size,
-      sourceLastModified: file.lastModified, pages,
+      sourceWorkspaceId: session.sourceId, sourceFileName: stored.name,
+      sourceSize: stored.size, sourceLastModified: stored.lastModified, pages,
     });
-    if (next === workspaces) throw new Error("Bu sayfalar zaten eklendi veya workspace sınırına ulaşıldı.");
+    if (next === workspaces) throw new Error("Sayfalar zaten eklenmiş veya workspace sınırına ulaşılmış.");
     const added = activeWorkspace(next).linkedPages.length - activeWorkspace(workspaces).linkedPages.length;
+    if (added !== pages.length) throw new Error("Seçilen sayfaların tümü eklenemedi.");
     workspaces = next;
     persistWorkspaces();
     renderWorkspaceSidebar();
     ui.addLinkedPagesDialog.close();
     void refreshLinkedPages();
-    showToast(`${added} sayfa eklendi. Kaynak PDF kopyalanmadı.`);
+    showToast(added + " sayfa eklendi. Kaynak PDF kopyalanmadı.");
   } catch (error) {
-    ui.linkedPagesMessage.textContent = error?.message || "Sayfalar eklenemedi.";
+    if (linkedPickerActive(session)) linkedPickerMessage(error?.message || "Sayfalar eklenemedi.");
   } finally {
-    if (task) try { await task.destroy(); } catch { /* Already released */ }
-    ui.confirmAddLinkedPages.disabled = false;
+    session.saving = false;
+    ui.closeAddLinkedPages.disabled = false;
+    ui.cancelAddLinkedPages.disabled = false;
+    if (linkedPickerActive(session)) updateLinkedPickerSelection(session);
   }
 }
 
