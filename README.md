@@ -14,7 +14,7 @@ Tarayıcıda çalışan sade, hızlı ve gizliliğe odaklı bir PDF görüntüle
 - PDF metnini seçip sağ tıklayarak **Kopyala** veya **Workspace'e kaydet** işlemleri.
 - Seçilen metinler her workspace'e ayrı olarak localStorage'da kaydedilir; dosya adı ve sayfa bilgisiyle listelenir, tek tek kopyalanabilir/silinebilir.
 - **Open PDF** işlemi onay ister. Yeni PDF başarıyla açılınca yalnızca aktif workspace'in eski kayıtları silinir; diğer workspaceler ve görünüm tercihleri korunur.
-- **Library**: Sol menüde “Yeni workspace” altında açılır. IndexedDB'de kayıtlı tüm PDF'leri, dosya boyutlarını, bağlı oldukları workspace'leri ve sahipsiz kalan PDF'leri listeler; yalnızca sahipsiz dosyaları onayla silmeye izin verir.
+- **Library**: Sol menüde “Yeni workspace” altında açılır. Kompakt tam genişlik ekranında üstte dört depolama göstergesi tek satırda, altında **10 workspace kartı** (henüz oluşturulmamış olanlar dâhil), en altta da yalnızca sahipsiz PDF listesi bulunur. PDF'si olan workspace kartında **PDF'nin ilk sayfası küçük resim** olarak gösterilir. Sahipsiz dosyalar onayla silinebilir.
 - **Depolama görünürlüğü**: PDF toplam boyutu, tüm origin için localStorage UTF-16 boyut tahmini, PDF+localStorage toplamı, `navigator.storage.estimate()` ile tarayıcı origin kotası ve kullanımı; isteğe bağlı kalıcı depolama talebi.
 - Tercihler ve kaydedilen metinler localStorage'da tutulur. PDF'ler **IndexedDB'de kalıcı olarak** workspace kimliğiyle saklanır ve sayfa yenilendiğinde yeniden yüklenmeye çalışılır. Tarayıcı verilerini temizlemek veya depolama kotası nedeniyle silinmesi dosyaları kaybettirebilir.
 - PDF.js worker, görünür alan bazlı çizim, iptal edilebilir işler ve canvas bellek sınırı.
@@ -64,6 +64,8 @@ Statik çıktı `dist/` klasöründedir. ES module ve worker güvenlik kısıtla
 İlk sürüm okuma performansına odaklanır; OCR, not ekleme, metin arama, metin seçimi ve PDF düzenleme içermez. Çok yüksek büyütmelerde tarayıcı belleğini korumak için çizim çözünürlüğü sınırlandırılır. Parolalı PDF'ler için parola girme ekranı henüz yoktur.
 
 PDF işleme motoru: [Mozilla PDF.js](https://github.com/mozilla/pdf.js) (Apache-2.0).
+
+Library'deki workspace kartları 10 adet sabit yuva gösterir. Boş bir workspace'e dokununca PDF açma akışı, oluşturulmamış bir yuvaya dokununca yeni workspace oluşturma akışı başlar. PDF küçük resimleri, kayıtlı belgelerden PDF.js aracılığıyla talep üzerine üretilir; aynı anda en fazla iki önizleme işlenir ve Library kapanınca bekleyen PDF.js işlemleri iptal edilir. Önizleme üretilemezse PDF kaydı korunur ve kartta bilgi mesajı gösterilir.
 
 ## Tarayıcı depolaması
 

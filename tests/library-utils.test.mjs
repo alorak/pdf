@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { classifyLibraryPdfs, measureLocalStorage, formatBytes } from "../src/library-utils.js";
+import { classifyLibraryPdfs, measureLocalStorage, formatBytes, libraryWorkspaceSlots } from "../src/library-utils.js";
 
 test("library matches PDF records by workspace ID and file name, never file name alone", () => {
   const records = [
@@ -42,4 +42,31 @@ test("readable byte format handles small and large files", () => {
   assert.equal(formatBytes(1024), "1 KB");
   assert.equal(formatBytes(1048576), "1 MB");
   assert.equal(formatBytes(-1), "—");
+});
+
+test("Library always displays ten slots including uncreated and empty workspaces", () => {
+  const state = {
+    items: [
+      { id: 1, fileName: "sample.pdf" },
+      { id: 3, fileName: "" },
+    ],
+    nextId: 4,
+  };
+  const slots = libraryWorkspaceSlots(state, 10);
+  assert.equal(slots.length, 10);
+  assert.deepEqual(slots.map((slot) => slot.id), [1, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+  assert.equal(slots[0].workspace.fileName, "sample.pdf");
+  assert.equal(slots[1].workspace.fileName, "");
+  assert.ok(slots.slice(2).every((slot) => slot.workspace === null));
+  assert.equal(state.items.length, 2, "the Library must not create workspace records on view");
+});
+
+test("Library shows exactly ten occupied slots when the maximum is reached", () => {
+  const state = {
+    items: Array.from({ length: 10 }, (_, index) => ({ id: index + 1, fileName: "" })),
+    nextId: 11,
+  };
+  const slots = libraryWorkspaceSlots(state, 10);
+  assert.equal(slots.length, 10);
+  assert.equal(slots.filter((slot) => !slot.workspace).length, 0);
 });

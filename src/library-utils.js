@@ -39,3 +39,16 @@ export function formatBytes(value) {
   do { size /= 1024; index++; } while (size >= 1024 && index < sizes.length - 1);
   return `${size.toLocaleString("tr-TR", { maximumFractionDigits: 2 })} ${sizes[index]}`;
 }
+
+/** Always reserve a fixed number of UI slots without altering workspace storage. */
+export function libraryWorkspaceSlots(state, max = 10) {
+  const existing = state.items.slice(0, max).map((workspace) => ({
+    id: workspace.id,
+    workspace,
+  }));
+  const missing = Math.max(0, max - existing.length);
+  return [...existing, ...Array.from({ length: missing }, (_, index) => ({
+    id: state.nextId + index,
+    workspace: null,
+  }))];
+}
