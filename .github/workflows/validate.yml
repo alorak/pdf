@@ -42,6 +42,20 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: PDF reader Chromium E2E
         run: npx playwright test
+      - name: P2 fast 100-page browser smoke baseline
+        env:
+          P2_STRESS_PROFILE: smoke
+        run: npm run test:stress:browser
+      - name: Generate P2 smoke performance report
+        if: always()
+        run: npm run test:stress:report
+      - name: Upload P2 smoke benchmark baseline
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-smoke-baseline
+          path: test-results/stress/
+          if-no-files-found: ignore
       - name: Upload browser failure artifacts
         if: failure()
         uses: actions/upload-artifact@v4
