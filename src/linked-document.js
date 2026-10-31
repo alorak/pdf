@@ -78,7 +78,8 @@ export async function openLinkedDocument({ references, workspaces, loadFile, pdf
 }
 
 export function isLinkedOnlyWorkspace(workspace) {
-  return Boolean(workspace && !workspace.fileName && workspace.linkedPages?.length);
+  return Boolean(workspace && !workspace.fileName &&
+    (workspace.mode === "pages" || workspace.linkedPages?.length));
 }
 
 export function workspaceDocumentName(workspace) {
