@@ -19,6 +19,7 @@ import { classifyLibraryPdfs, measureLocalStorage, formatBytes, libraryWorkspace
 import { linkedPickerWindow, isOutsideDialogRect } from "./linked-picker-utils.js";
 import { openLinkedDocument, isLinkedOnlyWorkspace, workspaceDocumentName } from "./linked-document.js";
 import { dependentPageLinks, groupDependentLinks, stalePageLinks } from "./workspace-dependencies.js";
+import { findTextMatches, searchableText, evictDistantPages, flattenOutline, MAX_SEARCH_RESULTS } from "./pdf-navigation.js";
 import "./style.css";
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
@@ -26,6 +27,10 @@ pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 const $ = (id) => document.getElementById(id);
 const ui = {
   app: $("app"), menu: $("menuButton"),
+  searchToggle: $("searchToggle"), searchPanel: $("searchPanel"), searchClose: $("searchClose"),
+  searchQuery: $("searchQuery"), searchStatus: $("searchStatus"), searchResults: $("searchResults"),
+  searchPrev: $("searchPrev"), searchNext: $("searchNext"),
+  thumbOutline: $("thumbOutline"), outlineList: $("outlineList"),
   input: $("fileInput"), emptyOpen: $("emptyOpenButton"),
   emptyHeading: $("emptyHeading"), emptyDescription: $("emptyDescription"),
   emptyDropHint: $("emptyDropHint"),
@@ -97,11 +102,14 @@ const ui = {
 const ZOOM_STEPS = [0.2, 0.25, 0.33, 0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5, 6];
 const MAX_PAGE_RENDERS = 2;
 const MAX_THUMB_RENDERS = 1;
+const MAX_CACHED_PAGES = 12;
+const MAX_CACHED_THUMBS = 90;
 const state = {
   doc: null, loadingTask: null, generation: 0, renderEpoch: 0, thumbEpoch: 0,
   pageCount: 0, current: 1, scale: 1, fit: "page", fileSize: 0,
   orientation: "vertical", thumbPosition: "left", thumbsVisible: true,
-  thumbnailMode: "pages",
+  thumbnailMode: "pages", outlineOpen: false, outlineGeneration: 0,
+  searchToken: 0, searchResults: [], searchIndex: -1, searchTimer: 0,
   dimensions: [], shells: [], thumbs: [], thumbEntries: [],
   visible: new Set(), pending: new Set(), rendered: new Map(),
   renderTasks: new Map(), textLayers: new Map(), highlightRegions: new Map(), activeRenders: 0, observer: null,
@@ -410,6 +418,7 @@ async function openLinkedWorkspaceReader(baseFile = null) {
     state.dimensions[0] = { width: rect.width, height: rect.height };
     state.fileSize = baseFile?.size || 0;
     ui.app.classList.add("has-document");
+    ui.searchToggle.disabled = false;
     ui.empty.hidden = true;
     ui.pages.hidden = false;
     ui.fileLabel.textContent = baseFile
@@ -1318,7 +1327,193 @@ function toggleViewMenu(trigger, panel) {
   (panel.querySelector('[aria-pressed="true"]') || panel.querySelector("button"))?.focus({ preventScroll: true });
 }
 
+function setOutlineVisible(visible) {
+  state.outlineOpen = Boolean(visible);
+  ui.thumbList.hidden = state.outlineOpen;
+  ui.outlineList.hidden = !state.outlineOpen;
+  ui.thumbOutline.classList.toggle("active", state.outlineOpen);
+  ui.thumbOutline.setAttribute("aria-pressed", String(state.outlineOpen));
+  if (state.outlineOpen) void renderPdfOutline();
+}
+async function resolveOutlinePage(dest) {
+  if (!state.doc) return null;
+  const doc = state.doc;
+  const target = typeof dest === "string" ? await doc.getDestination?.(dest) : dest;
+  if (!Array.isArray(target) || !target[0]) return null;
+  const ref = target[0];
+  if (typeof ref === "number") return ref + 1;
+  if (typeof doc.getPageIndex !== "function") return null;
+  return (await doc.getPageIndex(ref)) + 1;
+}
+async function renderPdfOutline() {
+  const token = ++state.outlineGeneration;
+  const doc = state.doc;
+  if (!state.outlineOpen || !doc) return;
+  ui.outlineList.textContent = "İçindekiler yükleniyor…";
+  try {
+    const rows = flattenOutline(await doc.getOutline?.() || []);
+    if (token !== state.outlineGeneration || doc !== state.doc || !state.outlineOpen) return;
+    const fragment = document.createDocumentFragment();
+    if (!rows.length) {
+      const empty = document.createElement("p");
+      empty.className = "outline-empty";
+      empty.textContent = "Bu PDF'de gömülü içindekiler bulunmuyor.";
+      fragment.append(empty);
+    }
+    for (const item of rows) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "outline-link";
+      button.textContent = item.title;
+      button.title = item.title;
+      button.style.setProperty("--outline-depth", String(item.depth));
+      if (!item.dest) button.disabled = true;
+      else button.addEventListener("click", async () => {
+        const generation = state.generation;
+        try {
+          const page = await resolveOutlinePage(item.dest);
+          if (generation !== state.generation || !state.doc) return;
+          if (page && page <= state.pageCount) {
+            if (state.thumbnailMode === "bookmarks") setThumbnailMode("pages");
+            goToPage(page, false);
+          } else showToast("Bu bölümün sayfası çözümlenemedi.");
+        } catch (error) {
+          console.warn("PDF outline destination unavailable:", error);
+          showToast("Bölüme geçilemedi.");
+        }
+      });
+      fragment.append(button);
+    }
+    ui.outlineList.replaceChildren(fragment);
+  } catch (error) {
+    if (token === state.outlineGeneration) ui.outlineList.textContent = "İçindekiler okunamadı.";
+    console.warn("PDF outline failed:", error);
+  }
+}
+function setSearchVisible(open) {
+  const visible = Boolean(open && state.doc);
+  ui.searchPanel.hidden = !visible;
+  ui.searchToggle.setAttribute("aria-expanded", String(visible));
+  if (visible) ui.searchQuery.focus();
+  else {
+    clearTimeout(state.searchTimer);
+    state.searchToken++;
+    ui.searchToggle.focus({ preventScroll: true });
+  }
+}
+function showSearchResults() {
+  const results = state.searchResults;
+  const fragment = document.createDocumentFragment();
+  results.forEach((match, index) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "search-result" + (index === state.searchIndex ? " selected" : "");
+    button.setAttribute("role", "listitem");
+    button.setAttribute("aria-current", String(index === state.searchIndex));
+    const label = document.createElement("strong");
+    label.textContent = "Sayfa " + match.page;
+    const snippet = document.createElement("span");
+    snippet.textContent = match.snippet;
+    button.append(label, snippet);
+    button.addEventListener("click", () => selectSearchResult(index));
+    fragment.append(button);
+  });
+  ui.searchResults.replaceChildren(fragment);
+  ui.searchPrev.disabled = !results.length;
+  ui.searchNext.disabled = !results.length;
+}
+function selectSearchResult(index) {
+  if (!state.doc || !state.searchResults.length) return;
+  const normalized = (index + state.searchResults.length) % state.searchResults.length;
+  state.searchIndex = normalized;
+  if (state.thumbnailMode === "bookmarks") setThumbnailMode("pages");
+  goToPage(state.searchResults[normalized].page, false);
+  showSearchResults();
+  ui.searchResults.querySelector('[aria-current="true"]')?.scrollIntoView({ block: "nearest" });
+}
+async function runDocumentSearch() {
+  const token = ++state.searchToken;
+  const doc = state.doc;
+  const generation = state.generation;
+  const term = ui.searchQuery.value.trim();
+  state.searchResults = [];
+  state.searchIndex = -1;
+  showSearchResults();
+  if (!doc || !term) {
+    ui.searchStatus.textContent = "Aramak için yazın.";
+    return;
+  }
+  if (term.length > 160) {
+    ui.searchStatus.textContent = "Arama en fazla 160 karakter olabilir.";
+    return;
+  }
+  ui.searchStatus.textContent = "PDF sayfaları taranıyor…";
+  try {
+    for (let pageNo = 1; pageNo <= doc.numPages; pageNo++) {
+      if (token !== state.searchToken || doc !== state.doc || generation !== state.generation) return;
+      const page = await doc.getPage(pageNo);
+      const content = await page.getTextContent();
+      if (token !== state.searchToken || doc !== state.doc || generation !== state.generation) return;
+      const rest = MAX_SEARCH_RESULTS - state.searchResults.length;
+      state.searchResults.push(...findTextMatches(searchableText(content), term, pageNo, rest));
+      if (pageNo % 6 === 0 || pageNo === doc.numPages) {
+        ui.searchStatus.textContent = `${pageNo}/${doc.numPages} sayfa · ${state.searchResults.length} sonuç`;
+        showSearchResults();
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+      if (state.searchResults.length >= MAX_SEARCH_RESULTS) {
+        ui.searchStatus.textContent = `İlk ${MAX_SEARCH_RESULTS} sonuç gösteriliyor. Aramayı daraltabilirsin.`;
+        break;
+      }
+    }
+    if (token === state.searchToken && doc === state.doc && state.searchResults.length < MAX_SEARCH_RESULTS) {
+      ui.searchStatus.textContent = state.searchResults.length
+        ? `${state.searchResults.length} eşleşme bulundu.`
+        : "Eşleşme bulunamadı.";
+    }
+    if (token === state.searchToken) showSearchResults();
+  } catch (error) {
+    if (token === state.searchToken) ui.searchStatus.textContent = "PDF metni aranamadı.";
+    console.warn("PDF text search failed:", error);
+  }
+}
+function releaseFarPageCanvases(center) {
+  const evicted = evictDistantPages(
+    state.rendered.keys(), state.visible, center, MAX_CACHED_PAGES);
+  for (const index of evicted) {
+    if (state.renderTasks.has(index)) continue;
+    state.textLayers.get(index)?.cancel();
+    state.textLayers.delete(index);
+    state.shells[index]?.querySelector(".page-surface")?.replaceChildren();
+    state.rendered.delete(index);
+  }
+}
+function releaseFarThumbCanvases(center) {
+  const evicted = evictDistantPages(
+    state.thumbRendered, state.thumbVisible, center, MAX_CACHED_THUMBS);
+  for (const index of evicted) {
+    if (state.thumbTasks.has(index)) continue;
+    state.thumbs[index]?.querySelector(".thumb-preview")?.replaceChildren();
+    state.thumbRendered.delete(index);
+  }
+}
+
 function cancelAllWork() {
+  clearTimeout(state.searchTimer);
+  state.searchToken++;
+  state.searchResults = [];
+  state.searchIndex = -1;
+  state.outlineGeneration++;
+  state.outlineOpen = false;
+  ui.outlineList.hidden = true;
+  ui.thumbList.hidden = false;
+  ui.thumbOutline.classList.remove("active");
+  ui.thumbOutline.setAttribute("aria-pressed", "false");
+  ui.searchPanel.hidden = true;
+  ui.searchToggle.setAttribute("aria-expanded", "false");
+  ui.searchToggle.disabled = true;
+  ui.searchResults.replaceChildren();
+  ui.searchStatus.textContent = "Aramak için yazın.";
   mousePan = null;
   touchPinch = null;
   trackpadGestureScale = null;
@@ -1587,6 +1782,7 @@ async function renderPage(index, generation, epoch) {
     if (!surface) return;
     surface.replaceChildren(canvas);
     state.rendered.set(index, epoch);
+    releaseFarPageCanvases(index);
     refreshPageHighlights(index);
     // Render a text overlay only for nearby pages; the canvas remains visible.
     const overlay = document.createElement("div");
@@ -1662,6 +1858,7 @@ async function renderThumb(index, generation, epoch) {
     if (generation !== state.generation || epoch !== state.thumbEpoch || !state.thumbVisible.has(index)) return;
     slot.replaceChildren(canvas);
     state.thumbRendered.add(index);
+    releaseFarThumbCanvases(index);
   } catch (error) {
     if (error?.name !== "RenderingCancelledException" && generation === state.generation) {
       console.error("PDF thumbnail render failed:", error);
@@ -1772,6 +1969,7 @@ async function openPDF(file, { replaceWorkspace = false, persistFile = true } = 
     state.dimensions = new Array(state.pageCount);
     state.dimensions[0] = { width: rect.width, height: rect.height };
     ui.app.classList.add("has-document");
+    ui.searchToggle.disabled = false;
     ui.empty.hidden = true;
     ui.pages.hidden = false;
     ui.fileLabel.textContent = file.name;
