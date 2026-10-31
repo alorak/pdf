@@ -16,16 +16,6 @@ test(`P2.4 windowed reader: ${count} pages navigate correctly without 1000+ page
   await page.locator("#confirmReplace").click();
   await expect(page.locator("#pageTotal")).toHaveText(String(count), { timeout: 120000 });
   await expect(page.locator("#pages")).toHaveClass(/virtual-pages/);
-  console.log("P2_WINDOW_DIAG", await page.evaluate(() => ({
-    shellCount: document.querySelectorAll(".page-shell").length,
-    canvasCount: document.querySelectorAll(".page-surface canvas").length,
-    children: [...document.querySelector("#pages").children].map(node => ({
-      tag: node.tagName, className: node.className, hidden: node.hidden,
-      height: node.getBoundingClientRect().height,
-    })).slice(0, 12),
-    scrollHeight: document.querySelector("#viewer").scrollHeight,
-    clientHeight: document.querySelector("#viewer").clientHeight,
-  })));
   await expect.poll(() => page.locator(".page-surface canvas").count(), { timeout: 25000 }).toBeGreaterThan(0);
   expect(await page.locator(".page-shell").count()).toBeLessThanOrEqual(80);
   const oldScrollHeight = await page.locator("#viewer").evaluate(el => el.scrollHeight);
