@@ -1,0 +1,93 @@
+name: P2.6 one-off licensed real PDF corpus acceptance
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/p2-6-corpus-acceptance.yml
+
+permissions:
+  contents: read
+
+jobs:
+  corpus:
+    if: github.head_ref == 'test/p2-6-real-public-corpus'
+    runs-on: ubuntu-latest
+    timeout-minutes: 85
+    env:
+      CI: "true"
+      P2_REAL_CORPUS_MANIFEST: /tmp/p26-public-corpus/manifest.json
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Fetch independently published, licensed PDF corpus (no PDF committed)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/p26-public-corpus/files
+          fetch() {
+            local name="$1"; local uri="$2"
+            curl --fail --location --retry 3 --connect-timeout 20 --max-time 180 \
+              --silent --show-error --user-agent "PDF-Corpus-Validator/1.0" \
+              --output "/tmp/p26-public-corpus/files/${name}.pdf" "$uri"
+            file "/tmp/p26-public-corpus/files/${name}.pdf"
+            sha256sum "/tmp/p26-public-corpus/files/${name}.pdf"
+          }
+          fetch naca-1947 https://ntrs.nasa.gov/api/citations/19930081945/downloads/19930081945.pdf
+          fetch govinfo-1941 https://www.govinfo.gov/content/pkg/GOVPUB-GP-3cd63d7b6eacf6547906bba0ee832880/pdf/GOVPUB-GP-3cd63d7b6eacf6547906bba0ee832880.pdf
+          fetch cc0-scanned https://raw.githubusercontent.com/tinytoolkit-org/pdf-sample-files/master/out/sample-scanned.pdf
+          fetch cc0-text-10 https://raw.githubusercontent.com/tinytoolkit-org/pdf-sample-files/master/out/sample-10-pages.pdf
+          fetch cc0-filled-form https://raw.githubusercontent.com/tinytoolkit-org/pdf-sample-files/master/out/sample-form-filled.pdf
+      - name: Create hash-bound rights-verified corpus manifest
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import {readFile,writeFile} from 'node:fs/promises';
+          import {createHash} from 'node:crypto';
+          const root='/tmp/p26-public-corpus';
+          const entries=[
+            {id:'naca1947-original-scan',base:'naca-1947',rightsBasis:'1947 NACA government work; NASA NTRS public use',text:'either',minImagePages:0},
+            {id:'govinfo1941-original-scan',base:'govinfo-1941',rightsBasis:'1941 US GPO work; GovInfo 17 USC 105 public domain',text:'either',minImagePages:0},
+            {id:'cc0-jpeg-image-only',base:'cc0-scanned',rightsBasis:'tinytoolkit-org/pdf-sample-files CC0-1.0',text:'none',minImagePages:3},
+            {id:'cc0-text-ten-pages',base:'cc0-text-10',rightsBasis:'tinytoolkit-org/pdf-sample-files CC0-1.0',text:'present',minImagePages:0},
+            {id:'cc0-acroform-filled',base:'cc0-filled-form',rightsBasis:'tinytoolkit-org/pdf-sample-files CC0-1.0',text:'either',minImagePages:0},
+          ];
+          const cases=[];
+          for(const item of entries){
+            const bytes=await readFile(root+'/files/'+item.base+'.pdf');
+            const sha256=createHash('sha256').update(bytes).digest('hex');
+            console.log('P2_6_PUBLIC_CORPUS_SOURCE '+JSON.stringify({id:item.id,bytes:bytes.length,sha256}));
+            const {base,...rest}=item;
+            cases.push({...rest,file:'files/'+base+'.pdf',sha256,rightsConfirmed:true});
+          }
+          await writeFile(root+'/manifest.json',JSON.stringify({version:1,cases},null,2));
+          NODE
+      - name: PDF.js parse, image operators, text and hash validation
+        run: npm run test:corpus
+      - name: Setup Playwright Chromium
+        run: |
+          npm install --no-save --package-lock=false @playwright/test@1.56.1
+          npx playwright install --with-deps chromium
+      - name: Chromium real PDF first/middle/last rendered canvas and navigation
+        run: npm run test:corpus:browser
+      - name: Archive manifest and test reports (never PDFs)
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p test-results/public-corpus
+          test ! -f /tmp/p26-public-corpus/manifest.json || cp /tmp/p26-public-corpus/manifest.json test-results/public-corpus/manifest.json
+          find test-results -type f -name '*.pdf' -delete
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p2-6-public-corpus-evidence-${{ github.run_id }}
+          path: |
+            test-results/stress/p2-6-corpus.json
+            test-results/public-corpus/manifest.json
+          retention-days: 30
+          if-no-files-found: warn
