@@ -2861,13 +2861,78 @@ async function refreshIntegrityReport() {
     bits.push(`${report.orphan.length} sahipsiz kayıt`);
     bits.push(`${report.brokenLinks.length} bozuk sayfa bağlantısı`);
     ui.integrityStatus.textContent = "Depolama denetimi: " + bits.join(" · ");
+    ui.manageBrokenLinks.hidden = report.brokenLinks.length === 0;
     if (report.missing.length || report.brokenLinks.length) {
       ui.integrityStatus.textContent += " · Kaynaklar silinmiş/değişmiş olabilir; yer imleri silinmedi.";
     }
   } catch (error) {
+    ui.manageBrokenLinks.hidden = true;
     ui.integrityStatus.textContent = "Denetim yapılamadı: " + (error?.message || error);
   }
 }
+
+async function renderBrokenLinks() {
+  await waitForWorkspaceSaves();
+  const broken = stalePageLinks(workspaces, await listWorkspacePdfs());
+  ui.brokenLinksList.replaceChildren();
+  ui.manageBrokenLinks.hidden = broken.length === 0;
+  if (!broken.length) {
+    const empty = document.createElement("p");
+    empty.textContent = "Geçersiz kaynak bağlantısı kalmadı.";
+    ui.brokenLinksList.append(empty);
+    return;
+  }
+  for (const link of broken) {
+    const row = document.createElement("div");
+    row.className = "broken-link-row";
+    const detail = document.createElement("span");
+    detail.textContent = `W${link.targetWorkspaceId} ← W${link.sourceWorkspaceId}, sayfa ${link.page} · ${link.sourceFileName}`;
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "secondary-button";
+    remove.textContent = "Bağlantıyı kaldır";
+    remove.addEventListener("click", async () => {
+      if (!window.confirm(
+        `W${link.targetWorkspaceId} içindeki W${link.sourceWorkspaceId} sayfa ${link.page} bağlantısı kaldırılsın mı?\n` +
+        "Bu derleme sayfasına bağlı yer imleri ve metin vurguları da kaldırılacak. Kaynak PDF'ye dokunulmaz."
+      )) return;
+      remove.disabled = true;
+      try {
+        await waitForWorkspaceSaves();
+        // Recheck actual storage: never delete a link whose source was repaired.
+        if (!stalePageLinks(workspaces, await listWorkspacePdfs())
+          .some(item => item.targetWorkspaceId === link.targetWorkspaceId && item.referenceId === link.referenceId)) {
+          showToast("Bağlantı artık geçerli veya başka sekmede değişti; silinmedi.");
+          return;
+        }
+        const next = removeWorkspaceLinkedPage(workspaces, link.targetWorkspaceId, link.referenceId);
+        if (next !== workspaces) {
+          workspaces = next;
+          await persistWorkspaces();
+          renderWorkspaceSidebar();
+          if (workspaces.activeId === link.targetWorkspaceId) {
+            cancelAllWork();
+            await restoreWorkspacePdf(workspaces.activeId);
+          }
+        }
+        await renderBrokenLinks();
+        void refreshIntegrityReport();
+      } catch (error) {
+        console.error("Broken link removal failed:", error);
+        showToast("Bağlantı kaldırılamadı: " + error.message);
+      } finally { remove.disabled = false; }
+    });
+    row.append(detail, remove);
+    ui.brokenLinksList.append(row);
+  }
+}
+ui.manageBrokenLinks.addEventListener("click", () => {
+  ui.brokenLinksDialog.showModal();
+  void renderBrokenLinks().catch(error => {
+    ui.brokenLinksList.textContent = "Bağlantılar listelenemedi: " + error.message;
+  });
+});
+ui.closeBrokenLinks.addEventListener("click", () => ui.brokenLinksDialog.close());
 ui.integrityRefresh.addEventListener("click", () => { void refreshIntegrityReport(); });
 ui.backupExport.addEventListener("click", async () => {
   if (backupBusy) return;
