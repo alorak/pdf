@@ -879,6 +879,8 @@ function updateThumbnailFilter(resetScroll = false) {
     state.thumbEntries[index].draggable = onlyBookmarks && isBookmarked;
     state.thumbEntries[index].querySelector(".thumb-remove").hidden = !onlyBookmarks || !isBookmarked;
     state.thumbEntries[index].querySelector(".thumb-drag-handle").hidden = !onlyBookmarks || !isBookmarked;
+    state.thumbEntries[index].querySelector(".thumb-unlink").hidden =
+      onlyBookmarks || !isLinkedOnlyWorkspace(workspace);
   }
 
   // Both the thumbnail strip and the main PDF viewport share the same page
@@ -1254,7 +1256,30 @@ function createPageElements() {
       const workspace = activeWorkspace(workspaces);
       updateWorkspaces(moveBookmarkedPage(workspaces, workspaceDocumentName(workspace), state.pageCount, index + 1, direction));
     });
-    entry.append(thumb, remove, grip);
+    const unlink = document.createElement("button");
+    unlink.type = "button";
+    unlink.className = "thumb-unlink";
+    unlink.textContent = "×";
+    unlink.title = "Bu sayfayı derlemeden kaldır (kaynak PDF korunur)";
+    unlink.setAttribute("aria-label", `Derleme sayfası ${index + 1} kaldır`);
+    unlink.hidden = !isLinkedOnlyWorkspace(activeWorkspace(workspaces));
+    unlink.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      const item = activeWorkspace(workspaces);
+      const reference = item?.linkedPages?.[index];
+      if (!isLinkedOnlyWorkspace(item) || !reference) return;
+      const next = removeLinkedWorkspacePage(workspaces, reference.id);
+      if (next === workspaces) return;
+      workspaces = next;
+      persistWorkspaces();
+      if (activeWorkspace(workspaces)?.linkedPages?.length) await openLinkedWorkspaceReader();
+      else {
+        cancelAllWork();
+        renderWorkspaceSidebar();
+      }
+      showToast("Sayfa bağlantısı kaldırıldı. Kaynak PDF korunuyor.");
+    });
+    entry.append(thumb, remove, grip, unlink);
     entry.addEventListener("contextmenu", (event) => {
       if (!state.doc) return;
       event.preventDefault();
