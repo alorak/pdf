@@ -43,6 +43,10 @@
           </button>
         </div>
 
+        <button id="searchToggle" class="view-menu-button search-toggle" type="button" aria-controls="searchPanel" aria-expanded="false" title="PDF içinde ara" aria-label="PDF içinde ara" disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg>
+        </button>
+
         <div class="toolbar-divider"></div>
 
         <div class="toolbar-group zoom-controls" aria-label="Yakınlaştırma">
@@ -98,13 +102,32 @@
               <button id="thumbBookmarks" class="thumb-filter-button" type="button" aria-pressed="false" aria-controls="thumbList">
                 <span>Yer İmleri</span><span id="thumbBookmarksCount" class="thumb-tab-count">0</span>
               </button>
+              <button id="thumbOutline" class="thumb-filter-button" type="button" aria-pressed="false" aria-controls="outlineList">
+                <span>İçindekiler</span>
+              </button>
             </div>
           </div>
           <div id="thumbList" class="thumb-list">
             <p id="thumbEmpty" class="thumb-empty" role="status" hidden>Henüz yer imi yok. Metin seçebilir veya küçük resme sağ tıklayıp sayfa ekleyebilirsin.</p>
           </div>
+          <nav id="outlineList" class="outline-list" aria-label="PDF içindekiler" hidden></nav>
         </aside>
         <section class="document-panel" aria-label="PDF görüntüleyici">
+          <section id="searchPanel" class="search-panel" aria-label="PDF içerisinde arama" hidden>
+            <div class="search-head">
+              <label for="searchQuery">Belgede ara</label>
+              <button id="searchClose" class="icon-button" type="button" aria-label="Aramayı kapat">✕</button>
+            </div>
+            <input id="searchQuery" type="search" autocomplete="off" placeholder="Kelime veya ifade…" aria-label="Arama metni" />
+            <div class="search-progress">
+              <span id="searchStatus" role="status" aria-live="polite">Aramak için yazın.</span>
+              <div class="search-nav">
+                <button id="searchPrev" type="button" aria-label="Önceki eşleşme" disabled>‹</button>
+                <button id="searchNext" type="button" aria-label="Sonraki eşleşme" disabled>›</button>
+              </div>
+            </div>
+            <div id="searchResults" class="search-results" role="list" aria-label="Arama sonuçları"></div>
+          </section>
           <div id="viewer" class="viewer" tabindex="0">
             <div id="emptyState" class="empty-state">
               <div class="welcome-icon" aria-hidden="true">
