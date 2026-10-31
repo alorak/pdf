@@ -1724,6 +1724,9 @@ function makePageShell(index) {
 }
 
 function createPageElements() {
+  // A new document must never reuse the previous virtual range after clearing DOM.
+  state.virtualRange = null;
+  state.virtualOffsets = null;
   const pageFragment = document.createDocumentFragment();
   const thumbFragment = document.createDocumentFragment();
   state.shells = new Array(state.pageCount);
