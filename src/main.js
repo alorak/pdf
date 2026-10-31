@@ -1036,7 +1036,9 @@ function updateThumbnailFilter(resetScroll = false) {
   const ordered = orderedBookmarkedPageNumbers(workspace, workspaceDocumentName(workspace), state.doc ? state.pageCount : 0);
   const bookmarked = new Set(ordered);
   const onlyBookmarks = state.thumbnailMode === "bookmarks";
+  const reorderPages = !onlyBookmarks && isLinkedOnlyWorkspace(workspace) && Boolean(state.doc);
   ui.app.classList.toggle("bookmark-mode", onlyBookmarks);
+  ui.app.classList.toggle("linked-reorder-mode", reorderPages);
   ui.thumbPages.classList.toggle("active", !onlyBookmarks);
   ui.thumbPages.setAttribute("aria-pressed", String(!onlyBookmarks));
   ui.thumbBookmarks.classList.toggle("active", onlyBookmarks);
@@ -1046,9 +1048,13 @@ function updateThumbnailFilter(resetScroll = false) {
   for (let index = 0; index < state.thumbs.length; index++) {
     const isBookmarked = bookmarked.has(index + 1);
     state.thumbs[index].classList.toggle("bookmarked", isBookmarked);
-    state.thumbEntries[index].draggable = onlyBookmarks && isBookmarked;
+    state.thumbEntries[index].draggable = (onlyBookmarks && isBookmarked) || reorderPages;
     state.thumbEntries[index].querySelector(".thumb-remove").hidden = !onlyBookmarks || !isBookmarked;
-    state.thumbEntries[index].querySelector(".thumb-drag-handle").hidden = !onlyBookmarks || !isBookmarked;
+    const grip = state.thumbEntries[index].querySelector(".thumb-drag-handle");
+    grip.hidden = !reorderPages && (!onlyBookmarks || !isBookmarked);
+    grip.title = reorderPages
+      ? `Derleme sayfası ${index + 1} sırasını sürükle; ok tuşlarıyla taşı`
+      : `Yer imi ${index + 1} sırasını sürükle; ok tuşlarıyla taşı`;
     state.thumbEntries[index].querySelector(".thumb-unlink").hidden =
       onlyBookmarks || !isLinkedOnlyWorkspace(workspace);
   }
@@ -1645,11 +1651,18 @@ function createPageElements() {
     grip.addEventListener("keydown", (event) => {
       const direction = ["ArrowLeft", "ArrowUp"].includes(event.key) ? -1
         : ["ArrowRight", "ArrowDown"].includes(event.key) ? 1 : 0;
-      if (!direction || state.thumbnailMode !== "bookmarks") return;
-      event.preventDefault();
-      event.stopPropagation(); // Arrow keys here reorder bookmarks, not PDF pages.
+      if (!direction) return;
       const workspace = activeWorkspace(workspaces);
-      updateWorkspaces(moveBookmarkedPage(workspaces, workspaceDocumentName(workspace), state.pageCount, index + 1, direction));
+      if (state.thumbnailMode === "pages" && isLinkedOnlyWorkspace(workspace)) {
+        event.preventDefault();
+        event.stopPropagation();
+        const target = Math.max(1, Math.min(state.pageCount, index + 1 + direction));
+        void reorderLinkedPageAt(index + 1, target, direction > 0);
+      } else if (state.thumbnailMode === "bookmarks") {
+        event.preventDefault();
+        event.stopPropagation();
+        updateWorkspaces(moveBookmarkedPage(workspaces, workspaceDocumentName(workspace), state.pageCount, index + 1, direction));
+      }
     });
     const unlink = document.createElement("button");
     unlink.type = "button";
