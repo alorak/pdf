@@ -165,6 +165,7 @@
               <button id="backupExport" class="secondary-button" type="button">Tümünü yedekle</button>
               <button id="backupImport" class="secondary-button" type="button">Yedeği geri yükle</button>
               <button id="integrityRefresh" class="secondary-button" type="button">Kayıtları denetle</button>
+              <button id="manageBrokenLinks" class="secondary-button" type="button" hidden>Bozuk bağlantıları yönet</button>
               <input id="backupFile" type="file" accept=".pdfworkspace,.bin,application/octet-stream" hidden />
             </div>
             <p id="backupStatus" role="status" aria-live="polite">PDF'ler, yer imleri, vurgular ve sayfa bağlantıları tek yedek dosyasına alınır.</p>
@@ -207,6 +208,7 @@
         <button id="cancelDeleteWorkspaceTop" class="icon-button" type="button" aria-label="İptal et">✕</button>
       </div>
       <p><strong id="deleteWorkspaceName">W1</strong> içindeki PDF ve kaydedilmiş tüm metin yer imleri bu tarayıcıdan silinecek. Diğer workspace'ler korunacak.</p>
+      <p id="deleteWorkspaceDependents" class="source-dependency-warning" hidden></p>
       <div class="replace-actions">
         <button id="cancelDeleteWorkspace" class="secondary-button" type="button">İptal</button>
         <button id="confirmDeleteWorkspace" class="danger-button" type="button">Evet, sil</button>
@@ -244,6 +246,15 @@
         <button id="cancelAddLinkedPages" class="secondary-button" type="button">Vazgeç</button>
         <button id="confirmAddLinkedPages" class="primary-button" type="button" disabled>Sayfaları ekle (0)</button>
       </div>
+    </dialog>
+
+    <dialog id="brokenLinksDialog" class="settings-dialog broken-links-dialog" aria-labelledby="brokenLinksTitle">
+      <div class="dialog-top">
+        <div><span class="eyebrow">KAYNAK PDF BAĞLANTILARI</span><h2 id="brokenLinksTitle">Bozuk bağlantılar</h2></div>
+        <button id="closeBrokenLinks" class="icon-button" type="button" aria-label="Kapat">✕</button>
+      </div>
+      <p>Kaynak PDF değişmiş veya silinmiş olabilir. Kaynağı geri yükleyebilir ya da yalnızca bağlantıyı kaldırabilirsin. Kaldırılan sayfanın yer imleri de kaldırılır.</p>
+      <div id="brokenLinksList" class="broken-links-list" aria-live="polite"></div>
     </dialog>
 
     <dialog id="libraryBookmarksDialog" class="settings-dialog library-bookmarks-dialog" aria-labelledby="libraryBookmarksTitle">
@@ -290,6 +301,7 @@
         <button id="cancelReplaceTop" class="icon-button" type="button" aria-label="İptal et">✕</button>
       </div>
       <p><strong id="replaceWorkspaceName">W1</strong><span id="replaceMessage"></span></p>
+      <p id="replaceWorkspaceDependents" class="source-dependency-warning" hidden></p>
       <div class="replace-actions">
         <button id="cancelReplace" class="secondary-button" type="button">İptal</button>
         <button id="confirmReplace" class="primary-button" type="button">Evet, PDF seç</button>
