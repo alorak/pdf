@@ -46,6 +46,13 @@ Tarayıcıda çalışan sade, hızlı ve gizliliğe odaklı bir PDF görüntüle
 - PDF.js sayfa çizimi görünür alan tabanlı kalır. Ağır canvas/text katmanları için **12 sayfa**, küçük resim canvas'ları için **90 sayfa** üst sınırı uygulanır. Uzakta kalan sayfa tekrar görünür olursa yeniden çizilir. Ana belge sayfa kabuklarının tamamı hâlâ DOM'dadır; çok büyük belgelerde tam sanallaştırma ayrı bir iyileştirme konusudur.
 - `npm test` birim/mantık testlerini, PR üzerindeki `browser-e2e` işi ise Chromium'da PDF açma, arama, PDF outline gezinme ve okuma konumunu koruma senaryolarını doğrular. Yerelde Playwright çalıştırmak için `npm install --no-save --package-lock=false @playwright/test@1.56.1`, `npx playwright install chromium` ve `npx playwright test` kullanılabilir.
 
+### P1.3 — Sayfa sıralama, kaynak ilişkileri ve gerçek PDF dışa aktarma
+
+- **Sayfa derlemesinde yeniden sıralama**: Sayfalar küçük resim panelindeki **Sayfalar** görünümünde sürükle-bırak ile taşınır; klavye veya dokunmatik ekranda taşıma tutamağı kullanılabilir. Sıra kalıcı olarak IndexedDB'de saklanır. Yer imleri, vurgular ve son okunan sayfa eski sayfa içeriğiyle birlikte yeni konuma taşınır. Kaynak PDF'lere dokunulmaz.
+- **Kaynak ilişkileri**: Library'deki **Kaynak ilişkileri** penceresi hangi workspace'in hangi PDF sayfalarını kullandığını, kaynak dosya adlarını, geçerli ve bozuk referansları gösterir. İlgili hedef workspace açılabilir. Kaynakları değiştirme veya silme öncesinde mevcut bağımlılık uyarıları devam eder. Bozuk kaynaklar için ayrıca **Bozuk bağlantıları yönet** kullanılabilir.
+- **PDF dışa aktar**: Sayfa workspace'inin üst çubuğunda **PDF dışa aktar** komutu seçilen sayfaları mevcut sıra ile **gerçek PDF** olarak birleştirir. `pdf-lib` ile orijinal PDF sayfa nesneleri kopyalandığından ekran görüntüsü/bitmap rasterization yapılmaz; kaynak sayfaların metin ve vektör içerikleri korunur. Kaynak workspace silinmiş, değişmiş veya belirtilen sayfa artık mevcut değilse işlem güvenli biçimde reddedilir. Kaynak PDF'ler ve çalışma alanı verileri değişmez. Çıktı yeni dosya olarak indirilir; yeni bir workspace oluşturulmaz. Kaynak PDF'lerin tüm üst düzey outline, form ve belge metadata özelliklerinin birebir taşınması garanti edilmez.
+- **Testler**: Reorder→bookmark/highlight/okuma konumu eşleşmeleri, source cache, PDF sayfa boyutları/sırası, eksik kaynak ve iptal senaryoları birim testlerinde kontrol edilir.
+
 ## Çalıştırma
 
 Node.js 22+ gerektirir (Node.js 24 önerilir).

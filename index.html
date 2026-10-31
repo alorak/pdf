@@ -22,6 +22,7 @@
           <span id="activeWorkspaceLabel" class="workspace-chip">W1</span>
           <div class="file-label" id="fileLabel" title="Henüz dosya açılmadı">PDF açılmadı</div>
           <button id="addPagesToolbar" class="linked-pages-toggle" type="button" hidden>+ Sayfa ekle</button>
+          <button id="exportLinkedPdf" class="linked-pages-toggle linked-export" type="button" hidden>PDF dışa aktar</button>
           <button id="pdfInfoButton" class="icon-button file-info-button" type="button" aria-label="PDF bilgileri" title="PDF bilgileri" disabled>
             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.2h.01" stroke-linecap="round"/></svg>
           </button>
@@ -189,6 +190,7 @@
               <button id="backupImport" class="secondary-button" type="button">Yedeği geri yükle</button>
               <button id="integrityRefresh" class="secondary-button" type="button">Kayıtları denetle</button>
               <button id="manageBrokenLinks" class="secondary-button" type="button" hidden>Bozuk bağlantıları yönet</button>
+              <button id="showSourceRelations" class="secondary-button" type="button">Kaynak ilişkileri</button>
               <input id="backupFile" type="file" accept=".pdfworkspace,.bin,application/octet-stream" hidden />
             </div>
             <p id="backupStatus" role="status" aria-live="polite">PDF'ler, yer imleri, vurgular ve sayfa bağlantıları tek yedek dosyasına alınır.</p>
@@ -269,6 +271,15 @@
         <button id="cancelAddLinkedPages" class="secondary-button" type="button">Vazgeç</button>
         <button id="confirmAddLinkedPages" class="primary-button" type="button" disabled>Sayfaları ekle (0)</button>
       </div>
+    </dialog>
+
+    <dialog id="sourceRelationsDialog" class="settings-dialog source-relations-dialog" aria-labelledby="sourceRelationsTitle">
+      <div class="dialog-top">
+        <div><span class="eyebrow">WORKSPACE BAĞIMLILIKLARI</span><h2 id="sourceRelationsTitle">Kaynak PDF ilişkileri</h2></div>
+        <button id="closeSourceRelations" class="icon-button" type="button" aria-label="Kapat">✕</button>
+      </div>
+      <p>Hangi çalışma alanının hangi PDF sayfalarını kullandığını gösterir. Kaynak değiştiyse bağlantı korunur; onarmak için önce kaynak PDF'yi geri yükleyebilirsin.</p>
+      <div id="sourceRelationsList" class="broken-links-list" aria-live="polite"></div>
     </dialog>
 
     <dialog id="brokenLinksDialog" class="settings-dialog broken-links-dialog" aria-labelledby="brokenLinksTitle">

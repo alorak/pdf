@@ -10,7 +10,8 @@
     "test": "node --test"
   },
   "dependencies": {
-    "pdfjs-dist": "6.4.299"
+    "pdfjs-dist": "6.4.299",
+    "pdf-lib": "1.17.1"
   },
   "devDependencies": {
     "vite": "^7.1.0"

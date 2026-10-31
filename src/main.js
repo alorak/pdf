@@ -8,7 +8,7 @@ import {
   removeSelectedText, removePageBookmarks, bookmarkedPageNumbers, orderedBookmarkedPageNumbers,
   reorderBookmarkedPage, moveBookmarkedPage, MAX_HIGHLIGHT_RECTS,
   DEFAULT_WORKSPACE_VIEW, setWorkspaceView, setWorkspaceLastPage,
-  MAX_LINKED_PAGES, addLinkedWorkspacePages, removeLinkedWorkspacePage, removeWorkspaceLinkedPage,
+  MAX_LINKED_PAGES, addLinkedWorkspacePages, removeLinkedWorkspacePage, removeWorkspaceLinkedPage, reorderLinkedWorkspacePage,
 } from "./workspace-store.js";
 import { saveWorkspacePdf, loadWorkspacePdf, deleteWorkspacePdf, listWorkspacePdfs, deleteWorkspacePdfIfMatches, replaceWorkspacePdfWithMetadata } from "./pdf-storage.js";
 import { samePdfContent, replacementWorkspaceState } from "./pdf-replacement.js";
@@ -18,6 +18,7 @@ import { initializeWorkspaceData, readWorkspaceData, saveWorkspaceData, writeWor
 import { classifyLibraryPdfs, measureLocalStorage, formatBytes, libraryWorkspaceSlots, libraryBookmarkSummary, paginateLibraryBookmarkPages } from "./library-utils.js";
 import { linkedPickerWindow, isOutsideDialogRect } from "./linked-picker-utils.js";
 import { openLinkedDocument, isLinkedOnlyWorkspace, workspaceDocumentName } from "./linked-document.js";
+import { exportLinkedPages } from "./pdf-export.js";
 import { dependentPageLinks, groupDependentLinks, stalePageLinks } from "./workspace-dependencies.js";
 import { findTextMatches, searchableText, evictDistantPages, flattenOutline, MAX_SEARCH_RESULTS } from "./pdf-navigation.js";
 import "./style.css";
@@ -35,6 +36,9 @@ const ui = {
   emptyHeading: $("emptyHeading"), emptyDescription: $("emptyDescription"),
   emptyDropHint: $("emptyDropHint"),
   emptyAddPages: $("emptyAddPagesButton"), addPagesToolbar: $("addPagesToolbar"),
+  exportLinkedPdf: $("exportLinkedPdf"), showSourceRelations: $("showSourceRelations"),
+  sourceRelationsDialog: $("sourceRelationsDialog"), closeSourceRelations: $("closeSourceRelations"),
+  sourceRelationsList: $("sourceRelationsList"),
   activeWorkspaceLabel: $("activeWorkspaceLabel"), workspaceSidebar: $("workspaceSidebar"),
   sidebarBackdrop: $("sidebarBackdrop"), closeSidebar: $("closeSidebar"),
   workspaceList: $("workspaceList"), workspaceCount: $("workspaceCount"),
@@ -128,6 +132,8 @@ let pendingSaves = Promise.resolve();
 const workspaceBroadcast = typeof BroadcastChannel !== "undefined"
   ? new BroadcastChannel("pdf-workspace-database-v2") : null;
 let staleExternalRevision = false;
+let linkedExportBusy = false;
+let linkedPageReorderBusy = false;
 let lastPageSaveTimer = 0;
 const workspaceFiles = new Map(); // Active files are cached in memory; persistent copies live in IndexedDB.
 let pendingDeleteWorkspaceId = null;
@@ -251,6 +257,8 @@ function renderWorkspaceSidebar() {
   const active = activeWorkspace(workspaces);
   ui.activeWorkspaceLabel.textContent = workspaceDisplayName(active);
   ui.addPagesToolbar.hidden = !isLinkedOnlyWorkspace(active);
+  ui.exportLinkedPdf.hidden = !isLinkedOnlyWorkspace(active) || !active?.linkedPages?.length;
+  ui.exportLinkedPdf.disabled = linkedExportBusy;
   ui.emptyOpen.hidden = isLinkedOnlyWorkspace(active);
   ui.emptyAddPages.hidden = Boolean(active?.fileName || active?.mode === "pdf");
   if (isLinkedOnlyWorkspace(active)) {
@@ -1028,7 +1036,9 @@ function updateThumbnailFilter(resetScroll = false) {
   const ordered = orderedBookmarkedPageNumbers(workspace, workspaceDocumentName(workspace), state.doc ? state.pageCount : 0);
   const bookmarked = new Set(ordered);
   const onlyBookmarks = state.thumbnailMode === "bookmarks";
+  const reorderPages = !onlyBookmarks && isLinkedOnlyWorkspace(workspace) && Boolean(state.doc);
   ui.app.classList.toggle("bookmark-mode", onlyBookmarks);
+  ui.app.classList.toggle("linked-reorder-mode", reorderPages);
   ui.thumbPages.classList.toggle("active", !onlyBookmarks);
   ui.thumbPages.setAttribute("aria-pressed", String(!onlyBookmarks));
   ui.thumbBookmarks.classList.toggle("active", onlyBookmarks);
@@ -1038,9 +1048,13 @@ function updateThumbnailFilter(resetScroll = false) {
   for (let index = 0; index < state.thumbs.length; index++) {
     const isBookmarked = bookmarked.has(index + 1);
     state.thumbs[index].classList.toggle("bookmarked", isBookmarked);
-    state.thumbEntries[index].draggable = onlyBookmarks && isBookmarked;
+    state.thumbEntries[index].draggable = (onlyBookmarks && isBookmarked) || reorderPages;
     state.thumbEntries[index].querySelector(".thumb-remove").hidden = !onlyBookmarks || !isBookmarked;
-    state.thumbEntries[index].querySelector(".thumb-drag-handle").hidden = !onlyBookmarks || !isBookmarked;
+    const grip = state.thumbEntries[index].querySelector(".thumb-drag-handle");
+    grip.hidden = !reorderPages && (!onlyBookmarks || !isBookmarked);
+    grip.title = reorderPages
+      ? `Derleme sayfası ${index + 1} sırasını sürükle; ok tuşlarıyla taşı`
+      : `Yer imi ${index + 1} sırasını sürükle; ok tuşlarıyla taşı`;
     state.thumbEntries[index].querySelector(".thumb-unlink").hidden =
       onlyBookmarks || !isLinkedOnlyWorkspace(workspace);
   }
@@ -1637,11 +1651,18 @@ function createPageElements() {
     grip.addEventListener("keydown", (event) => {
       const direction = ["ArrowLeft", "ArrowUp"].includes(event.key) ? -1
         : ["ArrowRight", "ArrowDown"].includes(event.key) ? 1 : 0;
-      if (!direction || state.thumbnailMode !== "bookmarks") return;
-      event.preventDefault();
-      event.stopPropagation(); // Arrow keys here reorder bookmarks, not PDF pages.
+      if (!direction) return;
       const workspace = activeWorkspace(workspaces);
-      updateWorkspaces(moveBookmarkedPage(workspaces, workspaceDocumentName(workspace), state.pageCount, index + 1, direction));
+      if (state.thumbnailMode === "pages" && isLinkedOnlyWorkspace(workspace)) {
+        event.preventDefault();
+        event.stopPropagation();
+        const target = Math.max(1, Math.min(state.pageCount, index + 1 + direction));
+        void reorderLinkedPageAt(index + 1, target, direction > 0);
+      } else if (state.thumbnailMode === "bookmarks") {
+        event.preventDefault();
+        event.stopPropagation();
+        updateWorkspaces(moveBookmarkedPage(workspaces, workspaceDocumentName(workspace), state.pageCount, index + 1, direction));
+      }
     });
     const unlink = document.createElement("button");
     unlink.type = "button";
@@ -3147,6 +3168,104 @@ ui.manageBrokenLinks.addEventListener("click", () => {
   });
 });
 ui.closeBrokenLinks.addEventListener("click", () => ui.brokenLinksDialog.close());
+async function renderSourceRelations() {
+  const snapshot = await readWorkspaceBundle();
+  const stale = stalePageLinks(snapshot.state, snapshot.records);
+  const broken = new Set(stale.map(item => JSON.stringify([item.targetWorkspaceId, item.referenceId])));
+  const grouped = new Map();
+  for (const workspace of snapshot.state.items) {
+    for (const reference of workspace.linkedPages || []) {
+      const key = JSON.stringify([reference.sourceWorkspaceId, workspace.id, reference.sourceFileName,
+        reference.sourceSize, reference.sourceLastModified]);
+      if (!grouped.has(key)) grouped.set(key, {
+        sourceWorkspaceId: reference.sourceWorkspaceId, targetWorkspaceId: workspace.id,
+        name: reference.sourceFileName, pages: [], broken: 0,
+      });
+      const entry = grouped.get(key);
+      entry.pages.push(reference.page);
+      if (broken.has(JSON.stringify([workspace.id, reference.id]))) entry.broken++;
+    }
+  }
+  const container = document.createDocumentFragment();
+  if (!grouped.size) {
+    const empty = document.createElement("p");
+    empty.textContent = "Başka workspace'lerden kullanılan PDF sayfası bulunmuyor.";
+    container.append(empty);
+  }
+  for (const group of grouped.values()) {
+    const row = document.createElement("div");
+    row.className = "source-relation-row";
+    const info = document.createElement("div");
+    const heading = document.createElement("strong");
+    heading.textContent = `W${group.sourceWorkspaceId} → W${group.targetWorkspaceId} · ${group.pages.length} sayfa`;
+    const details = document.createElement("small");
+    const label = group.broken ? ` · ${group.broken} kaynak bağlantısı geçersiz` : " · kaynak geçerli";
+    details.textContent = `${group.name} · kaynak sayfalar: ${group.pages.slice(0, 16).join(", ")}${group.pages.length > 16 ? "…" : ""}${label}`;
+    info.append(heading, details);
+    const target = document.createElement("button");
+    target.type = "button";
+    target.className = "secondary-button";
+    target.textContent = `W${group.targetWorkspaceId} aç`;
+    target.addEventListener("click", () => {
+      ui.sourceRelationsDialog.close();
+      changeWorkspace(group.targetWorkspaceId);
+    });
+    row.append(info, target);
+    container.append(row);
+  }
+  ui.sourceRelationsList.replaceChildren(container);
+}
+ui.showSourceRelations.addEventListener("click", () => {
+  ui.sourceRelationsDialog.showModal();
+  ui.sourceRelationsList.textContent = "Kaynak ilişkileri kontrol ediliyor…";
+  void renderSourceRelations().catch(error => {
+    ui.sourceRelationsList.textContent = "Kaynaklar okunamadı: " + error.message;
+  });
+});
+ui.closeSourceRelations.addEventListener("click", () => ui.sourceRelationsDialog.close());
+
+ui.exportLinkedPdf.addEventListener("click", async () => {
+  const snapshot = activeWorkspace(workspaces);
+  if (!isLinkedOnlyWorkspace(snapshot) || !snapshot.linkedPages.length || linkedExportBusy) return;
+  linkedExportBusy = true;
+  ui.exportLinkedPdf.disabled = true;
+  ui.exportLinkedPdf.textContent = "PDF hazırlanıyor…";
+  const generation = state.generation;
+  const revision = workspaceRevision;
+  try {
+    await waitForWorkspaceSaves();
+    const latest = await readWorkspaceData();
+    if (latest.revision !== workspaceRevision) throw new Error("Workspace başka sekmede değişti. Önce sayfayı yenile.");
+    const bytes = await exportLinkedPages({
+      workspace: snapshot, workspaces: latest.state.items, loadFile: loadWorkspacePdf,
+      isCancelled: () => state.generation !== generation || workspaceRevision !== revision
+        || activeWorkspace(workspaces)?.id !== snapshot.id,
+      onProgress({ completed, total }) {
+        ui.exportLinkedPdf.textContent = `${completed}/${total} hazırlanıyor…`;
+        ui.status.textContent = `PDF dışa aktarılıyor: ${completed}/${total} sayfa`;
+      },
+    });
+    const blob = new Blob([bytes], { type: "application/pdf" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const safe = snapshot.name.replace(/[^\p{L}\p{N}._-]+/gu, "_").slice(0, 70) || `W${snapshot.id}`;
+    link.href = url;
+    link.download = `${safe}-sayfalar.pdf`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+    showToast(`${snapshot.linkedPages.length} sayfalık gerçek PDF hazır. Kaynak PDF'ler değiştirilmedi.`);
+  } catch (error) {
+    console.warn("Linked PDF export failed:", error);
+    showToast("PDF dışa aktarılamadı: " + (error?.message || error));
+  } finally {
+    linkedExportBusy = false;
+    ui.exportLinkedPdf.textContent = "PDF dışa aktar";
+    renderWorkspaceSidebar();
+  }
+});
+
 ui.integrityRefresh.addEventListener("click", () => { void refreshIntegrityReport(); });
 ui.backupExport.addEventListener("click", async () => {
   if (backupBusy) return;
@@ -3432,16 +3551,46 @@ ui.viewer.addEventListener("pointermove", handleHighlightHover);
 ui.viewer.addEventListener("pointerleave", hideHighlightRemove);
 ui.viewer.addEventListener("scroll", hideHighlightRemove, { passive: true });
 
+// Native drag/drop works both for bookmarks and for linked-only page order.
+async function reorderLinkedPageAt(source, target, after = false) {
+  if (linkedPageReorderBusy || !isLinkedOnlyWorkspace(activeWorkspace(workspaces))
+      || state.thumbnailMode !== "pages") return;
+  const next = reorderLinkedWorkspacePage(workspaces, source, target, after);
+  if (next === workspaces) return;
+  linkedPageReorderBusy = true;
+  clearTimeout(lastPageSaveTimer);
+  lastPageSaveTimer = 0;
+  try {
+    await waitForWorkspaceSaves();
+    ensureWritable();
+    workspaces = next;
+    await persistWorkspaces();
+    renderWorkspaceSidebar();
+    await openLinkedWorkspaceReader();
+    showToast("Sayfa sırası kaydedildi; yer imleri ve okuma konumu taşındı.");
+  } catch (error) {
+    console.warn("Linked page reorder failed:", error);
+    showToast("Sayfa sırası kaydedilemedi. Önceki kayıtları korumak için sayfayı yenile.");
+  } finally { linkedPageReorderBusy = false; }
+}
+function isDraggableThumbnailMode() {
+  return state.thumbnailMode === "bookmarks"
+    || (state.thumbnailMode === "pages" && isLinkedOnlyWorkspace(activeWorkspace(workspaces)));
+}
 // Native drag/drop reorders bookmarks. Pages mode is always in PDF page order.
 function reorderBookmarkAt(source, entry, clientX, clientY) {
   const target = entry ? Number(entry.dataset.index) + 1 : null;
-  if (!source || !target || source === target || state.thumbnailMode !== "bookmarks") return;
+  if (!source || !target || source === target || !isDraggableThumbnailMode()) return;
   const bounds = entry.getBoundingClientRect();
   const after = state.thumbPosition === "bottom"
     ? clientX > bounds.left + bounds.width / 2
     : clientY > bounds.top + bounds.height / 2;
   const workspace = activeWorkspace(workspaces);
-  const next = reorderBookmarkedPage(workspaces, workspace.fileName, state.pageCount, source, target, after);
+  if (state.thumbnailMode === "pages" && isLinkedOnlyWorkspace(workspace)) {
+    void reorderLinkedPageAt(source, target, after);
+    return;
+  }
+  const next = reorderBookmarkedPage(workspaces, workspaceDocumentName(workspace), state.pageCount, source, target, after);
   if (next !== workspaces) updateWorkspaces(next);
 }
 function clearBookmarkDrag() {
@@ -3450,7 +3599,7 @@ function clearBookmarkDrag() {
 }
 ui.thumbList.addEventListener("dragstart", (event) => {
   const entry = event.target instanceof Element ? event.target.closest(".thumb-entry") : null;
-  if (state.thumbnailMode !== "bookmarks" || !entry) { event.preventDefault(); return; }
+  if (!isDraggableThumbnailMode() || !entry) { event.preventDefault(); return; }
   draggingBookmarkPage = Number(entry.dataset.index) + 1;
   entry.classList.add("dragging");
   if (event.dataTransfer) {
@@ -3461,14 +3610,14 @@ ui.thumbList.addEventListener("dragstart", (event) => {
 });
 ui.thumbList.addEventListener("dragover", (event) => {
   const entry = event.target instanceof Element ? event.target.closest(".thumb-entry") : null;
-  if (state.thumbnailMode !== "bookmarks" || !draggingBookmarkPage || !entry) return;
+  if (!isDraggableThumbnailMode() || !draggingBookmarkPage || !entry) return;
   event.preventDefault();
   if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
   for (const node of state.thumbEntries) node.classList.remove("drag-over");
   if (Number(entry.dataset.index) + 1 !== draggingBookmarkPage) entry.classList.add("drag-over");
 });
 ui.thumbList.addEventListener("drop", (event) => {
-  if (state.thumbnailMode !== "bookmarks" || !draggingBookmarkPage) return;
+  if (!isDraggableThumbnailMode() || !draggingBookmarkPage) return;
   event.preventDefault();
   event.stopPropagation();
   const entry = event.target instanceof Element ? event.target.closest(".thumb-entry") : null;
@@ -3480,7 +3629,7 @@ ui.thumbList.addEventListener("dragend", clearBookmarkDrag);
 // Touch/pen reorder uses a dedicated grip, keeping one-finger list scrolling natural.
 ui.thumbList.addEventListener("pointerdown", (event) => {
   const grip = event.target instanceof Element ? event.target.closest(".thumb-drag-handle") : null;
-  if (!grip || state.thumbnailMode !== "bookmarks" || event.pointerType === "mouse") return;
+  if (!grip || !isDraggableThumbnailMode() || event.pointerType === "mouse") return;
   const entry = grip.closest(".thumb-entry");
   if (!entry) return;
   event.preventDefault();
