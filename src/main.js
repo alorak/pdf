@@ -1167,6 +1167,9 @@ function restoreReadingPosition(workspaceId, generation) {
   const desired = Math.max(1, Math.min(state.pageCount, workspace.lastPage || 1));
   requestAnimationFrame(() => {
     if (generation !== state.generation || workspaces.activeId !== workspaceId || !state.doc) return;
+    // Thumbnail filtering is not persisted per workspace. Always restore a
+    // physical page in the full-page view before applying the reading position.
+    if (state.thumbnailMode !== "pages") setThumbnailMode("pages");
     if (desired !== 1) goToPage(desired, false);
   });
 }
