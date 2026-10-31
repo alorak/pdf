@@ -22,9 +22,17 @@ for (const pages of pageCounts) {
     const sha256 = createHash("sha256").update(fixture).digest("hex");
     const browserVersion = browser.version();
     const errors = [];
+    const browserConsoleErrors = [];
     page.on("pageerror", error => errors.push(error.message));
+    page.on("console", message => {
+      if (message.type() === "error" || message.type() === "warning") {
+        browserConsoleErrors.push(message.text());
+      }
+    });
     await page.addInitScript(() => {
-      const diagnostics = { observers: 0, observed: 0, callbacks: 0, intersecting: 0, canvasContexts: 0 };
+      const diagnostics = { observers: 0, observed: 0, callbacks: 0, intersecting: 0,
+        nonIntersecting: 0, canvasContexts: 0, pageSurfaceReplacements: 0, clearedSurfaces: 0,
+        recentIntersections: [] };
       window.__p2ObserverDiagnostics = diagnostics;
       const OriginalObserver = window.IntersectionObserver;
       window.IntersectionObserver = class extends OriginalObserver {
@@ -33,10 +41,24 @@ for (const pages of pageCounts) {
           super((entries, observer) => {
             diagnostics.callbacks++;
             diagnostics.intersecting += entries.filter(entry => entry.isIntersecting).length;
+            diagnostics.nonIntersecting += entries.filter(entry => !entry.isIntersecting).length;
+            diagnostics.recentIntersections.push(...entries.slice(0, 5).map(e => ({
+              index: e.target.dataset.index, isIntersecting: e.isIntersecting,
+              top: Math.round(e.boundingClientRect.top),
+            })));
+            diagnostics.recentIntersections = diagnostics.recentIntersections.slice(-20);
             callback(entries, observer);
           }, options);
         }
         observe(target) { diagnostics.observed++; return super.observe(target); }
+      };
+      const originalReplaceChildren = Element.prototype.replaceChildren;
+      Element.prototype.replaceChildren = function (...nodes) {
+        if (this.classList?.contains("page-surface")) {
+          diagnostics.pageSurfaceReplacements++;
+          if (!nodes.length) diagnostics.clearedSurfaces++;
+        }
+        return originalReplaceChildren.apply(this, nodes);
       };
       const oldGetContext = HTMLCanvasElement.prototype.getContext;
       HTMLCanvasElement.prototype.getContext = function (...args) {
@@ -55,8 +77,6 @@ for (const pages of pageCounts) {
     });
     await page.locator("#confirmReplace").click();
     await expect(page.locator("#pageTotal")).toHaveText(String(pages), { timeout: 180_000 });
-    const browserConsoleErrors = [];
-    page.on("console", message => { if (message.type() === "error") browserConsoleErrors.push(message.text()); });
     await page.waitForTimeout(1300);
     const renderDiagnostic = await page.evaluate(() => {
       const reader = document.querySelector("#viewer");
@@ -77,13 +97,14 @@ for (const pages of pageCounts) {
         viewerScrollHeight: reader?.scrollHeight,
         viewerClientHeight: reader?.clientHeight,
         body: document.body.className,
+        status: document.querySelector("#status")?.textContent || document.querySelector(".status")?.textContent,
         observerDiagnostics: window.__p2ObserverDiagnostics,
       };
     });
     console.log("P2_RENDER_DIAGNOSTIC " + JSON.stringify({ pages, renderDiagnostic, browserConsoleErrors }));
     // Page totals alone can succeed before canvas drawing. A visual baseline
     // must wait for an actual rendered PDF page.
-    await expect(page.locator(".page-surface canvas").first()).toBeVisible({ timeout: 45_000 });
+    await expect(page.locator(".page-surface canvas").first()).toBeVisible({ timeout: 8000 });
     const firstPageMs = round(performance.now() - loadStart);
     const afterLoad = await metrics(page);
     assertSamples(afterLoad, pages);
