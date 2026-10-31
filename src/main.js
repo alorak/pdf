@@ -13,7 +13,7 @@ import {
 import { saveWorkspacePdf, loadWorkspacePdf, deleteWorkspacePdf, listWorkspacePdfs, deleteWorkspacePdfIfMatches, replaceWorkspacePdfWithMetadata } from "./pdf-storage.js";
 import { samePdfContent, replacementWorkspaceState } from "./pdf-replacement.js";
 import { initializeWorkspaceData, readWorkspaceData, saveWorkspaceData, writeWorkspaceAndPdf,
-  getAllStoredPdfs, createWorkspaceBackup, parseWorkspaceBackup, restoreWorkspaceBackup,
+  getAllStoredPdfs, readWorkspaceBundle, createWorkspaceBackup, parseWorkspaceBackup, restoreWorkspaceBackup,
   inspectWorkspaceIntegrity } from "./workspace-data.js";
 import { classifyLibraryPdfs, measureLocalStorage, formatBytes, libraryWorkspaceSlots, libraryBookmarkSummary, paginateLibraryBookmarkPages } from "./library-utils.js";
 import { linkedPickerWindow, isOutsideDialogRect } from "./linked-picker-utils.js";
@@ -2831,9 +2831,9 @@ ui.backupExport.addEventListener("click", async () => {
   setBackupBusy(true, "PDF'ler ve yer imleri yedekleniyor…");
   try {
     await waitForWorkspaceSaves();
-    const snapshot = await readWorkspaceData();
+    const snapshot = await readWorkspaceBundle();
     if (snapshot.revision !== workspaceRevision) throw new Error("Başka sekmede kayıt değişmiş. Önce sayfayı yenile.");
-    const records = await getAllStoredPdfs();
+    const records = snapshot.records;
     const blob = await createWorkspaceBackup(snapshot.state, records);
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
