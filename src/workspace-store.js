@@ -157,8 +157,9 @@ export function addLinkedWorkspacePages(state, source) {
   if (!incoming.length) return state;
   const current = target.linkedPages || [];
   const existing = new Set(current.map((ref) => ref.id));
-  const unique = incoming.filter((ref) => !existing.has(ref.id)).slice(0, MAX_LINKED_PAGES - current.length);
-  if (!unique.length) return state;
+  const unique = incoming.filter((ref) => !existing.has(ref.id));
+  // Never silently import a partial page selection when the cap is exceeded.
+  if (!unique.length || current.length + unique.length > MAX_LINKED_PAGES) return state;
   return replaceActive(state, (workspace) => ({ ...workspace, linkedPages: [...current, ...unique] }));
 }
 
