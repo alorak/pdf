@@ -23,10 +23,11 @@ const cases=await Promise.all(input.map(async item=>{
   return {...item,pdfPath,ppmPath};
 }));
 
-async function getCanvas(page){
-  return page.evaluate(()=>{
+async function getCanvas(page, expectedWidth, expectedHeight){
+  return page.evaluate(({expectedWidth,expectedHeight})=>{
     const node=document.querySelector('.page-shell[data-index="0"] .page-surface canvas');
-    if(!node||!node.width||!node.height||node.width*node.height>4_000_000)return null;
+    if(!node||!node.width||!node.height||node.width*node.height>4_000_000 ||
+       Math.abs(node.width-expectedWidth)>2 || Math.abs(node.height-expectedHeight)>2)return null;
     const context=node.getContext("2d",{willReadFrequently:true});
     if(!context)return null;
     const raw=context.getImageData(0,0,node.width,node.height).data;
@@ -35,7 +36,7 @@ async function getCanvas(page){
       if((raw[i]+raw[i+1]+raw[i+2])/3<128)ink++;
     if(ink<4)return null;
     return {width:node.width,height:node.height,rgba:[...raw],ink};
-  });
+  },{expectedWidth,expectedHeight});
 }
 
 for(const item of cases){
@@ -67,8 +68,8 @@ for(const item of cases){
     await expect(page.locator("#pageTotal")).toHaveText("1",{timeout:90_000});
     await page.locator("#zoomInput").fill("50");
     await page.locator("#zoomInput").press("Enter");
-    await expect.poll(async()=>Boolean(await getCanvas(page)),{timeout:90_000}).toBe(true);
-    const actual=await getCanvas(page);
+    await expect.poll(async()=>Boolean(await getCanvas(page,reference.width,reference.height)),{timeout:90_000}).toBe(true);
+    const actual=await getCanvas(page,reference.width,reference.height);
     const stats=compareBinaryPageReference(actual.rgba,actual.width,actual.height,
       reference.rgb,reference.width,reference.height,32);
     const report={schema:1,kind:"Poppler-vs-PDFjs-JBIG2",id:item.id,

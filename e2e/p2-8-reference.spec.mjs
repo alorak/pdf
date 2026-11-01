@@ -62,8 +62,8 @@ for(const kind of KINDS) {
     await page.locator("#zoomInput").press("Enter");
     const reports=[];
     const tolerance = kind === "jpx16"
-      ? {mae:4, max:18, differingPct:40, perChannel:5}
-      : {mae:22, max:85, differingPct:90, perChannel:24};
+      ? {mae:1.5, max:3, differingPct:1, perChannel:2}
+      : {mae:6, max:24, differingPct:20, perChannel:12};
     for(const pageNo of [1,2,3]) {
       await page.locator("#pageInput").fill(String(pageNo));
       await page.locator("#pageInput").press("Enter");
