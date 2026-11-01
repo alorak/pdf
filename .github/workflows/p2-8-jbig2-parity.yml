@@ -1,18 +1,14 @@
-name: P2.8 one-off extended JBIG2 Poppler reference parity
-# Accept exact 1:1 full page pixel comparison against Poppler at 72 dpi.
+name: P2.8 manual extended JBIG2 Poppler reference parity
+# Pinned third-party PDF downloads only on explicit manual trigger.
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - .github/workflows/p2-8-jbig2-parity.yml
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   reference-parity:
-    if: github.head_ref == 'test/p2-8-icc-jpx16-jbig2-parity'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
