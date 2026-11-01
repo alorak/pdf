@@ -54,7 +54,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: p2-9-print-evidence-\${{ github.run_id }}
+          name: p2-9-print-profile-numeric-evidence
           retention-days: 14
           if-no-files-found: ignore
           path: test-results/stress/p2-9-print-*.json
