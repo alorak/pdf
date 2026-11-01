@@ -1,24 +1,17 @@
-name: P2.9 one-off official FOGRA51/SWOP profile acceptance
+name: P2.9 manual official FOGRA51/SWOP full-pixel parity
 
-# One-time CI while PR is open. Switch to workflow_dispatch after
-# real source hash values are pinned and successful color parity is proven.
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - .github/workflows/p2-9-print-profiles.yml
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   print-profiles:
-    if: github.head_ref == 'test/p2-9-icc-v4-jpx-rgb16-print-android'
     runs-on: ubuntu-latest
     timeout-minutes: 35
     env:
       CI: "true"
-      P2_9_PROFILE_DISCOVERY: "0"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -35,20 +28,16 @@ jobs:
       - name: Download pinned official ICC profiles and create LittleCMS reference images
         run: python scripts/p2-9-official-profiles.py
       - name: Install Chromium (accepted runs only)
-        if: env.P2_9_PROFILE_DISCOVERY != '1'
         run: |
           npm install --no-save --package-lock=false @playwright/test@1.56.1
           npx playwright install --with-deps chromium
       - name: Production build and same-origin color resource verification
-        if: env.P2_9_PROFILE_DISCOVERY != '1'
         run: |
           npm run build
           node scripts/check-pages.mjs
       - name: Verify FOGRA51 and SWOP full-page color parity in Chromium
-        if: env.P2_9_PROFILE_DISCOVERY != '1'
         run: npm run test:print:p29
       - name: Require exact profile and per-pixel acceptance evidence
-        if: env.P2_9_PROFILE_DISCOVERY != '1'
         run: node scripts/verify-p2-9-print.mjs
       - name: Upload only numeric evidence (never ICC/PDF/reference bytes)
         if: always()

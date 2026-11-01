@@ -97,7 +97,7 @@ Gerçek `JPXDecode`/JPEG2000 kod akışı, dört kanallı `DeviceCMYK` raster ve
 
 ### P2.9 — ICC v4, 16-bit RGB JPEG2000, FOGRA/SWOP ve Android
 
-Gerçek üç kanallı 16-bit JPEG2000, özgün ICC v4 profili ve bağımsız LittleCMS2 referansıyla 4.096 piksel karşılaştırması; ayrıca resmî, lisansı doğrulanmış FOGRA51/SWOP profilleri için manuel kabul protokolü ve ADB üzerinden **fiziksel Android bellek ölçümü**. Cihaz verilmeden Android sonucu iddia edilmez; ICC/PDF dosyaları repoya konmaz. [P2.9 kapsam/kanıt raporu](docs/p2-9-color-mobile-acceptance.md).
+**Dört codec/rengi doğrulama senaryosu başarılı:** Gerçek üç kanallı 16-bit JPEG2000, özgün ICC v4 RGB profili ve resmî FOGRA51/SWOP CMYK profilleri; bağımsız LittleCMS2 referansıyla her biri için 4.096 piksel karşılaştırması. ADB üzerinden **fiziksel Android bellek ölçüm protokolü** hazır (gerçek cihaz ölçümü bekleniyor). Cihaz verilmeden Android sonucu iddia edilmez; ICC/PDF dosyaları repoya konmaz. [P2.9 kapsam/kanıt raporu](docs/p2-9-color-mobile-acceptance.md).
 
 ## Çalıştırma
 

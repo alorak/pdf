@@ -54,4 +54,21 @@ npm run android:snapshot -- report
 
 `P2.9 one-off official FOGRA51/SWOP profile acceptance` manuel/test işinde iki profili yalnız `registry.color.org` kaynağından alır, CMYK ICC header / hash doğrular, LittleCMS2 referansına göre 64×64 tam-piksel RGB farkı ölçer. Profil dosyası ya da PDF içeren ikili artefact tutulmaz. ICC Registry'deki FOGRA51 dağıtım kısıtı nedeniyle otomatik genel PR testlerine dosya eklenmez.
 
-FOGRA51 ve SWOP **gerçek profil testi henüz çalıştırılmadı**; kaynak SHA-256 kilitlerinin alınması ve kabul sonuçları bekleniyor.
+**İki gerçek baskı profili de doğrulandı.** [ICC Registry tam kabul koşusu #41329644206](https://github.com/alorak/pdf/actions/runs/41329644206) — tüm adımlar başarılı, yalnız sayısal JSON kanıt arşivlendi.
+
+| Resmî ICC profil | Bağlı renk standardı | SHA-256 (profil) | ICC biçim sürümü | 4096 piksel MAE (0–255) | Maksimum RGB kanal farkı |
+|---|---|---|---:|---:|---:|
+| `PSOcoated_v3.icc` | FOGRA51 | `c30ad2c01e8f93135ec7682c535e0a81bc2d177c301e196376c5f5838b5c8e86` | 2 | 0,5833 | 2 |
+| `SWOP2006_Coated3v2.icc` | CGATS TR003 / SWOP | `27dc90dbeb399b76c0f91a6b387fe30c38939f034d2500712f3c43094be15e3b` | 2 | 0,9167 | 4 |
+
+**Sürüm ayrımı:** PSOcoated_v3 adı yeni profil ailesini ifade eder; dosyanın ICC biçim sürümü **v2**. SWOP2006 da ICC v2. ICC **v4 biçimi** yukarıdaki özgün testte ayrıca doğrulanmıştır.
+
+Profillerin tam boyutları sırasıyla 2.195.228 ve 2.747.952 bayttır. Her ikisi `https://registry.color.org/profile-registry/profiles/` üzerinden hash kilidiyle indirilmiştir. Referans görüntü SHA-256: FOGRA51 `ec660533dd293ff33340519fe4fdd5ed2f1176fb598450d05a57271f6785d830`; SWOP2006 `4b966666ae36e4ab3971b1d7267aa922efc6a681d56e39432a3078542169ff82`.
+
+**Lisans:** ECI/Heidelberg FOGRA51 profilinde kullanım ve PDF'e gömme izinli, izinsiz yeniden dağıtım kısıtlıdır. Idealliance/X-Rite SWOP2006 kullanım/gömme/paylaşma izni verir, değiştirme ve satış kısıtlıdır. PDF veya ICC profil baytları repoya/CI artefact'ına konmamıştır. Testler yalnız indirilen gerçek profil, özgün CMYK örnekleri ve LittleCMS2 referansıyla sınırlıdır; cihaz kalibrasyonu veya prova baskı sertifikası değildir.
+
+### Manuel yeniden çalıştırma
+
+GitHub Actions → **P2.9 manual official FOGRA51/SWOP full-pixel parity** → *Run workflow*. Bu `workflow_dispatch` işi standart PR CI'ında indirme maliyeti yaratmaz ve iki resmî ICC profiline karşı 4096 RGB pikselin tamamını karşılaştırır.
+
+**Android saha durumu:** Yetkilendirilmiş fiziksel Android/ADB oturumu henüz sağlanmadığı için **PSS, RSS, PSI ve LMK/OOM sahada ölçülmedi**. Yukarıdaki komutlar ve offline testler hazırdır; gerçek cihazla ölçüm gerekir.
