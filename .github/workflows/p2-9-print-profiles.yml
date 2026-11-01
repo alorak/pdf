@@ -1,0 +1,49 @@
+name: P2.9 manual official FOGRA51/SWOP full-pixel parity
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  print-profiles:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      CI: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install exact viewer and reference dependencies
+        run: |
+          npm ci --no-audit --no-fund
+          python -m pip install --disable-pip-version-check pillow==12.0.0
+      - name: Download pinned official ICC profiles and create LittleCMS reference images
+        run: python scripts/p2-9-official-profiles.py
+      - name: Install Chromium (accepted runs only)
+        run: |
+          npm install --no-save --package-lock=false @playwright/test@1.56.1
+          npx playwright install --with-deps chromium
+      - name: Production build and same-origin color resource verification
+        run: |
+          npm run build
+          node scripts/check-pages.mjs
+      - name: Verify FOGRA51 and SWOP full-page color parity in Chromium
+        run: npm run test:print:p29
+      - name: Require exact profile and per-pixel acceptance evidence
+        run: node scripts/verify-p2-9-print.mjs
+      - name: Upload only numeric evidence (never ICC/PDF/reference bytes)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-9-print-profile-numeric-evidence
+          retention-days: 14
+          if-no-files-found: ignore
+          path: test-results/stress/p2-9-print-*.json

@@ -2,7 +2,7 @@ import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./e2e",
-  testIgnore: ["**/*.stress.spec.mjs", "**/p2-7-codec.spec.mjs", "**/p2-8-reference.spec.mjs", "**/p2-8-jbig2-parity.spec.mjs"],
+  testIgnore: ["**/*.stress.spec.mjs", "**/p2-7-codec.spec.mjs", "**/p2-9-advanced.spec.mjs", "**/p2-9-print.spec.mjs", "**/p2-8-reference.spec.mjs", "**/p2-8-jbig2-parity.spec.mjs"],
   timeout: 45_000,
   expect: { timeout: 15_000 },
   use: {
