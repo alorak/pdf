@@ -12,6 +12,8 @@ export default defineConfig({
   timeout: 300_000,
   expect: { timeout: 90_000 },
   workers: 1,
+  // Never delete earlier Playwright quota evidence in test-results/stress.
+  outputDir: "test-results/playwright-codec",
   webServer: {
     command: "npm run preview -- --host 127.0.0.1 --port 5173 --strictPort",
     url: "http://127.0.0.1:5173/pdf/",
