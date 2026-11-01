@@ -20,6 +20,8 @@ for (const item of cases) {
     const renderErrors = [];
     const allConsole = [];
     const requestErrors = [];
+    const navigations = [];
+    page.on("framenavigated", frame => { if (frame === page.mainFrame()) navigations.push(frame.url()); });
     page.on("pageerror", e => errors.push(e.message));
     page.on("requestfailed", r => requestErrors.push({url:r.url().slice(0,180),failure:r.failure()}));
     page.on("console", async m => {
@@ -84,12 +86,15 @@ for (const item of cases) {
         loaderHidden: document.querySelector("#loading")?.hidden,
         loaderText: document.querySelector("#loadingText")?.textContent,
         trace: window.__corpusUiTrace?.slice(-30),
+        documentUrl: location.href,
+        navigationType: performance.getEntriesByType("navigation")[0]?.type,
       }));
       console.log("P2_6_OPEN_DIAGNOSTIC " + JSON.stringify({
         id: item.id, ...diagnostic, errors: errors.slice(0, 8),
         renderErrors: renderErrors.slice(0, 5),
         allConsole: allConsole.slice(-14),
         requestErrors: requestErrors.slice(0, 10),
+        navigations,
       }));
       throw error;
     }

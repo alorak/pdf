@@ -76,6 +76,10 @@ jobs:
         run: |
           npm install --no-save --package-lock=false @playwright/test@1.56.1
           npx playwright install --with-deps chromium
+      - name: Build production viewer and verify static decoder assets
+        run: |
+          npm run build
+          node scripts/check-pages.mjs
       - name: Chromium real PDF first/middle/last rendered canvas and navigation
         run: npm run test:corpus:browser -- --grep "govinfo1941"
       - name: Archive manifest and test reports (never PDFs)
