@@ -1,0 +1,50 @@
+name: P2.8 manual extended JBIG2 Poppler reference parity
+# Pinned third-party PDF downloads only on explicit manual trigger.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reference-parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CI: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - name: Install application dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Install independent Poppler rasterizer
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq poppler-utils
+          pdftoppm -v
+      - name: Download pinned JBIG2 streams and independently render PPM reference
+        run: python3 scripts/p2-8-jbig2-corpus.py
+      - name: Install Chromium
+        run: |
+          npm install --no-save --package-lock=false @playwright/test@1.56.1
+          npx playwright install --with-deps chromium
+      - name: Build production PDF viewer
+        run: |
+          npm run build
+          node scripts/check-pages.mjs
+      - name: Pixel-level comparison against independent Poppler JBIG2 reference
+        run: npx playwright test --config=playwright.jbig2.config.mjs
+      - name: Require complete JBIG2 reference acceptance
+        run: node scripts/verify-p2-8-jbig2.mjs
+      - name: Archive ONLY hashes and numeric differences
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-8-jbig2-parity-${{ github.run_id }}
+          path: test-results/stress/p2-8-jbig2-*.json
+          retention-days: 30
+          if-no-files-found: warn

@@ -87,6 +87,14 @@ Chromium'da gerçek IndexedDB kota override sonrası atomik rollback/reload, yer
 
 Gerçek `JPXDecode`/JPEG2000 kod akışı, dört kanallı `DeviceCMYK` raster ve kaynak/izin kontrollü `JBIG2Decode` örnekleriyle PDF.js görüntüleme doğruluğu; yalnız PDF'yi açmak değil, canvas üzerindeki renk ve siyah-beyaz pikselleri doğrulamak esastır. **P2.7 kabul: 5/5 codec doğrulaması başarılı** (JPEG2000, CMYK, 3 JBIG2 çeşidi). Normal PR'larda JPEG2000/CMYK otomatik, üç JBIG2 örneği manuel GitHub Actions işinde tekrar çalıştırılabilir. [P2.7 test protokolü ve sınırları](docs/p2-7-codec-acceptance.md).
 
+### P2.8 — ICCBased CMYK, 16-bit JPX ve full-reference görüntü kontrolü
+
+16-bit JPEG2000 kod akışı, özgün ICC CMYK CLUT dönüşümü ve üretim Chromium'unda her sayfanın 4.096 pikselini bağımsız referansla karşılaştırma: [P2.8 doğrulama yöntemi](docs/p2-8-reference-acceptance.md). Üçüncü taraf JBIG2 varyantları için ayrı, lisanslı kaynaklı kabul kapısı.
+
+### P2.8 — Tam piksel referansı ve JBIG2 Poppler karşılaştırması
+
+16-bit JPEG2000 ve ICC profilli CMYK belgelerinde bağımsız OpenJPEG/LittleCMS2 referansıyla 64×64 **tam-piksel karşılaştırması**; dört ek JBIG2 türünde bağımsız Poppler'a karşı **159.600 piksel × 4** tam sayfa karşılaştırması başarılıdır. [P2.8 kabul metrikleri ve sınırları](docs/p2-8-reference-acceptance.md). Üçüncü taraf JBIG2 PDF'leri repoda bulunmaz; manuel CI testinde sabit hash ile indirilir.
+
 ## Çalıştırma
 
 Node.js 22+ gerektirir (Node.js 24 önerilir).
