@@ -3,7 +3,7 @@
 
 ## Durum ve kabul ayrımı
 - **P2.6-A: Otomatik CI (geçti)**: CDP kota override *gözlemi* ve bağımsız gerçek IndexedDB native abort işlemleri; PDF SHA-256, yer imi, metadata revizyonu, cold reload ve sonraki geçerli yazma/restore korunumu. **Gerçek kota reddi bu CI ortamında oluşmadı.**
-- **P2.6-B: Yerel corpus**: Kullanıcı tarafından lisans/izin kontrolü yapılmış, SHA-256'ları kilitlenmiş gerçek PDF dosyalarını çevrimdışı doğrulayan komut ve Chromium E2E protokolü. Bu depoda gerçek dosya **bulunmaz**; manifest sağlanmadan gerçek corpus kabulü geçilmiş sayılmaz.
+- **P2.6-B: Açık lisanslı gerçek PDF corpus (5/5 geçti)**: NASA NACA, GovInfo ve üç CC0 örneği için PDF.js+Chromium doğrulaması başarılı. [Kapsam ve kanıt](p2-6-public-corpus-acceptance.md). Daha geniş formatlar beklemektedir.
 - **P2.6-C: Fiziksel Android**: ADB üzerinden PSS/boş RAM örnekleri ve cihazda manuel sekme sonlandırma/kurtarma protokolü. CI'da fiziksel cihaz olmadığı için **bekleyen saha doğrulamasıdır**.
 
 ## A. Chromium IndexedDB kota gözlemi ve deterministik işlem abort
@@ -58,6 +58,8 @@ P2_REAL_CORPUS_MANIFEST=/path/to/manifest.json npm run test:corpus
 # Chromium gerçek raster çizim ve uzak sayfaya atlama
 npm install --no-save --package-lock=false @playwright/test@1.56.1
 npx playwright install chromium
+npm run build
+node scripts/check-pages.mjs
 P2_REAL_CORPUS_MANIFEST=/path/to/manifest.json npm run test:corpus:browser
 ```
 
@@ -78,7 +80,7 @@ Bu aşama yalnız **sahip olunan/izinli** cihazda uygulanır. USB debugging aç�
 
 ## Kalan sınırlamalar
 - GitHub-hosted Chromium'ta kota override, **gerçek fiziksel disk dolması veya Android OOM killer** testi değildir.
-- Gerçek lisanslı corpus ve fiziksel Android oturumu henüz sağlanmadı; kabul kayıtları gelmeden P2.6-B/C tamamlandı denemez.
+- Beş belgeli açık lisanslı corpus testi geçti; daha geniş format çeşitliliği ve fiziksel Android oturumu henüz doğrulanmadı.
 - Cihaz telemetrisi gerçek kullanıcı PDF'leriyle birleştirilmeden önce mahremiyet ve izin doğrulaması gerektirir.
 
 ## Kabul kaydı — 31 Ekim 2026
@@ -96,7 +98,7 @@ Bu aşama yalnız **sahip olunan/izinli** cihazda uygulanır. USB debugging aç�
 | P2.6-A native transaction rollback, cold reload, sonraki yazma/restore | **Geçti** |
 | P2.6-A CDP quota override bildirimi | **Doğrulandı** |
 | P2.6-A gerçek kota aşımı nedeniyle yazmanın reddi | **Doğrulanmadı** |
-| P2.6-B lisanslı gerçek PDF corpus'u üzerinde PDF.js + Chromium koşusu | **Beklemede: dosyalar/manifest gerekli** |
+| P2.6-B beş belgeli gerçek PDF corpus | **5/5 başarılı**, format çeşitliliği sınırlı |
 | P2.6-C fiziksel Android düşük-RAM ve sekme yeniden açma | **Beklemede: cihaz testi gerekli** |
 
 Otomatik testte PDF ve çalışma alanı verileri GitHub'a taşınmaz; yalnızca fixture'ların hash ve metadata test raporları arşivlenir. Gerçek belge corpus'u ve fiziksel cihaz sonuçları elde edilmeden bütün P2.6 aşaması için genel **tamamlandı** iddiasında bulunulmaz.

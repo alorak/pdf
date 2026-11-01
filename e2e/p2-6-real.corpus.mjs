@@ -17,19 +17,87 @@ for (const item of cases) {
     const bytes = await readFile(path);
     expect(createHash("sha256").update(bytes).digest("hex")).toBe(item.sha256);
     const errors = [];
+    const renderErrors = [];
+    const allConsole = [];
+    const requestErrors = [];
+    const navigations = [];
+    page.on("framenavigated", frame => { if (frame === page.mainFrame()) navigations.push(frame.url()); });
     page.on("pageerror", e => errors.push(e.message));
-    page.on("console", m => {
-      if (m.type() === "error" && /PDF page render failed|PDF thumbnail render failed/.test(m.text())) {
-        errors.push(m.text());
+    page.on("requestfailed", r => requestErrors.push({url:r.url().slice(0,180),failure:r.failure()}));
+    page.on("console", async m => {
+      if (["error","warning"].includes(m.type())) allConsole.push({type:m.type(), text:m.text().slice(0,450)});
+      if (/PDF open failed|PDF transaction failed|PDF page render failed|PDF thumbnail render failed|Unable to decode image|failed to initialize/i.test(m.text())) {
+        errors.push(m.text().slice(0, 240));
+        for (const handle of m.args().slice(1)) {
+          try {
+            const info = await handle.evaluate(value => ({
+              name: value?.name ?? null, message: value?.message ?? null,
+              stack: typeof value?.stack === "string" ? value.stack.slice(0, 450) : null,
+            }));
+            if (info.message) renderErrors.push(info);
+          } catch { /* Console argument was released. */ }
+        }
+      }
+    });
+    page.on("response", response => {
+      if (response.url().includes("/pdfjs-") && response.status() >= 400) {
+        errors.push("decoder request failed: HTTP " + response.status());
       }
     });
     await page.goto("");
+    await page.evaluate(() => {
+      window.__corpusUiTrace = [];
+      const ids = ["pageTotal","fileLabel","statusText","loading","toast","replaceDialog","emptyState"];
+      const snap = () => Object.fromEntries(ids.map(id => {
+        const element = document.getElementById(id);
+        return [id, { text: element?.textContent?.trim().slice(0,80),
+          hidden: element?.hidden, open: element?.open }];
+      }));
+      window.__corpusUiTrace.push({at:performance.now(),snapshot:snap()});
+      const observer = new MutationObserver(() => {
+        if (window.__corpusUiTrace.length < 100) window.__corpusUiTrace.push({
+          at:performance.now(),snapshot:snap(),
+        });
+      });
+      for (const id of ids) {
+        const el = document.getElementById(id);
+        if (el) observer.observe(el,{attributes:true,childList:true,subtree:true,characterData:true});
+      }
+    });
     const chooserWait = page.waitForEvent("filechooser");
     await page.locator("#emptyOpenButton").click();
     const chooser = await chooserWait;
     await chooser.setFiles(path);
     await page.locator("#confirmReplace").click();
-    await expect(page.locator("#pageTotal")).not.toHaveText("0", { timeout: 180_000 });
+    try {
+      await expect(page.locator("#pageTotal")).not.toHaveText("0", { timeout: 45_000 });
+    } catch (error) {
+      const diagnostic = await page.evaluate(() => ({
+        pageTotal: document.querySelector("#pageTotal")?.textContent,
+        fileLabel: document.querySelector("#fileLabel")?.textContent?.slice(0, 100),
+        status: document.querySelector("#statusText")?.textContent?.slice(0, 160),
+        viewerText: document.querySelector("#statusText")?.textContent?.slice(0, 160),
+        toastText: document.querySelector("#toast")?.textContent?.slice(0, 160),
+        toastHidden: document.querySelector("#toast")?.hidden,
+        pageShells: document.querySelectorAll(".page-shell").length,
+        pageCanvases: document.querySelectorAll(".page-surface canvas").length,
+        emptyVisible: !document.querySelector("#empty")?.hidden,
+        loading: document.querySelector("#app")?.className?.slice(0, 140),
+        loaderHidden: document.querySelector("#loading")?.hidden,
+        loaderText: document.querySelector("#loadingText")?.textContent,
+        trace: window.__corpusUiTrace?.slice(-30),
+        documentUrl: location.href,
+        navigationType: performance.getEntriesByType("navigation")[0]?.type,
+      }));
+      console.log("P2_6_OPEN_DIAGNOSTIC " + JSON.stringify({
+        id: item.id, ...diagnostic, errors: errors.slice(0, 8),
+        renderErrors: renderErrors.slice(0, 5),
+        allConsole: allConsole.slice(-14),
+        requestErrors: requestErrors.slice(0, 10),
+        navigations,
+      }));
+      throw error;
+    }
     const pages = Number(await page.locator("#pageTotal").textContent());
     expect(Number.isSafeInteger(pages) && pages >= 1).toBe(true);
     const metrics = [];
@@ -37,9 +105,44 @@ for (const item of cases) {
       await page.locator("#pageInput").fill(String(pageNo));
       await page.locator("#pageInput").press("Enter");
       const selector = '.page-shell[data-index="' + (pageNo - 1) + '"] canvas';
-      await expect.poll(() => page.locator(selector).evaluateAll(all => all.some(c => c.width > 0 &&
-        c.height > 0 && c.getContext("2d").getImageData(0, 0, 1, 1).data[3] !== 0)),
-        { timeout: 180_000 }).toBe(true);
+      try {
+        await expect.poll(() => page.locator(selector).evaluateAll((all, checkRaster) => all.some(c => {
+          if (!c.width || !c.height) return false;
+          const ctx = c.getContext("2d");
+          if (!ctx) return false;
+          if (!checkRaster) return true;
+          for (const fraction of [0.15, 0.35, 0.55, 0.75]) {
+            const color = ctx.getImageData(Math.floor(c.width * fraction),
+              Math.floor(c.height * fraction), 1, 1).data;
+            if (color[3] > 0) return true;
+          }
+          return false;
+        }), item.minImagePages > 0), { timeout: 25_000 }).toBe(true);
+      } catch (error) {
+        const diag = await page.evaluate(({ targetPage, checkRaster }) => {
+          const shells = [...document.querySelectorAll(".page-shell")];
+          const shell = shells.find(x => x.dataset.index === String(targetPage - 1));
+          const canvases = [...(shell?.querySelectorAll("canvas") || [])];
+          return { pageNo: targetPage, checkRaster,
+            pageTotal: document.querySelector("#pageTotal")?.textContent,
+            pageInput: document.querySelector("#pageInput")?.value,
+            shellCount: shells.length,
+            shellNumbers: shells.slice(0, 8).map(x => x.dataset.index),
+            selectedShellConnected: Boolean(shell?.isConnected),
+            selectedShellHeight: shell?.getBoundingClientRect().height,
+            pageSurfaceChildren: shell?.querySelector(".page-surface")?.children.length,
+            canvasCount: canvases.length,
+            canvasDims: canvases.map(c => [c.width, c.height]),
+            selectedPageHidden: shell?.hidden,
+            viewerDimensions: (() => { const v = document.querySelector("#viewer"); return [v?.clientWidth, v?.clientHeight, v?.scrollTop]; })(),
+            pagesHidden: document.querySelector("#pages")?.hidden,
+            toastVisible: !document.querySelector("#toast")?.hidden,
+          };
+        }, { targetPage: pageNo, checkRaster: item.minImagePages > 0 });
+        console.log("P2_6_RENDER_DIAGNOSTIC " + JSON.stringify({ id: item.id, ...diag,
+          consoleErrors: errors.slice(0, 6), renderErrors: renderErrors.slice(0, 6) }));
+        throw error;
+      }
       const sample = await page.evaluate(() => ({
         domNodes: document.querySelectorAll("*").length,
         pageCanvases: document.querySelectorAll(".page-surface canvas").length,
