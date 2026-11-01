@@ -1,17 +1,14 @@
-name: P2.7 one-off genuine JBIG2 codec acceptance
+name: P2.7 manual genuine JBIG2 codec acceptance
 
+# JBIG2 sources are intentionally opt-in; no per-PR network dependency or CI cost.
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - .github/workflows/p2-7-jbig2-acceptance.yml
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   jbig2-codecs:
-    if: github.head_ref == 'feat/p2-7-codec-acceptance'
     runs-on: ubuntu-latest
     timeout-minutes: 35
     env:
@@ -37,12 +34,12 @@ jobs:
           # These thin PDF wrappers are from mozilla/pdf.js test/pdfs.
           commit = "0a4153349dc473ba950fc17941c5ca7eda43c1de"
           records = [
-            ("jbig2-mmr", "bitmap-mmr.pdf", "b7099a499822fff95d90b9bdc006157242a1b912"),
-            ("jbig2-customat", "bitmap-customat.pdf", "b18bc21793a85179c445db8ef42a33a5ee2b4407"),
-            ("jbig2-halftone", "bitmap-halftone.pdf", "b05df7f1c590d3819382dbef7fa73857bb26d59e"),
+            ("jbig2-mmr", "bitmap-mmr.pdf", "b7099a499822fff95d90b9bdc006157242a1b912", "32b70aeb63ca60f60c25c2d797b8f5af16043d66dce1bcb0b0f08a78acee95ed"),
+            ("jbig2-customat", "bitmap-customat.pdf", "b18bc21793a85179c445db8ef42a33a5ee2b4407", "9be6eb11af2e4078eb209cbf680bb415960f2275f7e120660d22e7edc09e2ede"),
+            ("jbig2-halftone", "bitmap-halftone.pdf", "b05df7f1c590d3819382dbef7fa73857bb26d59e", "c276d6cbc7d0709af448b532232c9f8b92424859974b38feaef0d8983bd6d7c0"),
           ]
           cases = []
-          for ident, name, git_blob in records:
+          for ident, name, git_blob, pinned_sha256 in records:
             dest = root / name
             url = "https://raw.githubusercontent.com/mozilla/pdf.js/" + commit + "/test/pdfs/" + name
             subprocess.run(["curl","--fail","--location","--retry","3","--connect-timeout","20",
@@ -56,6 +53,8 @@ jobs:
             if actual_git_blob != git_blob:
               raise ValueError("Git blob hash mismatch: " + ident)
             sha256 = hashlib.sha256(data).hexdigest()
+            if sha256 != pinned_sha256:
+              raise ValueError("SHA-256 mismatch: " + ident)
             print("P2_7_JBIG2_SOURCE " + json.dumps(
               {"id":ident,"bytes":len(data),"gitBlob":actual_git_blob,"sha256":sha256}))
             cases.append({"id":ident,"path":str(dest),"sha256":sha256})

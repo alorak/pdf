@@ -85,7 +85,7 @@ Chromium'da gerçek IndexedDB kota override sonrası atomik rollback/reload, yer
 
 ### P2.7 — JPEG2000 / JBIG2 / CMYK
 
-Gerçek `JPXDecode`/JPEG2000 kod akışı, dört kanallı `DeviceCMYK` raster ve kaynak/izin kontrollü `JBIG2Decode` örnekleriyle PDF.js görüntüleme doğruluğu; yalnız PDF'yi açmak değil, canvas üzerindeki renk ve siyah-beyaz pikselleri doğrulamak esastır. [P2.7 test protokolü ve sınırları](docs/p2-7-codec-acceptance.md).
+Gerçek `JPXDecode`/JPEG2000 kod akışı, dört kanallı `DeviceCMYK` raster ve kaynak/izin kontrollü `JBIG2Decode` örnekleriyle PDF.js görüntüleme doğruluğu; yalnız PDF'yi açmak değil, canvas üzerindeki renk ve siyah-beyaz pikselleri doğrulamak esastır. **P2.7 kabul: 5/5 codec doğrulaması başarılı** (JPEG2000, CMYK, 3 JBIG2 çeşidi). Normal PR'larda JPEG2000/CMYK otomatik, üç JBIG2 örneği manuel GitHub Actions işinde tekrar çalıştırılabilir. [P2.7 test protokolü ve sınırları](docs/p2-7-codec-acceptance.md).
 
 ## Çalıştırma
 
