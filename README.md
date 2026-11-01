@@ -81,7 +81,7 @@ Taranmış (OCR'siz), karma görüntü+metin ve mobil Chromium senaryoları içi
 
 ### P2.6 — Kota, gerçek PDF corpus'u ve fiziksel Android
 
-Chromium'da gerçek IndexedDB kota override sonrası atomik rollback/reload, yerel izne tabi gerçek PDF corpus doğrulayıcıları ve ADB üzerinden fiziksel Android ölçüm protokolü: [P2.6 test planı ve kabul sınırları](docs/p2-6-field-reliability.md). Gerçek corpus ve cihaz testleri **yerel olarak** çalıştırılır; dosyalar repoya yüklenmez.
+Chromium'da gerçek IndexedDB kota override sonrası atomik rollback/reload, yerel izne tabi gerçek PDF corpus doğrulayıcıları ve ADB üzerinden fiziksel Android ölçüm protokolü: [P2.6 test planı ve kabul sınırları](docs/p2-6-field-reliability.md). Beş belgeli gerçek PDF corpus testi başarılıdır ([rapor](docs/p2-6-public-corpus-acceptance.md)). Fiziksel cihaz testleri yerel olarak çalıştırılır; PDF dosyaları depoya eklenmez.
 
 ## Çalıştırma
 
