@@ -18,6 +18,10 @@ jobs:
           cache: npm
       - name: Install exact dependencies
         run: npm ci --no-audit --no-fund
+      - name: Validate Android soak CLI syntax (no physical device in CI)
+        run: |
+          node --check scripts/p2-10-android-soak.mjs
+          node --check scripts/p2-10-scan-preflight.mjs
       - name: Workspace, migration and backup tests
         run: npm test
       - name: Production build

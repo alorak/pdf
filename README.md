@@ -99,6 +99,10 @@ Gerçek `JPXDecode`/JPEG2000 kod akışı, dört kanallı `DeviceCMYK` raster ve
 
 **Dört codec/rengi doğrulama senaryosu başarılı:** Gerçek üç kanallı 16-bit JPEG2000, özgün ICC v4 RGB profili ve resmî FOGRA51/SWOP CMYK profilleri; bağımsız LittleCMS2 referansıyla her biri için 4.096 piksel karşılaştırması. ADB üzerinden **fiziksel Android bellek ölçüm protokolü** hazır (gerçek cihaz ölçümü bekleniyor). Cihaz verilmeden Android sonucu iddia edilmez; ICC/PDF dosyaları repoya konmaz. [P2.9 kapsam/kanıt raporu](docs/p2-9-color-mobile-acceptance.md).
 
+### P2.10 — Fiziksel Android 25–100 MB taranmış PDF soak testi
+
+Gerçek Android'de 30 dakikalık Chrome PSS/RSS, sistem RAM/PSI zaman serisi ve CDP ile ilk/orta/son sayfa gezinme gecikmesi ölçümü; cihazdaki PDF'nin SHA-256 bütünlük kontrolü; Android HOME/Chrome'a dönüş ve IndexedDB çalışma alanı+sayfa geri yükleme doğrulaması. **Ölçüm cihaz kullanıcıya bağlı bilgisayarda çalışır; şu ana kadar fiziksel Android saha sonucu üretilmedi.** [P2.10 test protokolü ve güvenlik sınırları](docs/p2-10-android-longrun.md).
+
 ## Çalıştırma
 
 Node.js 22+ gerektirir (Node.js 24 önerilir).
