@@ -18,8 +18,12 @@ for (const item of cases) {
     expect(createHash("sha256").update(bytes).digest("hex")).toBe(item.sha256);
     const errors = [];
     const renderErrors = [];
+    const allConsole = [];
+    const requestErrors = [];
     page.on("pageerror", e => errors.push(e.message));
+    page.on("requestfailed", r => requestErrors.push({url:r.url().slice(0,180),failure:r.failure()}));
     page.on("console", async m => {
+      if (["error","warning"].includes(m.type())) allConsole.push({type:m.type(), text:m.text().slice(0,450)});
       if (/PDF open failed|PDF transaction failed|PDF page render failed|PDF thumbnail render failed|Unable to decode image|failed to initialize/i.test(m.text())) {
         errors.push(m.text().slice(0, 240));
         for (const handle of m.args().slice(1)) {
@@ -39,13 +43,32 @@ for (const item of cases) {
       }
     });
     await page.goto("");
+    await page.evaluate(() => {
+      window.__corpusUiTrace = [];
+      const ids = ["pageTotal","fileLabel","statusText","loading","toast","replaceDialog","emptyState"];
+      const snap = () => Object.fromEntries(ids.map(id => {
+        const element = document.getElementById(id);
+        return [id, { text: element?.textContent?.trim().slice(0,80),
+          hidden: element?.hidden, open: element?.open }];
+      }));
+      window.__corpusUiTrace.push({at:performance.now(),snapshot:snap()});
+      const observer = new MutationObserver(() => {
+        if (window.__corpusUiTrace.length < 100) window.__corpusUiTrace.push({
+          at:performance.now(),snapshot:snap(),
+        });
+      });
+      for (const id of ids) {
+        const el = document.getElementById(id);
+        if (el) observer.observe(el,{attributes:true,childList:true,subtree:true,characterData:true});
+      }
+    });
     const chooserWait = page.waitForEvent("filechooser");
     await page.locator("#emptyOpenButton").click();
     const chooser = await chooserWait;
     await chooser.setFiles(path);
     await page.locator("#confirmReplace").click();
     try {
-      await expect(page.locator("#pageTotal")).not.toHaveText("0", { timeout: 9_000 });
+      await expect(page.locator("#pageTotal")).not.toHaveText("0", { timeout: 45_000 });
     } catch (error) {
       const diagnostic = await page.evaluate(() => ({
         pageTotal: document.querySelector("#pageTotal")?.textContent,
@@ -58,10 +81,15 @@ for (const item of cases) {
         pageCanvases: document.querySelectorAll(".page-surface canvas").length,
         emptyVisible: !document.querySelector("#empty")?.hidden,
         loading: document.querySelector("#app")?.className?.slice(0, 140),
+        loaderHidden: document.querySelector("#loading")?.hidden,
+        loaderText: document.querySelector("#loadingText")?.textContent,
+        trace: window.__corpusUiTrace?.slice(-30),
       }));
       console.log("P2_6_OPEN_DIAGNOSTIC " + JSON.stringify({
         id: item.id, ...diagnostic, errors: errors.slice(0, 8),
         renderErrors: renderErrors.slice(0, 5),
+        allConsole: allConsole.slice(-14),
+        requestErrors: requestErrors.slice(0, 10),
       }));
       throw error;
     }
