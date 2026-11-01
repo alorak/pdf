@@ -6,7 +6,7 @@ import { compareReferencePixels } from "../scripts/p2-8-pixel-diff.mjs";
 const KINDS = ["jpx16","iccCmyk"];
 
 // Native 64x64 source image sampled at source pixel centers, not interpolated
-// thumbnails or 4 handpicked palette colors. PDF zoom=50% * viewer density=2.
+// thumbnails or 4 handpicked palette colors. PDF zoom=100% and Chromium DPR=1 yields exact 64x64 source pixels.
 async function canvasPixels(page, pageNo) {
   return page.evaluate(target => {
     const shell = [...document.querySelectorAll(".page-shell")]
@@ -58,7 +58,7 @@ for(const kind of KINDS) {
       const c=document.querySelector('.page-shell[data-index="0"] .page-surface canvas');
       return c ? [c.width,c.height] : null;
     }),{timeout:60_000,message:"First full-zoom image paint must finish before zoom"}).not.toBeNull();
-    await page.locator("#zoomInput").fill("50");
+    await page.locator("#zoomInput").fill("100");
     await page.locator("#zoomInput").press("Enter");
     const reports=[];
     const tolerance = kind === "jpx16"

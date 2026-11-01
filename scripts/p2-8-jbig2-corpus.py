@@ -21,9 +21,12 @@ CASES = [
     ("jbig2-symbol-huffman", "bitmap-symbol-symhuff-texthuff.pdf", "38c66341b295edaf575fcadd0d58ad7de0ed14b0"),
     ("jbig2-halftone-10bpp", "bitmap-halftone-10bpp.pdf", "68daf4bb6e7619dae9a919b4b838dca5603dbb6a"),
 ]
-# Phase 1 discovers SHA-256 under pinned Git blob integrity; phase 2 locks both.
+# Dual-locked immutable source identity: original Git blob SHA-1 + SHA-256.
 EXPECTED_SHA256 = {
-    # Filled using the CI evidence after verifying exact upstream Git blobs.
+    "jbig2-symbol-refine": "5e2ae6875ea8d0f1d2aecfaeff6aeac6acb8ff76eadef42e5f0fa7fc76c818b0",
+    "jbig2-stripe": "b1e3c558a34537aeace4334cbcea6c42f82f4b815c8232df462ee8956e6faf82",
+    "jbig2-symbol-huffman": "af8f3c70dbe1c0f0da090c829cea6da5015ed9978dd13fd2d0b9b44ac715db2b",
+    "jbig2-halftone-10bpp": "8a4577a1cdbdf342e2a61e18a239423452355c13733075af76fcd008f12eac5f",
 }
 
 def execute(*args: str) -> None:

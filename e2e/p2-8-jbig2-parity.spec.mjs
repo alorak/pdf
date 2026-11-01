@@ -79,6 +79,10 @@ for(const item of cases){
     await writeFile("test-results/stress/p2-8-"+item.id+".json",JSON.stringify(report,null,2));
     console.log("P2_8_JBIG2_PARITY_METRICS "+JSON.stringify(report));
     expect(errors).toEqual([]);
+    expect(Math.abs(actual.width-reference.width), "Browser and Poppler width parity")
+      .toBeLessThanOrEqual(2);
+    expect(Math.abs(actual.height-reference.height), "Browser and Poppler height parity")
+      .toBeLessThanOrEqual(2);
     expect(stats.referenceInkPixels,"Reference image must contain meaningful foreground").toBeGreaterThan(3);
     expect(stats.actualInkPixels,"Browser image must contain meaningful foreground").toBeGreaterThan(3);
     expect(stats.mae,"Mean luminance error from independent Poppler reference").toBeLessThanOrEqual(30);

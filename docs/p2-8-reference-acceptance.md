@@ -11,7 +11,7 @@
 - `scripts/p2-8-advanced-fixtures.mjs` orijinal 16-bit J2K, 744B ICC CLUT, sıkıştırılmış CMYK raster ve bağımsız altın referans.
 - `scripts/p2-8-pixel-diff.mjs` tam piksel karşılaştırması: MAE, RMSE, en büyük tek-kanal sapması, bozuk piksel yüzdesi, alpha kontrolü.
 - `tests/p2-8-advanced-codecs.test.mjs` kod akışı imzaları, ICC kanal sayısı/sınıfı, PDF operatörleri ve sahte DeviceCMYK fallback'e karşı olumsuz kontrol.
-- `e2e/p2-8-reference.spec.mjs` üretim derlemesinde Playwright Chromium; 50% zoom × density2 ile 64×64, gerçek canvas RGBA ve tüm bağımsız kaynak RGB referansını karşılaştırır.
+- `e2e/p2-8-reference.spec.mjs` üretim derlemesinde Playwright Chromium; 100% zoom × DPR1 ile 64×64, gerçek canvas RGBA ve tüm bağımsız kaynak RGB referansını karşılaştırır.
 - `scripts/verify-p2-8-reference.mjs` iki codec × 3 sayfa × 4096 piksellik kanıt kapısı.
 - `playwright.reference.config.mjs` HMR kullanılmadan, production preview; diğer P2.6/2.7 kanıtları silinmez.
 - `validate.yml` PR başına otomatik; dış ağdan belge indirmez, gerçek üçüncü taraf ICC profilini veya kullanıcı PDF'sini depoya koymaz.
