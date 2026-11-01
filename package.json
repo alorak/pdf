@@ -20,7 +20,8 @@
     "test:jbig2:parity": "playwright test --config=playwright.jbig2.config.mjs",
     "test:codec:p29": "playwright test --config=playwright.p29.config.mjs",
     "test:print:p29": "playwright test --config=playwright.p29-print.config.mjs",
-    "android:snapshot": "node scripts/p2-9-android-session.mjs"
+    "android:snapshot": "node scripts/p2-9-android-session.mjs",
+    "android:soak": "node scripts/p2-10-android-soak.mjs"
   },
   "dependencies": {
     "pdfjs-dist": "6.4.299",
