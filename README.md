@@ -95,6 +95,10 @@ Gerçek `JPXDecode`/JPEG2000 kod akışı, dört kanallı `DeviceCMYK` raster ve
 
 16-bit JPEG2000 ve ICC profilli CMYK belgelerinde bağımsız OpenJPEG/LittleCMS2 referansıyla 64×64 **tam-piksel karşılaştırması**; dört ek JBIG2 türünde bağımsız Poppler'a karşı **159.600 piksel × 4** tam sayfa karşılaştırması başarılıdır. [P2.8 kabul metrikleri ve sınırları](docs/p2-8-reference-acceptance.md). Üçüncü taraf JBIG2 PDF'leri repoda bulunmaz; manuel CI testinde sabit hash ile indirilir.
 
+### P2.9 — ICC v4, 16-bit RGB JPEG2000, FOGRA/SWOP ve Android
+
+Gerçek üç kanallı 16-bit JPEG2000, özgün ICC v4 profili ve bağımsız LittleCMS2 referansıyla 4.096 piksel karşılaştırması; ayrıca resmî, lisansı doğrulanmış FOGRA51/SWOP profilleri için manuel kabul protokolü ve ADB üzerinden **fiziksel Android bellek ölçümü**. Cihaz verilmeden Android sonucu iddia edilmez; ICC/PDF dosyaları repoya konmaz. [P2.9 kapsam/kanıt raporu](docs/p2-9-color-mobile-acceptance.md).
+
 ## Çalıştırma
 
 Node.js 22+ gerektirir (Node.js 24 önerilir).

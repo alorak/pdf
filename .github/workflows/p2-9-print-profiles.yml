@@ -1,0 +1,60 @@
+name: P2.9 one-off official FOGRA51/SWOP profile acceptance
+
+# One-time CI while PR is open. Switch to workflow_dispatch after
+# real source hash values are pinned and successful color parity is proven.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/p2-9-print-profiles.yml
+
+permissions:
+  contents: read
+
+jobs:
+  print-profiles:
+    if: github.head_ref == 'test/p2-9-icc-v4-jpx-rgb16-print-android'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      CI: "true"
+      P2_9_PROFILE_DISCOVERY: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install exact viewer and reference dependencies
+        run: |
+          npm ci --no-audit --no-fund
+          python -m pip install --disable-pip-version-check pillow==12.0.0
+      - name: Download official licensed ICC profiles and inspect source SHA256
+        run: python scripts/p2-9-official-profiles.py
+      - name: Install Chromium (accepted runs only)
+        if: env.P2_9_PROFILE_DISCOVERY != '1'
+        run: |
+          npm install --no-save --package-lock=false @playwright/test@1.56.1
+          npx playwright install --with-deps chromium
+      - name: Production build and same-origin color resource verification
+        if: env.P2_9_PROFILE_DISCOVERY != '1'
+        run: |
+          npm run build
+          node scripts/check-pages.mjs
+      - name: Verify FOGRA51 and SWOP full-page color parity in Chromium
+        if: env.P2_9_PROFILE_DISCOVERY != '1'
+        run: npm run test:print:p29
+      - name: Require exact profile and per-pixel acceptance evidence
+        if: env.P2_9_PROFILE_DISCOVERY != '1'
+        run: node scripts/verify-p2-9-print.mjs
+      - name: Upload only numeric evidence (never ICC/PDF/reference bytes)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-9-print-evidence-\${{ github.run_id }}
+          retention-days: 14
+          if-no-files-found: ignore
+          path: test-results/stress/p2-9-print-*.json
