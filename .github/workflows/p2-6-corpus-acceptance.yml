@@ -1,5 +1,5 @@
 name: P2.6 one-off licensed real PDF corpus acceptance
-# Diagnose GovInfo open and input state transitions; see browser trace
+# Run all five real PDF cases against production-built viewer, not dev/HMR
 # Pinned SHA-256 and explicit WASM decoder acceptance
 
 on:
@@ -81,7 +81,7 @@ jobs:
           npm run build
           node scripts/check-pages.mjs
       - name: Chromium real PDF first/middle/last rendered canvas and navigation
-        run: npm run test:corpus:browser -- --grep "govinfo1941"
+        run: npm run test:corpus:browser
       - name: Archive manifest and test reports (never PDFs)
         if: always()
         shell: bash
