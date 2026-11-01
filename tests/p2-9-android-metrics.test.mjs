@@ -38,7 +38,7 @@ test("P2.9 Android session refuses emulators and incomplete field evidence",()=>
   assert.equal(good.physicalDevice,true);
   assert.equal(good.peakPssMiB,240);
   assert.equal(good.canClaimMeasuredChromePss,true);
-  assert.equal(good.observations.at(-1).userObservedTabReloaded,true);
+  assert.equal(good.observations.at(-1).userObservedTabReload,true);
   assert.throws(()=>summarizeAndroidSession(records.slice(1)));
   assert.throws(()=>summarizeAndroidSession([...records.slice(0,4),records[0]]));
   assert.throws(()=>summarizeAndroidSession(records.map((r,i)=>({...r,isEmulator:i===2}))));
