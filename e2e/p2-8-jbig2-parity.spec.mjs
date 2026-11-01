@@ -66,9 +66,12 @@ for(const item of cases){
     await(await pick).setFiles(item.pdfPath);
     await page.locator("#confirmReplace").click();
     await expect(page.locator("#pageTotal")).toHaveText("1",{timeout:90_000});
-    await page.locator("#zoomInput").fill("50");
+    // Poppler at 72 DPI maps PDF points to pixels at exactly 100% zoom/DPR=1.
+    await page.locator("#zoomInput").fill("100");
     await page.locator("#zoomInput").press("Enter");
-    await expect.poll(async()=>Boolean(await getCanvas(page,reference.width,reference.height)),{timeout:90_000}).toBe(true);
+    await expect.poll(async()=>Boolean(await getCanvas(page,reference.width,reference.height)),{
+      timeout:25_000,message:"100%-zoom image must match Poppler 72-dpi geometry"
+    }).toBe(true);
     const actual=await getCanvas(page,reference.width,reference.height);
     const stats=compareBinaryPageReference(actual.rgba,actual.width,actual.height,
       reference.rgb,reference.width,reference.height,32);
