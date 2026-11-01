@@ -56,6 +56,10 @@ jobs:
         run: npm run test:reference:browser
       - name: Verify independent reference pixel evidence
         run: node scripts/verify-p2-8-reference.mjs
+      - name: P2.9 ICC v4 and 16-bit RGB JPEG2000 independent reference pixels
+        run: npm run test:codec:p29
+      - name: Verify P2.9 profile and JPX RGB full-pixel evidence
+        run: node scripts/verify-p2-9.mjs
       - name: P2 capacity and 20-workspace smoke (100 pages)
         env:
           P2_STRESS_PAGES: "100"

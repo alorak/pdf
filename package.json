@@ -17,7 +17,9 @@
     "test:corpus:browser": "playwright test --config=playwright.corpus.config.mjs",
     "test:codec:browser": "playwright test --config=playwright.codec.config.mjs",
     "test:reference:browser": "playwright test --config=playwright.reference.config.mjs",
-    "test:jbig2:parity": "playwright test --config=playwright.jbig2.config.mjs"
+    "test:jbig2:parity": "playwright test --config=playwright.jbig2.config.mjs",
+    "test:codec:p29": "playwright test --config=playwright.p29.config.mjs",
+    "test:print:p29": "playwright test --config=playwright.p29-print.config.mjs"
   },
   "dependencies": {
     "pdfjs-dist": "6.4.299",
