@@ -53,6 +53,11 @@ for(const kind of KINDS) {
     await chooser.setFiles({name:kind+".pdf",mimeType:"application/pdf",buffer:pdf});
     await page.locator("#confirmReplace").click();
     await expect(page.locator("#pageTotal")).toHaveText("3",{timeout:60_000});
+    // Ensure first paint has settled before a user zoom forces cancellation/repaint.
+    const initialPaint = await expect.poll(async()=>page.evaluate(()=>{
+      const c=document.querySelector('.page-shell[data-index="0"] .page-surface canvas');
+      return c ? [c.width,c.height] : null;
+    }),{timeout:60_000,message:"First full-zoom image paint must finish before zoom"}).not.toBeNull();
     await page.locator("#zoomInput").fill("50");
     await page.locator("#zoomInput").press("Enter");
     const reports=[];
@@ -63,6 +68,18 @@ for(const kind of KINDS) {
       await page.locator("#pageInput").fill(String(pageNo));
       await page.locator("#pageInput").press("Enter");
       await expect(page.locator("#pageInput")).toHaveValue(String(pageNo));
+      const preview=await page.evaluate(target=>{
+        const elements=[...document.querySelectorAll(".page-shell")];
+        return {requested:target, shellCount:elements.length,
+          shells:elements.map(n=>({index:n.dataset.index,
+            canvases:[...n.querySelectorAll("canvas")].map(c=>[c.width,c.height]),
+            height:n.getBoundingClientRect().height})),
+          zoom:document.querySelector("#zoomInput")?.value,
+          viewer:[document.querySelector("#viewer")?.clientWidth,
+            document.querySelector("#viewer")?.clientHeight],
+        };
+      },pageNo);
+      console.log("P2_8_RENDER_DIAGNOSTIC "+JSON.stringify({kind,errors,preview}));
       await expect.poll(async()=>{
         const result=await canvasPixels(page,pageNo);
         return Boolean(result);
