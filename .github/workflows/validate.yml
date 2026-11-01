@@ -42,6 +42,14 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: PDF reader Chromium E2E
         run: npx playwright test
+      - name: Production viewer bundle and codec WASM assets
+        run: |
+          npm run build
+          node scripts/check-pages.mjs
+      - name: JPXDecode/JPEG2000 and DeviceCMYK pixel validation
+        run: npm run test:codec:browser
+      - name: Verify codec pixel evidence
+        run: node scripts/verify-p2-7-codecs.mjs
       - name: Confirm actual Chromium quota rejection and recovery evidence
         run: node scripts/verify-p2-6-quota.mjs
       - name: P2 capacity and 20-workspace smoke (100 pages)

@@ -83,6 +83,10 @@ Taranmış (OCR'siz), karma görüntü+metin ve mobil Chromium senaryoları içi
 
 Chromium'da gerçek IndexedDB kota override sonrası atomik rollback/reload, yerel izne tabi gerçek PDF corpus doğrulayıcıları ve ADB üzerinden fiziksel Android ölçüm protokolü: [P2.6 test planı ve kabul sınırları](docs/p2-6-field-reliability.md). Beş belgeli gerçek PDF corpus testi başarılıdır ([rapor](docs/p2-6-public-corpus-acceptance.md)). Fiziksel cihaz testleri yerel olarak çalıştırılır; PDF dosyaları depoya eklenmez.
 
+### P2.7 — JPEG2000 / JBIG2 / CMYK
+
+Gerçek `JPXDecode`/JPEG2000 kod akışı, dört kanallı `DeviceCMYK` raster ve kaynak/izin kontrollü `JBIG2Decode` örnekleriyle PDF.js görüntüleme doğruluğu; yalnız PDF'yi açmak değil, canvas üzerindeki renk ve siyah-beyaz pikselleri doğrulamak esastır. [P2.7 test protokolü ve sınırları](docs/p2-7-codec-acceptance.md).
+
 ## Çalıştırma
 
 Node.js 22+ gerektirir (Node.js 24 önerilir).
