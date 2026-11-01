@@ -18,7 +18,7 @@ jobs:
     timeout-minutes: 35
     env:
       CI: "true"
-      P2_9_PROFILE_DISCOVERY: "1"
+      P2_9_PROFILE_DISCOVERY: "0"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -32,7 +32,7 @@ jobs:
         run: |
           npm ci --no-audit --no-fund
           python -m pip install --disable-pip-version-check pillow==12.0.0
-      - name: Download official licensed ICC profiles and inspect source SHA256
+      - name: Download pinned official ICC profiles and create LittleCMS reference images
         run: python scripts/p2-9-official-profiles.py
       - name: Install Chromium (accepted runs only)
         if: env.P2_9_PROFILE_DISCOVERY != '1'

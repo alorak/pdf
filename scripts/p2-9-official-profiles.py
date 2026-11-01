@@ -21,8 +21,8 @@ ROOT = Path("/tmp/p29-print")
 REGISTRY = "https://registry.color.org/profile-registry/profiles/"
 # SHA pins are populated after first license-reviewed discovery CI.
 PINNED_SHA256 = {
-    "fogra51": "",
-    "swop2006": "",
+    "fogra51": "c30ad2c01e8f93135ec7682c535e0a81bc2d177c301e196376c5f5838b5c8e86",
+    "swop2006": "27dc90dbeb399b76c0f91a6b387fe30c38939f034d2500712f3c43094be15e3b",
 }
 PROFILES = {
     "fogra51": ("PSOcoated_v3.icc", "ECI/Heidelberg", "FOGRA51"),
