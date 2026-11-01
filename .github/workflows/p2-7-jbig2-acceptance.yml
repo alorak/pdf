@@ -1,0 +1,83 @@
+name: P2.7 manual genuine JBIG2 codec acceptance
+
+# JBIG2 sources are intentionally opt-in; no per-PR network dependency or CI cost.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  jbig2-codecs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      CI: "true"
+      P2_7_EXPECT_JBIG2: "jbig2-mmr,jbig2-customat,jbig2-halftone"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - name: Install pinned application dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Fetch license-attributed JBIG2 corpus at immutable source commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, subprocess
+          root = pathlib.Path("/tmp/p27-jbig2")
+          root.mkdir(parents=True, exist_ok=True)
+          # Original JBIG2 test streams: Nico Weber / SerenityOS, BSD-2-Clause.
+          # These thin PDF wrappers are from mozilla/pdf.js test/pdfs.
+          commit = "0a4153349dc473ba950fc17941c5ca7eda43c1de"
+          records = [
+            ("jbig2-mmr", "bitmap-mmr.pdf", "b7099a499822fff95d90b9bdc006157242a1b912", "32b70aeb63ca60f60c25c2d797b8f5af16043d66dce1bcb0b0f08a78acee95ed"),
+            ("jbig2-customat", "bitmap-customat.pdf", "b18bc21793a85179c445db8ef42a33a5ee2b4407", "9be6eb11af2e4078eb209cbf680bb415960f2275f7e120660d22e7edc09e2ede"),
+            ("jbig2-halftone", "bitmap-halftone.pdf", "b05df7f1c590d3819382dbef7fa73857bb26d59e", "c276d6cbc7d0709af448b532232c9f8b92424859974b38feaef0d8983bd6d7c0"),
+          ]
+          cases = []
+          for ident, name, git_blob, pinned_sha256 in records:
+            dest = root / name
+            url = "https://raw.githubusercontent.com/mozilla/pdf.js/" + commit + "/test/pdfs/" + name
+            subprocess.run(["curl","--fail","--location","--retry","3","--connect-timeout","20",
+              "--max-time","90","--silent","--show-error","--output",str(dest),url],check=True)
+            data = dest.read_bytes()
+            if not 100 <= len(data) <= 10_000 or not data.startswith(b"%PDF-"):
+              raise ValueError("Not a pinned small test PDF: " + ident)
+            if b"/JBIG2Decode" not in data:
+              raise ValueError("Real JBIG2Decode filter missing: " + ident)
+            actual_git_blob = subprocess.check_output(["git","hash-object",str(dest)],text=True).strip()
+            if actual_git_blob != git_blob:
+              raise ValueError("Git blob hash mismatch: " + ident)
+            sha256 = hashlib.sha256(data).hexdigest()
+            if sha256 != pinned_sha256:
+              raise ValueError("SHA-256 mismatch: " + ident)
+            print("P2_7_JBIG2_SOURCE " + json.dumps(
+              {"id":ident,"bytes":len(data),"gitBlob":actual_git_blob,"sha256":sha256}))
+            cases.append({"id":ident,"path":str(dest),"sha256":sha256})
+          with open(os.environ["GITHUB_ENV"],"a",encoding="utf8") as f:
+            f.write("P2_7_JBIG2_FILES=" + json.dumps(cases,separators=(",",":")) + "\n")
+          PY
+      - name: Install Playwright Chromium
+        run: |
+          npm install --no-save --package-lock=false @playwright/test@1.56.1
+          npx playwright install --with-deps chromium
+      - name: Build production viewer and decoder assets
+        run: |
+          npm run build
+          node scripts/check-pages.mjs
+      - name: Check actual JBIG2 MMR, arithmetic and halftone pixels in Chromium
+        run: npm run test:codec:browser
+      - name: Verify complete codec and JBIG2 evidence
+        run: node scripts/verify-p2-7-codecs.mjs
+      - name: Archive only JSON evidence, never third-party source PDF
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-7-jbig2-acceptance-${{ github.run_id }}
+          retention-days: 30
+          if-no-files-found: warn
+          path: test-results/stress/p2-7-*.json
