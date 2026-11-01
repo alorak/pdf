@@ -21,6 +21,9 @@ Kaynaklar: [Chrome Android remote debugging](https://developer.chrome.com/docs/d
 ```bash
 git clone https://github.com/alorak/pdf.git
 cd pdf
+# PR #43 henüz main'e merge edilmediyse:
+git fetch origin test/p2-10-physical-android-soak
+git checkout test/p2-10-physical-android-soak
 npm ci
 npm install --no-save --package-lock=false @playwright/test@1.56.1
 adb devices -l
