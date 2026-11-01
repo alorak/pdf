@@ -229,7 +229,10 @@ async function main(){
     if(i<count-1&&sleep>0)await delay(sleep);
   }
   const recovery=await recoveryCheck(session,cfg.pages);
-  if(session)await session.browser.close().catch(()=>{});
+  if(session) {
+    await session.browser.close().catch(()=>{});
+    maybeAdb("forward","--remove","tcp:9222");
+  }
   const summary=summarizeAndroidSoak({plan,samples,navigations,recovery,device});
   const result={schema:1,kind:"physical-android-soak-report",label:cfg.label,
     fieldEvidenceComplete:summary.evidenceComplete&&sameBytesOnDeviceVerified,
@@ -249,6 +252,7 @@ async function main(){
   }
 }
 main().catch(error=>{
+  maybeAdb("forward","--remove","tcp:9222");
   console.error("P2.10 physical soak NOT executed/complete: "+
     String(error?.message||error).slice(0,240));
   process.exitCode=1;

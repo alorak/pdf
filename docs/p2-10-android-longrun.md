@@ -53,6 +53,8 @@ node scripts/p2-10-android-soak.mjs \
 - İstenen süre bitince koşucu Android'e `HOME` tuşu yollar ve 15 saniye arka plana alır. Kullanıcı Chrome'daki aynı PDF sekmesine döner ve terminalde Enter'a basar. Önceki sayfaya dönüldüğü kontrol edilir. Ardından **ayrı ve kasıtlı** `page.reload()` yapılarak IndexedDB'de PDF'nin, sayfa numarasının ve aktif çalışma alanının geri geldiği doğrulanır.
 - Bu süreç **Chrome'u force-stop yapmaz, LMK/OOM oluşturmaz veya kanıtlamaz**. Chrome arka planda Android tarafından kendiliğinden düşerse sekme durumu/DOM yeniden yüklenmesi tespit edilebilir; bunun nedeninin LMK olduğuna yalnız bu veriyle karar verilmez. Süreç PID değişimi yalnız **yeniden başlama belirtisi** olarak raporlanır; gerçek düşük-bellek öldürme nedenini (LMK) ispatlamak için Android sistem olayları gerekir. Gerçek LMK kanıtı için ayrıca yetkili sistem logcat/Perfetto/lowmemorykiller gözlemleri gerekir.
 
+Aracın CDP modu başarılı veya hatalı çıkışta açtığı `adb forward tcp:9222` yönlendirmesini kaldırmaya çalışır. Bağlantı yarım kaldıysa bilgisayarda ayrıca `adb forward --remove tcp:9222` çalıştırın. USB/CDP hata ayıklama bağlantısını yalnız güvenilen bilgisayarda açın.
+
 ## Yerel çıktılar ve kabul kriteri
 
 - `test-results/manual/p2-10-android-scan-50.json` — kaynak SHA-256, belge sayfa/raster preflight, anonimleştirilmiş sayısal zaman serisi, gezinme ölçümleri, arka plan/ön plan ve reload kontrolü.
