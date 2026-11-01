@@ -69,3 +69,38 @@ export function compareBinaryPageReference(actualPixels,actualWidth,actualHeight
     geometry:{browser:[actualWidth,actualHeight],poppler:[width,height]},
   };
 }
+
+
+/** Compare EVERY pixel against Poppler, with exact 1:1 geometry. */
+export function compareEveryBinaryPixel(actual,actualWidth,actualHeight,reference,width,height){
+  if(actualWidth!==width||actualHeight!==height)
+    throw new Error("Full-pixel comparison requires identical PDF raster geometry");
+  if(actual.length!==width*height*4||reference.length!==width*height*3)
+    throw new Error("Invalid source and reference buffer stride");
+  const count=width*height;
+  if(!Number.isSafeInteger(count)||count<1||count>4_000_000)
+    throw new RangeError("Out-of-range pixel count");
+  let tp=0,fp=0,fn=0,tn=0,sum=0,alphaErrors=0;
+  for(let p=0;p<count;p++){
+    const a=p*4,r=p*3;
+    const av=(actual[a]+actual[a+1]+actual[a+2])/3;
+    const rv=(reference[r]+reference[r+1]+reference[r+2])/3;
+    sum+=Math.abs(av-rv);
+    if(actual[a+3]!==255)alphaErrors++;
+    if(rv<128){
+      if(av<128)tp++;else fn++;
+    }else{
+      if(av<128)fp++;else tn++;
+    }
+  }
+  const precision=tp+fp?tp/(tp+fp):0;
+  const recall=tp+fn?tp/(tp+fn):0;
+  return { comparedPixels:count, channelsCompared:count*3, width,height,
+    mae:Number((sum/count).toFixed(4)),
+    alphaErrors, truePositive:tp,falsePositive:fp,falseNegative:fn,trueNegative:tn,
+    referenceInkPixels:tp+fn, actualInkPixels:tp+fp,
+    precision:Number(precision.toFixed(4)),recall:Number(recall.toFixed(4)),
+    f1:Number((precision+recall?2*precision*recall/(precision+recall):0).toFixed(4)),
+    referenceSha256:createHash("sha256").update(reference).digest("hex"),
+  };
+}

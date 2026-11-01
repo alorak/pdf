@@ -1,5 +1,5 @@
 name: P2.8 one-off extended JBIG2 Poppler reference parity
-# Test PDF/Poppler 72-dpi geometry at Chromium native 100% zoom.
+# Accept exact 1:1 full page pixel comparison against Poppler at 72 dpi.
 
 on:
   pull_request:

@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import { readFile, realpath, mkdir, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { resolve, sep } from "node:path";
-import { parsePortablePixmap, compareBinaryPageReference }
+import { parsePortablePixmap, compareBinaryPageReference, compareEveryBinaryPixel }
   from "../scripts/p2-8-jbig2-parity.mjs";
 
 const env=process.env.P2_8_JBIG2_FILES;
@@ -75,10 +75,12 @@ for(const item of cases){
     const actual=await getCanvas(page,reference.width,reference.height);
     const stats=compareBinaryPageReference(actual.rgba,actual.width,actual.height,
       reference.rgb,reference.width,reference.height,32);
+    const full=compareEveryBinaryPixel(actual.rgba,actual.width,actual.height,
+      reference.rgb,reference.width,reference.height);
     const report={schema:1,kind:"Poppler-vs-PDFjs-JBIG2",id:item.id,
       sha256,gitBlob:item.gitBlob,
-      independentReference:reference.sha256,stats,decoders,errors,
-      note:"32x32 fixed normalized grid; binarization threshold 128; reference rendered by Poppler at 72 dpi"};
+      independentReference:reference.sha256,stats,full,decoders,errors,
+      note:"ALL reference pixels compared 1:1 at 72 dpi, with supplementary 32x32 grid; Poppler renderer independent of PDF.js"};
     await mkdir("test-results/stress",{recursive:true});
     await writeFile("test-results/stress/p2-8-"+item.id+".json",JSON.stringify(report,null,2));
     console.log("P2_8_JBIG2_PARITY_METRICS "+JSON.stringify(report));
@@ -90,9 +92,14 @@ for(const item of cases){
     expect(stats.referenceInkPixels,"Reference image must contain meaningful foreground").toBeGreaterThan(3);
     expect(stats.actualInkPixels,"Browser image must contain meaningful foreground").toBeGreaterThan(3);
     expect(stats.mae,"Mean luminance error from independent Poppler reference").toBeLessThanOrEqual(30);
+    expect(full.comparedPixels,"Full raster must have substantial resolution").toBeGreaterThan(100000);
+    expect(full.alphaErrors).toBe(0);
+    expect(full.mae).toBeLessThanOrEqual(30);
+    expect(full.f1).toBeGreaterThanOrEqual(0.65);
     expect(stats.f1,"Black/white foreground agreement").toBeGreaterThanOrEqual(0.65);
     console.log("P2_8_JBIG2_PARITY_PASSED "+JSON.stringify({
       id:item.id,sha256,reference:reference.sha256,mae:stats.mae,f1:stats.f1,
+      fullPixelCount:full.comparedPixels,fullMae:full.mae,fullF1:full.f1,
       ink:stats.referenceInkPixels,shape:stats.geometry,
     }));
   });
