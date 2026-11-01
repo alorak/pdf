@@ -46,9 +46,9 @@ node scripts/p2-10-android-soak.mjs \
 ## Uygulama ve ölçüm akışı
 
 - Uygulama üzerinde PDF açılır ve ilk/orta/son sayfa ile %27/%73 ara sayfalar arasında otomatik geçiş yapılır. Sayfa numarasının değişmesi **ve** ilgili sayfada gerçek canvas çizilmiş olması şarttır. Gezinme bitiş süreleri, başarısızlıkları ve DOM'un yeniden oluşturulması ayrı raporlanır.
-- Başlangıç/son, **minimum, medyan, p95, maksimum Chrome PSS**, sistem boş RAM ve PSI `some.avg10` değerleri raporlanır. PSS, Chrome paketine yönelik `dumpsys` ölçümüdür; tek PDF sekmesinin veya PDF.js WASM'ının RAM maliyetini izole etmez. Renderer/GPU süreçleri Android sürümüne göre farklı sayılabilir.
+- Başlangıç/son, **minimum, medyan, p95, maksimum Chrome PSS**, Chrome ana süreç PID değişimi, sistem boş RAM ve PSI `some.avg10` değerleri raporlanır. PSS, Chrome paketine yönelik `dumpsys` ölçümüdür; tek PDF sekmesinin veya PDF.js WASM'ının RAM maliyetini izole etmez. Renderer/GPU süreçleri Android sürümüne göre farklı sayılabilir.
 - İstenen süre bitince koşucu Android'e `HOME` tuşu yollar ve 15 saniye arka plana alır. Kullanıcı Chrome'daki aynı PDF sekmesine döner ve terminalde Enter'a basar. Önceki sayfaya dönüldüğü kontrol edilir. Ardından **ayrı ve kasıtlı** `page.reload()` yapılarak IndexedDB'de PDF'nin, sayfa numarasının ve aktif çalışma alanının geri geldiği doğrulanır.
-- Bu süreç **Chrome'u force-stop yapmaz, LMK/OOM oluşturmaz veya kanıtlamaz**. Chrome arka planda Android tarafından kendiliğinden düşerse sekme durumu/DOM yeniden yüklenmesi tespit edilebilir; bunun nedeninin LMK olduğuna yalnız bu veriyle karar verilmez. Gerçek LMK kanıtı için ayrıca yetkili sistem logcat/Perfetto/lowmemorykiller gözlemleri gerekir.
+- Bu süreç **Chrome'u force-stop yapmaz, LMK/OOM oluşturmaz veya kanıtlamaz**. Chrome arka planda Android tarafından kendiliğinden düşerse sekme durumu/DOM yeniden yüklenmesi tespit edilebilir; bunun nedeninin LMK olduğuna yalnız bu veriyle karar verilmez. Süreç PID değişimi yalnız **yeniden başlama belirtisi** olarak raporlanır; gerçek düşük-bellek öldürme nedenini (LMK) ispatlamak için Android sistem olayları gerekir. Gerçek LMK kanıtı için ayrıca yetkili sistem logcat/Perfetto/lowmemorykiller gözlemleri gerekir.
 
 ## Yerel çıktılar ve kabul kriteri
 

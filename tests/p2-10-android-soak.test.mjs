@@ -25,7 +25,7 @@ const DEVICE={physical:true,model:"SIMULATED-TEST-ONLY",android:"15",chromePacka
 function mockSamples(){
   return Array.from({length:181},(_,i)=>({
     kind:"physical-android-soak-sample",elapsedSeconds:i*10,
-    chrome:{pssMiB:200+i*.25},system:{availableMiB:2800-i*2},
+    chrome:{pssMiB:200+i*.25,mainPid:i<120?12345:23456},system:{availableMiB:2800-i*2},
     psi:{some:{avg10:1+i/30}},
     browser:{unexpectedReload:false,pageError:false},
   }));
@@ -45,6 +45,7 @@ test("P2.10 long-run analyzer computes PSS peak, p95, navigation p95 and recover
   assert.equal(r.memory.psiSomeAvg10.maximum,7);
   assert.equal(r.browser.successfulNavigations,12);
   assert.equal(r.browser.unexpectedDocumentReloads,0);
+  assert.equal(r.browser.chromeMainPidChangesObserved,1);
   assert.equal(r.browser.expectedReopenRecovered,true);
   assert.equal(r.potentialMemoryGrowthNotProof,false);
   assert.equal(r.lmkOrOomConfirmed,null);

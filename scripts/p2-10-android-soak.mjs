@@ -69,10 +69,12 @@ function memorySample(device,elapsedSeconds,browser){
   const sys=maybeAdb("shell","cat","/proc/meminfo");
   const mem=maybeAdb("shell","dumpsys","meminfo",device.chromePackage);
   const psi=maybeAdb("shell","cat","/proc/pressure/memory");
+  const pids=maybeAdb("shell","pidof",device.chromePackage);
+  const mainPid=Number(/^\d+/.exec(pids||"")?.[0])||null;
   return {kind:"physical-android-soak-sample",
     elapsedSeconds:Number(elapsedSeconds.toFixed(2)),
     system:sys?parseLinuxMeminfo(sys):null,
-    chrome:mem?parseChromeMeminfo(mem):null,
+    chrome:mem?{...parseChromeMeminfo(mem),mainPid}:null,
     psi:parseMemoryPsi(psi),browser};
 }
 async function attachChrome(pagesExpected) {

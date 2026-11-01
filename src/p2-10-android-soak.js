@@ -57,6 +57,13 @@ export function summarizeAndroidSoak({plan, samples, navigations, recovery, devi
     return state;
   }, {count: 0, previous: false}).count;
   const pageMismatch = samples.filter(s => s.browser?.pageError === true).length;
+  const observedPids = samples.map(s => s.chrome?.mainPid??null).filter(Number.isInteger);
+  const pidTransitions = observedPids.reduce((state,pid)=>{
+    if(state.last!==null && state.last!==pid)state.count++;
+    state.last=pid;
+    return state;
+  },{last:null,count:0}).count;
+  const canvasCountPeak=quantile(samples.map(s=>s.browser?.canvasCount),1);
   const profile = {
     schema: 1,
     kind: "physical-android-soak-analysis",
@@ -83,6 +90,8 @@ export function summarizeAndroidSoak({plan, samples, navigations, recovery, devi
       navigationLatencyMs: stat(latency),
       unexpectedDocumentReloads: reloadCount,
       pageErrorsObserved: pageMismatch,
+      canvasCountPeak,
+      chromeMainPidChangesObserved:pidTransitions,
       expectedReopenRecovered: recovery?.restored === true,
       recoveryDetails: recovery?.details || "Recovery not confirmed",
     },
@@ -94,7 +103,7 @@ export function summarizeAndroidSoak({plan, samples, navigations, recovery, devi
     potentialMemoryGrowthNotProof: memory.length >= 5 &&
       lastPss !== null && firstPss !== null && lastPss - firstPss > 100,
     lmkOrOomConfirmed: null,
-    note: "PSS is Chrome package-level dumpsys, not isolated PDF tab; no LMK/OOM assertion from PSS alone.",
+    note: "PSS is Chrome package-level dumpsys; Chrome main PID change is not proof of LMK/OOM; no device-specific performance SLA.",
   };
   return profile;
 }
