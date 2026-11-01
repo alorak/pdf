@@ -15,7 +15,8 @@
     "fixture:generate": "node scripts/generate-stress-pdf.mjs",
     "test:corpus": "node scripts/p2-6-validate-corpus.mjs",
     "test:corpus:browser": "playwright test --config=playwright.corpus.config.mjs",
-    "test:codec:browser": "playwright test --config=playwright.codec.config.mjs"
+    "test:codec:browser": "playwright test --config=playwright.codec.config.mjs",
+    "test:codec:golden": "playwright test --config=playwright.p28.config.mjs"
   },
   "dependencies": {
     "pdfjs-dist": "6.4.299",
