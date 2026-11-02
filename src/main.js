@@ -3084,7 +3084,7 @@ function buildLibraryWorkspaceCards(records) {
     message.className = "message";
     message.textContent = record ? "Önizleme…" :
       linkedCount ? `${linkedCount} ek sayfa` :
-      workspace?.fileName ? "PDF kaydı bulunamadı" : workspace ? "Workspace\'i aç" : "Yeni workspace";
+      workspace?.fileName ? "PDF kaydı bulunamadı" : workspace ? "Workspace'i aç" : "Yeni workspace";
     placeholder.append(symbol, message);
     preview.append(placeholder);
 
