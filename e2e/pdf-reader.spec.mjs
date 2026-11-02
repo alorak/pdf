@@ -161,3 +161,42 @@ test("thumbnail view tabs use single-color icons, counters and accessible names 
   expect(withinPane).toBe(true);
   await checkTabs();
 });
+
+test("the current full-size PDF page has a restrained blue border in left and bottom preview modes", async ({ page }) => {
+  await openTestPdf(page);
+  const activeShell = page.locator(".page-shell.current-page");
+  await expect(activeShell).toHaveCount(1);
+  await expect(activeShell).toHaveAttribute("data-index", "0");
+
+  const selectedStyle = await activeShell.evaluate(element => {
+    const computed = getComputedStyle(element);
+    return { borderWidth: computed.borderTopWidth, borderColor: computed.borderTopColor, shadow: computed.boxShadow };
+  });
+  expect(selectedStyle.borderWidth).toBe("1px");
+  expect(selectedStyle.borderColor).toBe("rgb(145, 174, 231)");
+  expect(selectedStyle.shadow).not.toBe("none");
+  await expect(page.locator(".page-shell[data-index='1']")).not.toHaveClass(/current-page/);
+
+  // Clicking a preview moves the subtle main-page border without changing the stronger thumbnail border.
+  await page.locator('.thumb-item[data-index="2"]').click();
+  await expect(page.locator("#pageInput")).toHaveValue("3");
+  await expect(activeShell).toHaveCount(1);
+  await expect(activeShell).toHaveAttribute("data-index", "2");
+  await expect(page.locator('.thumb-item[data-index="2"]')).toHaveClass(/active/);
+  await expect(page.locator(".page-shell[data-index='0']")).not.toHaveClass(/current-page/);
+
+  await page.locator("#thumbsToggle").click();
+  await page.locator('[data-thumbs="bottom"]').click();
+  await expect(page.locator("#app")).toHaveClass(/thumbs-bottom/);
+  await expect(activeShell).toHaveAttribute("data-index", "2");
+  await page.locator('.thumb-item[data-index="1"]').click();
+  await expect(page.locator("#pageInput")).toHaveValue("2");
+  await expect(activeShell).toHaveCount(1);
+  await expect(activeShell).toHaveAttribute("data-index", "1");
+
+  // The main page border stays active when the preview pane is hidden.
+  await page.locator("#thumbsToggle").click();
+  await page.locator('[data-thumbs="hidden"]').click();
+  await expect(activeShell).toHaveAttribute("data-index", "1");
+  await expect(activeShell).toHaveCSS("border-top-color", "rgb(145, 174, 231)");
+});

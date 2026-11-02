@@ -1209,7 +1209,11 @@ function updateThumbnailFilter(resetScroll = false) {
     for (const shell of nextOrder) state.observer?.observe(shell);
   }
   const previousPage = state.current;
-  if (visiblePages.length && !visiblePages.includes(previousPage)) state.current = visiblePages[0];
+  if (visiblePages.length && !visiblePages.includes(previousPage)) {
+    state.shells[previousPage - 1]?.classList.remove("current-page");
+    state.current = visiblePages[0];
+    state.shells[state.current - 1]?.classList.add("current-page");
+  }
   for (let index = 0; index < state.thumbs.length; index++) {
     state.thumbs[index]?.classList.toggle("active", index + 1 === state.current);
   }
@@ -1328,7 +1332,9 @@ function setCurrentPage(index, scrollThumbnail = true) {
   if (page === state.current) return;
   const previous = state.thumbs[state.current - 1];
   if (previous) previous.classList.remove("active");
+  state.shells[state.current - 1]?.classList.remove("current-page");
   state.current = page;
+  state.shells[page - 1]?.classList.add("current-page");
   const thumb = state.thumbs[page - 1];
   if (thumb) thumb.classList.add("active");
   if (scrollThumbnail && state.thumbsVisible) {
@@ -1765,7 +1771,7 @@ function cancelAllWork() {
 
 function makePageShell(index) {
   const shell = document.createElement("article");
-  shell.className = "page-shell";
+  shell.className = index + 1 === state.current ? "page-shell current-page" : "page-shell";
   shell.dataset.index = String(index);
   shell.setAttribute("aria-label", `Sayfa ${index + 1}`);
   const surface = document.createElement("div");
@@ -3880,6 +3886,12 @@ ui.viewer.addEventListener("scroll", () => { scheduleScrollUpdate(); hideSelecti
 ui.viewer.addEventListener("wheel", () => { state.programmaticScrollUntil = 0; }, { passive: true });
 ui.viewer.addEventListener("touchstart", () => { state.programmaticScrollUntil = 0; }, { passive: true });
 ui.thumbList.addEventListener("scroll", () => { hideSelectionMenu(); scheduleThumbnailWindow(); }, { passive: true });
+// Clicking a full-size PDF page selects that page without navigating or disturbing text selection.
+ui.viewer.addEventListener("pointerdown", (event) => {
+  if (!state.doc || event.pointerType !== "mouse" || event.button !== 0) return;
+  const shell = event.target instanceof Element ? event.target.closest(".page-shell") : null;
+  if (shell && ui.pages.contains(shell)) setCurrentPage(Number(shell.dataset.index), false);
+});
 ui.viewer.addEventListener("pointermove", handleHighlightHover);
 ui.viewer.addEventListener("pointerleave", hideHighlightRemove);
 ui.viewer.addEventListener("scroll", hideHighlightRemove, { passive: true });
