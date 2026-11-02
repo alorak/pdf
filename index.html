@@ -97,14 +97,23 @@
         <aside id="thumbsPane" class="thumbs-pane" aria-label="Sayfa küçük resimleri">
           <div class="pane-heading">
             <div class="thumb-filter" role="group" aria-label="Küçük resim görünümü">
-              <button id="thumbPages" class="thumb-filter-button active" type="button" aria-pressed="true" aria-controls="thumbList">
-                <span>Sayfalar</span><span id="thumbPagesCount" class="thumb-tab-count">0</span>
+              <button id="thumbPages" class="thumb-filter-button active" type="button" aria-label="Sayfalar" aria-describedby="thumbPagesCount" title="Sayfalar" aria-pressed="true" aria-controls="thumbList">
+                <svg class="thumb-tab-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+                  <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+                </svg>
+                <span id="thumbPagesCount" class="thumb-tab-count">0</span>
               </button>
-              <button id="thumbBookmarks" class="thumb-filter-button" type="button" aria-pressed="false" aria-controls="thumbList">
-                <span>Yer İmleri</span><span id="thumbBookmarksCount" class="thumb-tab-count">0</span>
+              <button id="thumbBookmarks" class="thumb-filter-button" type="button" aria-label="Yer İmleri" aria-describedby="thumbBookmarksCount" title="Yer İmleri" aria-pressed="false" aria-controls="thumbList">
+                <svg class="thumb-tab-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <path d="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+                </svg>
+                <span id="thumbBookmarksCount" class="thumb-tab-count">0</span>
               </button>
-              <button id="thumbOutline" class="thumb-filter-button" type="button" aria-pressed="false" aria-controls="outlineList">
-                <span>İçindekiler</span>
+              <button id="thumbOutline" class="thumb-filter-button" type="button" aria-label="İçindekiler" title="İçindekiler" aria-pressed="false" aria-controls="outlineList">
+                <svg class="thumb-tab-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <path d="M9 6h12M9 12h12M9 18h12M4 6h.01M4 12h.01M4 18h.01"/>
+                </svg>
               </button>
             </div>
           </div>
