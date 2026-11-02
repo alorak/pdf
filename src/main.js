@@ -2823,7 +2823,6 @@ function createWorkspaceFromLibrary() {
   applyWorkspaceView();
   renderWorkspaceSidebar();
   closeLibrary();
-  askToOpen(null, next.activeId);
 }
 
 function releaseLibraryBookmarkPreviews() {
@@ -3068,7 +3067,7 @@ function buildLibraryWorkspaceCards(records) {
     if (!workspace) card.classList.add("is-uncreated");
     if (workspace && workspace.id === workspaces.activeId) card.classList.add("is-active");
     const label = workspace
-      ? `W${workspace.id}: ${workspace.fileName || "PDF yok"}`
+      ? `W${workspace.id}: ${workspace.fileName || "Boş workspace"} çalışma alanını aç`
       : `Yeni workspace oluştur (W${slot.id})`;
     select.setAttribute("aria-label", label);
     select.title = label;
@@ -3080,12 +3079,12 @@ function buildLibraryWorkspaceCards(records) {
     const symbol = document.createElement("span");
     symbol.className = "symbol";
     const linkedCount = workspace?.linkedPages?.length || 0;
-    symbol.textContent = record ? "PDF" : linkedCount ? "↗" : workspace?.fileName ? "!" : "+";
+    symbol.textContent = record ? "PDF" : linkedCount ? "↗" : workspace?.fileName ? "!" : workspace ? "→" : "+";
     const message = document.createElement("span");
     message.className = "message";
     message.textContent = record ? "Önizleme…" :
       linkedCount ? `${linkedCount} ek sayfa` :
-      workspace?.fileName ? "PDF kaydı bulunamadı" : workspace ? "PDF ekle" : "Yeni workspace";
+      workspace?.fileName ? "PDF kaydı bulunamadı" : workspace ? "Workspace'i aç" : "Yeni workspace";
     placeholder.append(symbol, message);
     preview.append(placeholder);
 
@@ -3125,15 +3124,10 @@ function buildLibraryWorkspaceCards(records) {
     footer.append(title, filename);
     select.append(preview, footer);
     select.addEventListener("click", () => {
-      if (!workspace) {
-        createWorkspaceFromLibrary();
-      } else {
-        changeWorkspace(workspace.id);
-        if (!workspace.fileName && !workspace.linkedPages?.length) {
-          if (isLinkedOnlyWorkspace(workspace)) openAddLinkedPagesDialog();
-          else askToOpen(null, workspace.id);
-        }
-      }
+      // Navigation never chooses an import method. The empty reader lets users
+      // choose between a local PDF and pages from another workspace.
+      if (!workspace) createWorkspaceFromLibrary();
+      else changeWorkspace(workspace.id);
     });
     card.append(select);
     if (workspace) {
