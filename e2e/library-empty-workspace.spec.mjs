@@ -68,10 +68,13 @@ test("Library new slot creates an empty workspace and allows both import paths",
   await page.locator("#libraryWorkspaceGrid .library-workspace-select").nth(1).click();
   await expectEmptyWorkspace(page, "W2");
 
+  await expect.poll(async () => page.evaluate(async () => {
+    const { readWorkspaceData } = await import("/pdf/src/workspace-data.js");
+    return (await readWorkspaceData()).state.items.length;
+  })).toBe(2);
   const state = await page.evaluate(async () => {
     const { readWorkspaceData } = await import("/pdf/src/workspace-data.js");
     return (await readWorkspaceData()).state;
   });
-  expect(state.items).toHaveLength(2);
   expect(state.items.find(item => item.id === 2)?.fileName).toBe("");
 });
