@@ -87,3 +87,77 @@ test("search can be opened with Ctrl+F and closed with Escape", async ({ page })
   await page.locator("#searchQuery").press("Escape");
   await expect(page.locator("#searchPanel")).toBeHidden();
 });
+
+test("thumbnail view tabs use single-color icons, counters and accessible names in left/bottom layouts", async ({ page }) => {
+  await openTestPdf(page);
+  const tabs = [
+    { id: "thumbPages", label: "Sayfalar", count: "thumbPagesCount" },
+    { id: "thumbBookmarks", label: "Yer İmleri", count: "thumbBookmarksCount" },
+    { id: "thumbOutline", label: "İçindekiler" },
+  ];
+
+  async function checkTabs() {
+    for (const { id, label, count } of tabs) {
+      const button = page.locator("#" + id);
+      await expect(button).toBeVisible();
+      await expect(button).toHaveAttribute("aria-label", label);
+      await expect(button).toHaveAttribute("title", label);
+      await expect(button.locator("svg.thumb-tab-icon")).toHaveCount(1);
+      await expect(button.locator("svg.thumb-tab-icon")).toHaveAttribute("aria-hidden", "true");
+      const appearance = await button.evaluate((element) => {
+        const svg = element.querySelector("svg.thumb-tab-icon");
+        return {
+          stroke: getComputedStyle(svg).stroke,
+          color: getComputedStyle(element).color,
+          fill: getComputedStyle(svg).fill,
+          width: svg.getBoundingClientRect().width,
+          text: element.textContent.trim(),
+        };
+      });
+      expect(appearance.stroke).toBe(appearance.color);
+      expect(appearance.fill).toBe("none");
+      expect(appearance.width).toBe(18);
+      expect(appearance.text).not.toContain(label);
+      if (count) {
+        await expect(button).toHaveAttribute("aria-describedby", count);
+        await expect(page.locator("#" + count)).toHaveText(/^\d+$/);
+      }
+    }
+
+    await page.locator("#thumbBookmarks").click();
+    await expect(page.locator("#thumbBookmarks")).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("#thumbBookmarksCount")).toHaveText("0");
+    await expect(page.locator("#thumbEmpty")).toBeVisible();
+
+    await page.locator("#thumbOutline").click();
+    await expect(page.locator("#thumbOutline")).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("#outlineList .outline-link")).toHaveCount(2);
+    await expect(page.locator("#thumbList")).toBeHidden();
+
+    await page.locator("#thumbPages").click();
+    await expect(page.locator("#thumbPages")).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("#thumbPagesCount")).toHaveText("3");
+    await expect(page.locator("#outlineList")).toBeHidden();
+  }
+
+  await checkTabs();
+  await page.locator("#thumbsToggle").click();
+  await page.locator('[data-thumbs="bottom"]').click();
+  await expect(page.locator("#app")).toHaveClass(/thumbs-bottom/);
+  await checkTabs();
+
+  // Icon-only labels should also fit the narrower bottom sidebar on phones.
+  await page.setViewportSize({ width: 390, height: 740 });
+  await expect.poll(() => page.locator(".pane-heading").evaluate(element =>
+    Math.round(element.getBoundingClientRect().width)
+  )).toBeLessThanOrEqual(100);
+  const withinPane = await page.evaluate(() => {
+    const pane = document.querySelector(".pane-heading").getBoundingClientRect();
+    return [...document.querySelectorAll(".thumb-filter-button")].every(button => {
+      const bounds = button.getBoundingClientRect();
+      return bounds.left >= pane.left - 1 && bounds.right <= pane.right + 1;
+    });
+  });
+  expect(withinPane).toBe(true);
+  await checkTabs();
+});
