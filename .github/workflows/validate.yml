@@ -9,7 +9,8 @@ permissions:
 
 jobs:
   validate:
-    runs-on: ubuntu-latest
+    # Playwright 1.56.1 Chromium install does not support Ubuntu 26.04.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -30,7 +31,8 @@ jobs:
         run: node scripts/check-pages.mjs
 
   browser-e2e:
-    runs-on: ubuntu-latest
+    # Playwright 1.56.1 Chromium install does not support Ubuntu 26.04.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
