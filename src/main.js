@@ -24,6 +24,7 @@ import { dependentPageLinks, groupDependentLinks, stalePageLinks } from "./works
 import { evictDistantPages, flattenOutline, MAX_SEARCH_RESULTS } from "./pdf-navigation.js";
 import { VIRTUAL_PAGE_THRESHOLD, pageOffsets, pageWindow, pageSpacerHeights } from "./page-window.js";
 import { createPdfTextCache, scanPdfText } from "./pdf-search.js";
+import { textLayerSearchRects } from "./search-highlights.js";
 import { THUMBNAIL_VIRTUAL_THRESHOLD, thumbnailWindow, thumbnailScrollOffset } from "./thumbnail-window.js";
 import "./style.css";
 
@@ -119,7 +120,7 @@ const state = {
   pageCount: 0, current: 1, scale: 1, fit: "page", fileSize: 0,
   orientation: "vertical", thumbPosition: "left", thumbsVisible: true,
   thumbnailMode: "pages", outlineOpen: false, outlineGeneration: 0,
-  searchToken: 0, searchResults: [], searchIndex: -1, searchTimer: 0,
+  searchToken: 0, searchResults: [], searchIndex: -1, searchTimer: 0, searchTerm: "",
   programmaticScrollUntil: 0,
   searchCache: createPdfTextCache(),
   virtualOffsets: null, virtualRange: null, virtualPageOrder: [],
@@ -705,6 +706,44 @@ function refreshPageHighlights(index) {
 function refreshVisibleHighlights() {
   for (const [index, epoch] of state.rendered) {
     if (epoch === state.renderEpoch) refreshPageHighlights(index);
+  }
+}
+
+/** Transient search marks are independent of persistent bookmark highlights. */
+function refreshPageSearchHighlights(index) {
+  const surface = state.shells[index]?.querySelector(".page-surface");
+  if (!surface) return;
+  surface.querySelector(".page-search-highlight-layer")?.remove();
+  if (!state.doc || !state.searchTerm) return;
+  const layer = surface.querySelector(".textLayer");
+  if (!layer) return;
+  const matches = textLayerSearchRects(layer, surface, state.searchTerm);
+  if (!matches.length) return;
+
+  const selected = state.searchResults[state.searchIndex];
+  const selectedOrdinal = selected?.page === index + 1
+    ? state.searchResults.slice(0, state.searchIndex).filter(match => match.page === selected.page).length
+    : -1;
+  const marks = document.createElement("div");
+  marks.className = "page-search-highlight-layer";
+  marks.setAttribute("aria-hidden", "true");
+  for (const [ordinal, match] of matches.entries()) {
+    for (const [x, y, width, height] of match.rects) {
+      const block = document.createElement("span");
+      block.className = "page-search-highlight" + (ordinal === selectedOrdinal ? " is-current" : "");
+      block.style.left = `${x * 100}%`;
+      block.style.top = `${y * 100}%`;
+      block.style.width = `${width * 100}%`;
+      block.style.height = `${height * 100}%`;
+      marks.append(block);
+    }
+  }
+  if (marks.childElementCount) surface.append(marks);
+}
+
+function refreshVisibleSearchHighlights() {
+  for (const [index, epoch] of state.rendered) {
+    if (epoch === state.renderEpoch) refreshPageSearchHighlights(index);
   }
 }
 
@@ -1401,7 +1440,10 @@ function cancelPageRenders() {
   for (const task of state.renderTasks.values()) task.cancel();
   for (const layer of state.textLayers.values()) layer.cancel();
   state.textLayers.clear();
-  for (const shell of state.shells) shell?.querySelector(".textLayer")?.remove();
+  for (const shell of state.shells) {
+    shell?.querySelector(".textLayer")?.remove();
+    shell?.querySelector(".page-search-highlight-layer")?.remove();
+  }
   state.rendered.clear();
 }
 
@@ -1581,6 +1623,13 @@ function setSearchVisible(open) {
   else {
     clearTimeout(state.searchTimer);
     state.searchToken++;
+    state.searchTerm = "";
+    state.searchResults = [];
+    state.searchIndex = -1;
+    ui.searchQuery.value = "";
+    ui.searchStatus.textContent = "Aramak için yazın.";
+    showSearchResults();
+    refreshVisibleSearchHighlights();
     ui.searchToggle.focus({ preventScroll: true });
   }
 }
@@ -1611,6 +1660,7 @@ function selectSearchResult(index) {
   state.searchIndex = normalized;
   if (state.thumbnailMode === "bookmarks") setThumbnailMode("pages");
   goToPage(state.searchResults[normalized].page, false);
+  refreshVisibleSearchHighlights();
   showSearchResults();
   ui.searchResults.querySelector('[aria-current="true"]')?.scrollIntoView({ block: "nearest" });
 }
@@ -1621,7 +1671,9 @@ async function runDocumentSearch() {
   const term = ui.searchQuery.value.trim();
   state.searchResults = [];
   state.searchIndex = -1;
+  state.searchTerm = term.length <= 160 ? term : "";
   showSearchResults();
+  refreshVisibleSearchHighlights();
   if (!doc || !term) {
     ui.searchStatus.textContent = "Aramak için yazın.";
     return;
@@ -1689,6 +1741,7 @@ function cancelAllWork() {
   state.searchResults = [];
   state.searchCache.clear();
   state.searchIndex = -1;
+  state.searchTerm = "";
   state.programmaticScrollUntil = 0;
   state.virtualOffsets = null;
   state.virtualRange = null;
@@ -2154,6 +2207,7 @@ async function renderPage(index, generation, epoch) {
         overlay.remove();
       } else {
         refreshPageHighlights(index);
+        refreshPageSearchHighlights(index);
       }
     } catch (error) {
       overlay.remove();
@@ -3855,6 +3909,11 @@ ui.searchNext.addEventListener("click", () => selectSearchResult(state.searchInd
 ui.searchQuery.addEventListener("input", () => {
   clearTimeout(state.searchTimer);
   state.searchToken++;
+  state.searchTerm = "";
+  state.searchResults = [];
+  state.searchIndex = -1;
+  showSearchResults();
+  refreshVisibleSearchHighlights();
   state.searchTimer = setTimeout(() => { void runDocumentSearch(); }, 260);
 });
 ui.searchQuery.addEventListener("keydown", event => {

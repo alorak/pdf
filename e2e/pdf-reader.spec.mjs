@@ -68,6 +68,42 @@ test("PDF text search finds a matching page and outline navigates to a PDF chapt
   await expect(page.locator("#pageInput")).toHaveValue("3");
 });
 
+test("search terms are highlighted over the PDF page, survive zoom, and clear on close", async ({ page }) => {
+  await openTestPdf(page);
+  await page.locator("#searchToggle").click();
+  await page.locator("#searchQuery").fill("SURROGATE");
+  await expect(page.locator("#searchResults .search-result")).toHaveCount(1);
+  await page.locator("#searchResults .search-result").click();
+
+  const marks = page.locator('.page-shell[data-index="1"] .page-search-highlight');
+  await expect.poll(() => marks.count()).toBeGreaterThan(0);
+  await expect(page.locator('.page-shell[data-index="1"] .page-search-highlight.is-current')).toHaveCount(1);
+  const position = await marks.first().evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    const page = element.closest(".page-surface").getBoundingClientRect();
+    return { width: rect.width, height: rect.height, inside: rect.left >= page.left
+      && rect.right <= page.right + 1 && rect.top >= page.top && rect.bottom <= page.bottom + 1 };
+  });
+  expect(position.width).toBeGreaterThan(1);
+  expect(position.height).toBeGreaterThan(1);
+  expect(position.inside).toBe(true);
+
+  await page.locator("#zoomIn").click();
+  await expect.poll(() => marks.count()).toBeGreaterThan(0);
+  await expect(page.locator('.page-shell[data-index="1"] .page-search-highlight.is-current')).toHaveCount(1);
+
+  await page.locator("#searchQuery").fill("CONCLUSIONS");
+  await expect(page.locator("#searchResults .search-result")).toHaveCount(1);
+  await page.locator("#searchResults .search-result").click();
+  await expect(page.locator("#pageInput")).toHaveValue("3");
+  await expect.poll(() => page.locator('.page-shell[data-index="2"] .page-search-highlight').count()).toBeGreaterThan(0);
+  await expect(page.locator('.page-shell[data-index="1"] .page-search-highlight')).toHaveCount(0);
+
+  await page.locator("#searchClose").click();
+  await expect(page.locator(".page-search-highlight")).toHaveCount(0);
+  await expect(page.locator("#searchQuery")).toHaveValue("");
+});
+
 test("the last read PDF page is saved and restored on reload", async ({ page }) => {
   await openTestPdf(page);
   await page.locator("#pageInput").fill("3");
